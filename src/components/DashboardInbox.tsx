@@ -21,7 +21,7 @@ import {
   StandingsRow,
 } from '../types/football';
 import { calculateTeamTacticalRatings } from '../engine/matchEngine';
-import { USER_CLUB_ID } from '../data/initialDatabase';
+import { getContrastTextColor } from '../utils/formatters';
 
 interface DashboardInboxProps {
   messages: InboxMessage[];
@@ -76,14 +76,25 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
 
   const clubMap = new Map(clubs.map((c) => [c.id, c]));
   const userStandingIndex = standings.findIndex(
-    (s) => s.clubId === USER_CLUB_ID
+    (s) => s.clubId === userClub.id
   );
   const opponentStandingIndex = opponentClub
     ? standings.findIndex((s) => s.clubId === opponentClub.id)
     : -1;
 
-  // Check if Caio Vinícius (p6) is still starter
-  const caioInStartingXI = squad.find((p) => p.id === 'p6')?.isStarter ?? false;
+  // Dynamic medical quick-swap resolution for any club
+  const relatedFatiguedPlayer = selectedMessage?.relatedPlayerId
+    ? squad.find((p) => p.id === selectedMessage.relatedPlayerId)
+    : undefined;
+  const healthySubstituteCandidate = relatedFatiguedPlayer
+    ? squad.find(
+        (p) =>
+          !p.isStarter &&
+          !p.injured &&
+          p.sector === relatedFatiguedPlayer.sector &&
+          p.condition >= 85
+      ) || squad.find((p) => !p.isStarter && !p.injured)
+    : undefined;
 
   // Compute match probability tiles (Home / Draw / Away) based on tactical ratings
   const userOverall =
@@ -94,26 +105,28 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
         opponentClub.overallDefense) /
       3
     : 15;
-  const diff = userOverall - oppOverall + (nextFixture?.homeClubId === USER_CLUB_ID ? 0.45 : -0.2);
-  const userWinProb = Math.min(68, Math.max(22, Math.round(44 + diff * 9)));
+  const diff =
+    userOverall -
+    oppOverall +
+    (nextFixture?.homeClubId === userClub.id ? 2.0 : -0.9);
+  const userWinProb = Math.min(68, Math.max(22, Math.round(44 + diff * 2.1)));
   const drawProb = 24;
   const oppWinProb = Math.max(10, 100 - userWinProb - drawProb);
 
   // Other featured fixtures of the round for the reference-inspired dual-tone cards
-  const otherRoundFixtures = clubs.length
-    ? [
-        {
-          home: clubMap.get('c3') || clubs[2],
-          away: clubMap.get('c4') || clubs[3],
-          time: '18:30',
-        },
-        {
-          home: clubMap.get('c5') || clubs[4],
-          away: clubMap.get('c6') || clubs[5],
-          time: '20:30',
-        },
-      ]
-    : [];
+  const otherClubs = clubs.filter(
+    (c) => c.id !== userClub.id && c.id !== opponentClub?.id
+  );
+  const otherRoundFixtures =
+    otherClubs.length >= 2
+      ? [
+          {
+            home: otherClubs[0],
+            away: otherClubs[1],
+            time: '18:30',
+          },
+        ]
+      : [];
 
   const renderComparisonBar = (
     label: string,
@@ -129,28 +142,28 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
               userAdvantage ? 'text-[#b5ff00]' : 'text-zinc-300'
             }`}
           >
-            {userVal.toFixed(1)}
+            {Math.round(userVal)}
           </span>
-          <span className="text-zinc-400 text-[11px]">{label} (1-20)</span>
+          <span className="text-zinc-400 text-[11px]">{label} (60–99)</span>
           <span
             className={`font-mono tabular-nums font-bold ${
               !userAdvantage ? 'text-amber-400' : 'text-zinc-300'
             }`}
           >
-            {oppVal.toFixed(1)}
+            {Math.round(oppVal)}
           </span>
         </div>
         <div className="grid grid-cols-2 gap-1.5 h-2">
           <div className="bg-[#0b0c10] rounded-l-full overflow-hidden flex justify-end">
             <div
               className="bg-[#b5ff00] h-full rounded-l-full"
-              style={{ width: `${(userVal / 20) * 100}%` }}
+              style={{ width: `${Math.min(100, Math.max(8, (userVal / 99) * 100))}%` }}
             />
           </div>
           <div className="bg-[#0b0c10] rounded-r-full overflow-hidden">
             <div
               className="bg-zinc-200 h-full rounded-r-full"
-              style={{ width: `${(oppVal / 20) * 100}%` }}
+              style={{ width: `${Math.min(100, Math.max(8, (oppVal / 99) * 100))}%` }}
             />
           </div>
         </div>
@@ -217,7 +230,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                 {/* Upper Half: Electric Lime Gradient Header with Club Badges & Black VS Circle */}
                 <div className="bg-gradient-to-b from-[#b5ff00] to-[#8fd400] px-5 pt-5 pb-6 text-[#090a0f] relative">
                   <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase tracking-wider text-[#090a0f]/75 mb-3">
-                    <span>Liga Nacional · {currentRound}ª Rodada</span>
+                    <span>Brasileirão Série {userClub.division} · {currentRound}ª Rodada</span>
                     <span>
                       {isMatchDay ? 'HOJE · DIA DE JOGO' : 'PRÓXIMO CONFRONTO'}
                     </span>
@@ -245,7 +258,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                       <div className="text-[11px] font-semibold text-[#090a0f]/80 mt-1.5 flex items-center gap-1">
                         <MapPin className="w-3 h-3" />
                         <span>
-                          {nextFixture.homeClubId === USER_CLUB_ID
+                          {nextFixture.homeClubId === userClub.id
                             ? 'Casa'
                             : 'Fora'}
                         </span>
@@ -255,8 +268,11 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                     {/* Opponent Club */}
                     <div className="flex flex-col items-center">
                       <div
-                        className="w-14 h-14 rounded-2xl flex items-center justify-center font-display font-extrabold text-xl text-white shadow-lg border-2 border-white/30"
-                        style={{ backgroundColor: opponentClub.primaryColor }}
+                        className="w-14 h-14 rounded-2xl flex items-center justify-center font-display font-extrabold text-xl shadow-lg border-2 border-white/30"
+                        style={{
+                          backgroundColor: opponentClub.primaryColor,
+                          color: getContrastTextColor(opponentClub.primaryColor),
+                        }}
                       >
                         {opponentClub.abbr}
                       </div>
@@ -277,7 +293,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                       Competição
                     </div>
                     <div className="font-display font-extrabold text-base uppercase tracking-tight text-[#090a0f]">
-                      SÉRIE A · R{currentRound}
+                      SÉRIE {userClub.division} · R{currentRound}
                     </div>
                   </div>
 
@@ -381,7 +397,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                             </div>
                           </div>
                           <span className="font-mono tabular-nums font-bold text-[#b5ff00] ml-2">
-                            {sp.overall.toFixed(1)}
+                            {Math.round(sp.overall)}
                           </span>
                         </div>
                       ))}
@@ -411,10 +427,13 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                 <div className="rounded-[24px] bg-gradient-to-b from-zinc-200 to-zinc-300 text-[#090a0f] p-4 shadow-lg flex items-center justify-between">
                   <div className="flex items-center gap-3 min-w-0">
                     <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center font-display font-extrabold text-sm text-white shrink-0"
+                      className="w-10 h-10 rounded-xl flex items-center justify-center font-display font-extrabold text-sm shrink-0"
                       style={{
                         backgroundColor:
                           otherRoundFixtures[0].home.primaryColor,
+                        color: getContrastTextColor(
+                          otherRoundFixtures[0].home.primaryColor
+                        ),
                       }}
                     >
                       {otherRoundFixtures[0].home.abbr}
@@ -443,10 +462,13 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                       </div>
                     </div>
                     <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center font-display font-extrabold text-sm text-white shrink-0"
+                      className="w-10 h-10 rounded-xl flex items-center justify-center font-display font-extrabold text-sm shrink-0"
                       style={{
                         backgroundColor:
                           otherRoundFixtures[0].away.primaryColor,
+                        color: getContrastTextColor(
+                          otherRoundFixtures[0].away.primaryColor
+                        ),
                       }}
                     >
                       {otherRoundFixtures[0].away.abbr}
@@ -492,7 +514,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                 <tbody className="divide-y divide-white/[0.05] font-mono tabular-nums">
                   {standings.slice(0, 6).map((row, index) => {
                     const club = clubMap.get(row.clubId);
-                    const isUser = row.clubId === USER_CLUB_ID;
+                    const isUser = row.clubId === userClub.id;
                     const isOpponent = row.clubId === opponentClub?.id;
                     return (
                       <tr
@@ -676,31 +698,29 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
               {/* Contextual Action Footer inside Inbox Message */}
               {selectedMessage && (
                 <div className="pt-4 mt-5 border-t border-white/[0.07] flex flex-wrap items-center justify-between gap-2">
-                  {selectedMessage.relatedPlayerId === 'p6' && (
+                  {relatedFatiguedPlayer && (
                     <div className="flex flex-wrap items-center gap-2">
                       <button
-                        onClick={() => {
-                          const p = squad.find(
-                            (pl) => pl.id === selectedMessage.relatedPlayerId
-                          );
-                          if (p) onInspectPlayer(p);
-                        }}
+                        onClick={() => onInspectPlayer(relatedFatiguedPlayer)}
                         className="px-3.5 py-2 rounded-full text-xs font-semibold bg-white/[0.08] hover:bg-white/[0.14] text-white transition-colors whitespace-nowrap"
                       >
-                        Ver Ficha de Caio Vinícius
+                        Ver Ficha de {relatedFatiguedPlayer.name.split(' ')[0]}
                       </button>
-                      {caioInStartingXI ? (
+                      {relatedFatiguedPlayer.isStarter ? (
                         <button
                           onClick={onQuickSwapFatiguedPlayer}
                           className="px-3.5 py-2 rounded-full text-xs font-bold bg-amber-400 hover:bg-amber-300 text-[#090a0f] transition-colors flex items-center gap-1.5 whitespace-nowrap"
                         >
                           <UserCheck className="w-3.5 h-3.5" />
-                          Poupar Caio (Escalar Aníbal Moreno)
+                          Poupar {relatedFatiguedPlayer.name.split(' ')[0]}{' '}
+                          {healthySubstituteCandidate
+                            ? `(Escalar ${healthySubstituteCandidate.name})`
+                            : ''}
                         </button>
                       ) : (
                         <span className="text-xs text-[#b5ff00] font-medium flex items-center gap-1">
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          Aníbal Moreno já escalado como titular
+                          {relatedFatiguedPlayer.name} já foi poupado do time titular
                         </span>
                       )}
                     </div>

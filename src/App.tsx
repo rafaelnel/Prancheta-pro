@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Inbox,
   Users,
@@ -10,7 +10,9 @@ import {
   ShieldCheck,
   ChevronRight,
   Play,
-  Activity,
+  Save,
+  Check,
+  FolderOpen,
 } from 'lucide-react';
 import {
   INITIAL_CLUBS,
@@ -19,7 +21,9 @@ import {
   INITIAL_USER_SQUAD,
   USER_CLUB_ID,
   generateLeagueSchedule,
+  getInitialStandingsForDivision,
 } from './data/initialDatabase';
+import { createNewCareerSave } from './data/careerFactory';
 import { FORMATIONS, getRoleById } from './data/tacticsData';
 import {
   buildPitchTokens,
@@ -30,6 +34,8 @@ import {
   updateStandingsWithRound,
 } from './engine/matchEngine';
 import {
+  CareerSaveData,
+  CareerSlotIndex,
   Club,
   FormationType,
   InboxMessage,
@@ -45,7 +51,16 @@ import {
 import {
   formatCalendarDate,
   formatCompactBRL,
+  getContrastTextColor,
 } from './utils/formatters';
+import {
+  deleteCareerSlot,
+  getLatestCareerSave,
+  loadAllCareerSlots,
+  loadCareerSlot,
+  saveCareerToSlot,
+} from './utils/saveManager';
+import { CareerHubScreen } from './components/CareerHubScreen';
 import { DashboardInbox } from './components/DashboardInbox';
 import { SquadView } from './components/SquadView';
 import { TacticalBoard } from './components/TacticalBoard';
@@ -54,23 +69,79 @@ import { CompetitionsView } from './components/CompetitionsView';
 import { FinancesView } from './components/FinancesView';
 import { PlayerProfileModal } from './components/PlayerProfileModal';
 
+function shouldAutostart(): boolean {
+  if (typeof window === 'undefined') return false;
+  return new URLSearchParams(window.location.search).get('autostart') === '1';
+}
+
 export default function App() {
+  const [slots, setSlots] = useState<Array<CareerSaveData | null>>(() =>
+    loadAllCareerSlots()
+  );
+
+  const initialAutostartSave = useMemo(() => {
+    if (!shouldAutostart()) return null;
+    return (
+      getLatestCareerSave() ||
+      createNewCareerSave(1, USER_CLUB_ID, 'Treinador Silva')
+    );
+  }, []);
+
+  const [screen, setScreen] = useState<'hub' | 'club'>(() =>
+    shouldAutostart() ? 'club' : 'hub'
+  );
+  const [activeSlot, setActiveSlot] = useState<CareerSlotIndex | null>(() =>
+    initialAutostartSave ? initialAutostartSave.slotIndex : null
+  );
+  const [managerName, setManagerName] = useState<string>(
+    initialAutostartSave?.managerName || 'Treinador Silva'
+  );
+  const [userClubId, setUserClubId] = useState<string>(
+    initialAutostartSave?.userClubId || USER_CLUB_ID
+  );
+
   const [activeTab, setActiveTab] = useState<NavigationTab>('inbox');
-  const [clubs, setClubs] = useState<Club[]>(INITIAL_CLUBS);
-  const [squad, setSquad] = useState<Player[]>(INITIAL_USER_SQUAD);
-  const [standings, setStandings] =
-    useState<StandingsRow[]>(INITIAL_STANDINGS);
-  const [fixtures, setFixtures] = useState<RoundFixture[]>(() =>
-    generateLeagueSchedule()
+  const [clubs, setClubs] = useState<Club[]>(
+    () => initialAutostartSave?.clubs || INITIAL_CLUBS
+  );
+  const [squad, setSquad] = useState<Player[]>(
+    () => initialAutostartSave?.squad || INITIAL_USER_SQUAD
+  );
+  const [standings, setStandings] = useState<StandingsRow[]>(
+    () => initialAutostartSave?.standings || INITIAL_STANDINGS
+  );
+  const [fixtures, setFixtures] = useState<RoundFixture[]>(
+    () => initialAutostartSave?.fixtures || generateLeagueSchedule(USER_CLUB_ID, 'A')
+  );
+  const [secondaryStandings, setSecondaryStandings] = useState<StandingsRow[]>(
+    () =>
+      initialAutostartSave?.secondaryStandings ||
+      getInitialStandingsForDivision('B')
+  );
+  const [secondaryFixtures, setSecondaryFixtures] = useState<RoundFixture[]>(
+    () =>
+      initialAutostartSave?.secondaryFixtures ||
+      generateLeagueSchedule('__none__', 'B')
   );
   const [messages, setMessages] = useState<InboxMessage[]>(
-    INITIAL_INBOX_MESSAGES
+    () => initialAutostartSave?.messages || INITIAL_INBOX_MESSAGES
   );
 
   // Calendar & Round Progression
-  const [currentRound, setCurrentRound] = useState<number>(6);
-  const [dayOffset, setDayOffset] = useState<number>(0); // 0 = Sáb 16 Mai (Véspera), 1 = Dom 17 Mai (Dia de Jogo)
-  const [isMatchDay, setIsMatchDay] = useState<boolean>(false);
+  const [currentRound, setCurrentRound] = useState<number>(
+    initialAutostartSave?.currentRound || 6
+  );
+  const [dayOffset, setDayOffset] = useState<number>(
+    initialAutostartSave?.dayOffset || 0
+  );
+  const [isMatchDay, setIsMatchDay] = useState<boolean>(
+    initialAutostartSave?.isMatchDay || false
+  );
+
+  // Save Status UI feedback
+  const [saveSuccessFlash, setSaveSuccessFlash] = useState<boolean>(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
+  const saveTimerRef = useRef<number | null>(null);
 
   // Modal state for inspecting 18 attributes of any player
   const [inspectedPlayerId, setInspectedPlayerId] = useState<string | null>(
@@ -78,8 +149,8 @@ export default function App() {
   );
 
   const userClub = useMemo(
-    () => clubs.find((c) => c.id === USER_CLUB_ID) || clubs[0],
-    [clubs]
+    () => clubs.find((c) => c.id === userClubId) || clubs[0],
+    [clubs, userClubId]
   );
 
   const currentUserFixture = useMemo(
@@ -104,22 +175,184 @@ export default function App() {
 
   const opponentClub = useMemo(
     () =>
-      currentUserFixture.homeClubId === USER_CLUB_ID ? awayClub : homeClub,
-    [currentUserFixture, homeClub, awayClub]
+      currentUserFixture.homeClubId === userClubId ? awayClub : homeClub,
+    [currentUserFixture, homeClub, awayClub, userClubId]
   );
 
   const [matchState, setMatchState] = useState<LiveMatchState>(() =>
+    initialAutostartSave?.matchState ||
     createInitialMatchState(
       6,
       currentUserFixture,
       homeClub,
       awayClub,
-      INITIAL_USER_SQUAD
+      INITIAL_USER_SQUAD,
+      USER_CLUB_ID
     )
   );
 
+  const userRank = useMemo(
+    () => standings.findIndex((s) => s.clubId === userClubId) + 1,
+    [standings, userClubId]
+  );
+
+  const persistCareer = useCallback(
+    (override?: Partial<CareerSaveData>) => {
+      const targetSlot = override?.slotIndex ?? activeSlot;
+      if (!targetSlot) return;
+
+      const nextClubs = override?.clubs ?? clubs;
+      const nextStandings = override?.standings ?? standings;
+      const nextUserClubId = override?.userClubId ?? userClubId;
+      const nextClub =
+        nextClubs.find((c) => c.id === nextUserClubId) || userClub;
+      const nextRank =
+        nextStandings.findIndex((s) => s.clubId === nextUserClubId) + 1;
+
+      const payload: CareerSaveData = {
+        version: 2,
+        slotIndex: targetSlot,
+        managerName: override?.managerName ?? managerName,
+        userClubId: nextUserClubId,
+        division: nextClub.division,
+        clubName: nextClub.name,
+        clubShortName: nextClub.shortName,
+        clubAbbr: nextClub.abbr,
+        clubPrimaryColor: nextClub.primaryColor,
+        currentRound: override?.currentRound ?? currentRound,
+        dayOffset: override?.dayOffset ?? dayOffset,
+        isMatchDay: override?.isMatchDay ?? isMatchDay,
+        userRank: nextRank > 0 ? nextRank : 1,
+        cashBalance: nextClub.cashBalance,
+        boardConfidence: nextClub.boardConfidence,
+        savedAt: new Date().toISOString(),
+        clubs: nextClubs,
+        squad: override?.squad ?? squad,
+        standings: nextStandings,
+        fixtures: override?.fixtures ?? fixtures,
+        secondaryStandings:
+          override?.secondaryStandings ?? secondaryStandings,
+        secondaryFixtures: override?.secondaryFixtures ?? secondaryFixtures,
+        messages: override?.messages ?? messages,
+        matchState: override?.matchState ?? matchState,
+      };
+
+      saveCareerToSlot(payload);
+      setSlots(loadAllCareerSlots());
+      setHasUnsavedChanges(false);
+    },
+    [
+      activeSlot,
+      clubs,
+      standings,
+      userClubId,
+      userClub,
+      managerName,
+      currentRound,
+      dayOffset,
+      isMatchDay,
+      squad,
+      fixtures,
+      secondaryStandings,
+      secondaryFixtures,
+      messages,
+      matchState,
+    ]
+  );
+
+  const applyCareerSaveToState = (save: CareerSaveData) => {
+    const otherDivision: 'A' | 'B' = save.division === 'B' ? 'A' : 'B';
+    setActiveSlot(save.slotIndex);
+    setManagerName(save.managerName);
+    setUserClubId(save.userClubId);
+    setClubs(save.clubs);
+    setSquad(save.squad);
+    setStandings(save.standings);
+    setFixtures(save.fixtures);
+    setSecondaryStandings(
+      save.secondaryStandings || getInitialStandingsForDivision(otherDivision)
+    );
+    setSecondaryFixtures(
+      save.secondaryFixtures || generateLeagueSchedule('__none__', otherDivision)
+    );
+    setMessages(save.messages);
+    setCurrentRound(save.currentRound);
+    setDayOffset(save.dayOffset);
+    setIsMatchDay(save.isMatchDay);
+    setMatchState({ ...save.matchState, isRunning: false });
+    setInspectedPlayerId(null);
+    setActiveTab('inbox');
+    setHasUnsavedChanges(false);
+    setScreen('club');
+  };
+
+  const handleStartNewCareer = (
+    slotIndex: CareerSlotIndex,
+    clubId: string,
+    newManagerName: string
+  ) => {
+    const newSave = createNewCareerSave(slotIndex, clubId, newManagerName);
+    const stored = saveCareerToSlot(newSave);
+    setSlots(loadAllCareerSlots());
+    applyCareerSaveToState(stored);
+  };
+
+  const handleLoadCareer = (slotIndex: CareerSlotIndex) => {
+    const loaded = loadCareerSlot(slotIndex);
+    if (!loaded) return;
+    applyCareerSaveToState(loaded);
+  };
+
+  const handleDeleteCareer = (slotIndex: CareerSlotIndex) => {
+    deleteCareerSlot(slotIndex);
+    setSlots(loadAllCareerSlots());
+    if (activeSlot === slotIndex) {
+      setActiveSlot(null);
+    }
+  };
+
+  const handleImportCareer = (saveData: CareerSaveData) => {
+    saveCareerToSlot(saveData);
+    setSlots(loadAllCareerSlots());
+  };
+
+  const handleManualSave = () => {
+    if (!activeSlot) return;
+    persistCareer();
+    setSaveSuccessFlash(true);
+    if (saveTimerRef.current) {
+      window.clearTimeout(saveTimerRef.current);
+    }
+    saveTimerRef.current = window.setTimeout(() => {
+      setSaveSuccessFlash(false);
+    }, 2400);
+  };
+
+  const handleReturnToHub = () => {
+    if (activeSlot) {
+      setMatchState((prev) => ({ ...prev, isRunning: false }));
+      persistCareer({
+        matchState: { ...matchState, isRunning: false },
+      });
+    }
+    setSlots(loadAllCareerSlots());
+    setScreen('hub');
+  };
+
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) {
+        window.clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, []);
+
   // Sync body dataset state for testing & accessibility
   useEffect(() => {
+    if (screen === 'hub') {
+      document.body.dataset.state = 'title';
+      return;
+    }
     if (activeTab === 'match') {
       if (matchState.phase === 'FULL_TIME') {
         document.body.dataset.state = 'gameover';
@@ -131,7 +364,7 @@ export default function App() {
     } else {
       document.body.dataset.state = 'playing';
     }
-  }, [activeTab, matchState.phase, matchState.isRunning]);
+  }, [screen, activeTab, matchState.phase, matchState.isRunning]);
 
   // Process automatic round simulation & standings update when match reaches 90' FULL_TIME
   useEffect(() => {
@@ -158,6 +391,26 @@ export default function App() {
         roundCompletedFixtures
       );
 
+      const updatedSecondaryFixtures = simulateRoundFixtures(
+        secondaryFixtures,
+        matchState.roundNumber,
+        {
+          fixtureId: '__none__',
+          homeGoals: 0,
+          awayGoals: 0,
+          homeXG: 0,
+          awayXG: 0,
+        },
+        clubs
+      );
+      const secondaryRoundCompleted = updatedSecondaryFixtures.filter(
+        (f) => f.roundNumber === matchState.roundNumber
+      );
+      const newSecondaryStandings = updateStandingsWithRound(
+        secondaryStandings,
+        secondaryRoundCompleted
+      );
+
       const userGoals = matchState.isUserHome
         ? matchState.homeGoals
         : matchState.awayGoals;
@@ -168,22 +421,22 @@ export default function App() {
       const userDrew = userGoals === oppGoals;
 
       // Update club cash balance (gate receipts) and board confidence
-      const gateRevenue = matchState.isUserHome ? 3800000 : 950000;
+      const gateRevenue = matchState.isUserHome
+        ? Math.round((userClub.capacity * 0.85 * 90) / 100000) * 100000
+        : 950000;
       const confidenceDelta = userWon ? 4 : userDrew ? 1 : -4;
 
-      setClubs((prev) =>
-        prev.map((c) =>
-          c.id === USER_CLUB_ID
-            ? {
-                ...c,
-                cashBalance: c.cashBalance + gateRevenue,
-                boardConfidence: Math.min(
-                  100,
-                  Math.max(30, c.boardConfidence + confidenceDelta)
-                ),
-              }
-            : c
-        )
+      const updatedClubs = clubs.map((c) =>
+        c.id === userClubId
+          ? {
+              ...c,
+              cashBalance: c.cashBalance + gateRevenue,
+              boardConfidence: Math.min(
+                100,
+                Math.max(30, c.boardConfidence + confidenceDelta)
+              ),
+            }
+          : c
       );
 
       // Update player condition & season stats from match tokens
@@ -192,24 +445,22 @@ export default function App() {
         : matchState.awayTokens;
       const tokenMap = new Map(userTokens.map((t) => [t.id, t]));
 
-      setSquad((prev) =>
-        prev.map((p) => {
-          const tok = tokenMap.get(p.id);
-          if (!tok) return p;
-          return {
-            ...p,
-            condition: Math.max(55, Math.round(tok.condition)),
-            seasonStats: {
-              ...p.seasonStats,
-              matches: p.seasonStats.matches + 1,
-            },
-          };
-        })
-      );
+      const updatedSquad = squad.map((p) => {
+        const tok = tokenMap.get(p.id);
+        if (!tok) return p;
+        return {
+          ...p,
+          condition: Math.max(55, Math.round(tok.condition)),
+          seasonStats: {
+            ...p.seasonStats,
+            matches: p.seasonStats.matches + 1,
+          },
+        };
+      });
 
       // Add post-match report to Inbox
       const userPos =
-        newStandings.findIndex((s) => s.clubId === USER_CLUB_ID) + 1;
+        newStandings.findIndex((s) => s.clubId === userClubId) + 1;
       const resultLabel = userWon
         ? 'Vitória maiúscula'
         : userDrew
@@ -217,60 +468,73 @@ export default function App() {
         : 'Revés doloroso';
 
       const postMatchMsg: InboxMessage = {
-        id: `msg-post-r${matchState.roundNumber}`,
+        id: `msg-post-r${matchState.roundNumber}-${Date.now()}`,
         date: `${formatCalendarDate(dayOffset)} · 20:15`,
-        sender: 'Ricardo Valentim',
+        sender: 'Comissão Técnica',
         senderRole: 'Auxiliar Técnico',
-        subject: `Relatório Pós-Jogo (${matchState.roundNumber}ª Rodada): ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName}`,
+        subject: `Relatório (${matchState.roundNumber}ªR): ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName}`,
         category: 'Pós-Jogo',
         priority: userWon ? 'positive' : userDrew ? 'normal' : 'warning',
         read: false,
         body: [
-          `${resultLabel} na ${matchState.roundNumber}ª Rodada da Liga Nacional! O placar final de ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName} refletiu um índice de Gols Esperados (xG) de ${matchState.homeXG.toFixed(2)} contra ${matchState.awayXG.toFixed(2)}.`,
-          `Com os outros 9 jogos da rodada concluídos, o ${userClub.name} ocupa agora a ${userPos}ª colocação na tabela geral. A receita de bilheteria e matchday adicionou ${formatCompactBRL(gateRevenue)} aos cofres do clube.`,
+          `${resultLabel} na ${matchState.roundNumber}ª Rodada da Série ${userClub.division}. Placar: ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName} (xG: ${matchState.homeXG.toFixed(2)} vs ${matchState.awayXG.toFixed(2)}).`,
+          `${userClub.name} agora ocupa o ${userPos}º lugar. Bilheteria adicionada: ${formatCompactBRL(gateRevenue)}.`,
         ],
         bulletPoints: [
-          `Placar Final: ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName}`,
-          `Finalizações: ${matchState.homeShots} (${matchState.homeShotsOnTarget} no alvo) vs ${matchState.awayShots} (${matchState.awayShotsOnTarget} no alvo)`,
-          `Posição Atual na Liga Nacional: ${userPos}º lugar`,
+          `Placar: ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName}`,
+          `Finalizações: ${matchState.homeShots} (${matchState.homeShotsOnTarget} no gol) vs ${matchState.awayShots} (${matchState.awayShotsOnTarget} no gol)`,
+          `Posição na Série ${userClub.division}: ${userPos}º lugar`,
         ],
-        actionLabel: 'Conferir Tabela Atualizada (20 Clubes)',
+        actionLabel: 'Ver Tabela Completa',
         actionTargetTab: 'competitions',
       };
 
+      const updatedMessages = [postMatchMsg, ...messages];
+      const processedMatchState = { ...matchState, roundProcessed: true };
+
+      setClubs(updatedClubs);
+      setSquad(updatedSquad);
       setFixtures(updatedFixtures);
       setStandings(newStandings);
-      setMessages((prev) => [postMatchMsg, ...prev]);
-      setMatchState((prev) => ({ ...prev, roundProcessed: true }));
+      setSecondaryFixtures(updatedSecondaryFixtures);
+      setSecondaryStandings(newSecondaryStandings);
+      setMessages(updatedMessages);
+      setMatchState(processedMatchState);
+
+      // Auto-save post-match progress
+      persistCareer({
+        clubs: updatedClubs,
+        squad: updatedSquad,
+        fixtures: updatedFixtures,
+        standings: newStandings,
+        secondaryFixtures: updatedSecondaryFixtures,
+        secondaryStandings: newSecondaryStandings,
+        messages: updatedMessages,
+        matchState: processedMatchState,
+      });
     }
   }, [
-    matchState.phase,
-    matchState.roundProcessed,
-    matchState.roundNumber,
-    matchState.fixtureId,
-    matchState.homeGoals,
-    matchState.awayGoals,
-    matchState.homeXG,
-    matchState.awayXG,
-    matchState.homeShots,
-    matchState.awayShots,
-    matchState.homeShotsOnTarget,
-    matchState.awayShotsOnTarget,
-    matchState.isUserHome,
-    matchState.homeTokens,
-    matchState.awayTokens,
+    matchState,
     fixtures,
     clubs,
     standings,
+    secondaryFixtures,
+    secondaryStandings,
+    squad,
+    messages,
     dayOffset,
     homeClub.shortName,
     awayClub.shortName,
     userClub.name,
+    userClub.division,
+    userClub.capacity,
+    userClubId,
+    persistCareer,
   ]);
 
   // Live Match Simulation Timer
   useEffect(() => {
-    if (!matchState.isRunning || matchState.phase === 'FULL_TIME') return;
+    if (screen !== 'club' || !matchState.isRunning || matchState.phase === 'FULL_TIME') return;
 
     const intervalMs =
       matchState.speed === 4 ? 75 : matchState.speed === 2 ? 165 : 320;
@@ -284,6 +548,7 @@ export default function App() {
 
     return () => window.clearInterval(timer);
   }, [
+    screen,
     matchState.isRunning,
     matchState.speed,
     matchState.phase,
@@ -297,6 +562,7 @@ export default function App() {
     setMessages((prev) =>
       prev.map((m) => (m.id === id ? { ...m, read: true } : m))
     );
+    setHasUnsavedChanges(true);
   };
 
   const handleUpdateRoleDuty = (
@@ -311,6 +577,7 @@ export default function App() {
           : p
       )
     );
+    setHasUnsavedChanges(true);
   };
 
   const handleSwapPlayers = (playerAId: string, playerBId: string) => {
@@ -350,24 +617,43 @@ export default function App() {
 
       return updated;
     });
+    setHasUnsavedChanges(true);
   };
 
   const handleQuickSwapFatiguedPlayer = () => {
-    // Swap Caio Vinícius (p6) with Aníbal Moreno (p17)
-    const caio = squad.find((p) => p.id === 'p6');
-    const anibal = squad.find((p) => p.id === 'p17');
-    if (caio && anibal && caio.isStarter && !anibal.isStarter) {
-      handleSwapPlayers('p6', 'p17');
+    const medicalMsg = messages.find((m) => m.relatedPlayerId);
+    const fatiguedStarter =
+      (medicalMsg?.relatedPlayerId
+        ? squad.find((p) => p.id === medicalMsg.relatedPlayerId)
+        : undefined) ||
+      [...squad]
+        .filter((p) => p.isStarter)
+        .sort((a, b) => a.condition - b.condition)[0];
+
+    if (!fatiguedStarter || !fatiguedStarter.isStarter) return;
+
+    const preferredBackup =
+      squad.find(
+        (p) =>
+          !p.isStarter &&
+          !p.injured &&
+          p.sector === fatiguedStarter.sector &&
+          p.condition >= 85
+      ) ||
+      squad.find((p) => !p.isStarter && !p.injured);
+
+    if (preferredBackup) {
+      handleSwapPlayers(fatiguedStarter.id, preferredBackup.id);
     }
   };
 
   const handleAutoPickBestXI = () => {
-    const slots = FORMATIONS[userClub.formation];
+    const slotsDef = FORMATIONS[userClub.formation];
     const pool = [...squad].filter((p) => !p.injured);
     const chosenIds = new Set<string>();
     const slotAssignments = new Map<string, number>();
 
-    slots.forEach((slot) => {
+    slotsDef.forEach((slot) => {
       const candidates = pool
         .filter((p) => !chosenIds.has(p.id))
         .sort((a, b) => {
@@ -404,7 +690,7 @@ export default function App() {
       prev.map((p) => {
         if (slotAssignments.has(p.id)) {
           const sIdx = slotAssignments.get(p.id)!;
-          const slotDef = slots[sIdx];
+          const slotDef = slotsDef[sIdx];
           return {
             ...p,
             isStarter: true,
@@ -420,12 +706,13 @@ export default function App() {
         };
       })
     );
+    setHasUnsavedChanges(true);
   };
 
   const handleChangeFormation = (formation: FormationType) => {
-    const slots = FORMATIONS[formation];
+    const slotsDef = FORMATIONS[formation];
     setClubs((prev) =>
-      prev.map((c) => (c.id === USER_CLUB_ID ? { ...c, formation } : c))
+      prev.map((c) => (c.id === userClubId ? { ...c, formation } : c))
     );
 
     setSquad((prev) => {
@@ -441,7 +728,7 @@ export default function App() {
       const updated = prev.map((p) => {
         if (!p.isStarter) return p;
         const sIdx = starterSlotMap.get(p.id) ?? 0;
-        const slot = slots[sIdx] || slots[0];
+        const slot = slotsDef[sIdx] || slotsDef[0];
         return {
           ...p,
           slotIndex: sIdx,
@@ -465,12 +752,14 @@ export default function App() {
 
       return updated;
     });
+    setHasUnsavedChanges(true);
   };
 
   const handleChangeInstructions = (instructions: TeamInstructions) => {
     setClubs((prev) =>
-      prev.map((c) => (c.id === USER_CLUB_ID ? { ...c, instructions } : c))
+      prev.map((c) => (c.id === userClubId ? { ...c, instructions } : c))
     );
+    setHasUnsavedChanges(true);
   };
 
   const handleChangeLiveMentality = (mentality: MentalityType) => {
@@ -598,20 +887,30 @@ export default function App() {
       ...p,
       condition: Math.min(99, p.condition + 14),
     }));
+    const nextDayOffset = dayOffset + 6;
+    const nextMatch = createInitialMatchState(
+      nextRound,
+      nextRoundFixture,
+      nextHome,
+      nextAway,
+      recoveredSquad,
+      userClubId
+    );
+
     setSquad(recoveredSquad);
     setCurrentRound(nextRound);
-    setDayOffset((d) => d + 6);
+    setDayOffset(nextDayOffset);
     setIsMatchDay(false);
-    setMatchState(
-      createInitialMatchState(
-        nextRound,
-        nextRoundFixture,
-        nextHome,
-        nextAway,
-        recoveredSquad
-      )
-    );
+    setMatchState(nextMatch);
     setActiveTab('competitions');
+
+    persistCareer({
+      squad: recoveredSquad,
+      currentRound: nextRound,
+      dayOffset: nextDayOffset,
+      isMatchDay: false,
+      matchState: nextMatch,
+    });
   };
 
   const handlePrimaryHeaderAction = () => {
@@ -627,7 +926,6 @@ export default function App() {
     }
 
     if (!isMatchDay) {
-      // Advance calendar to Matchday!
       setDayOffset((d) => d + 1);
       setIsMatchDay(true);
       setSquad((prev) =>
@@ -636,10 +934,10 @@ export default function App() {
           condition: Math.min(99, p.condition + 3),
         }))
       );
+      setHasUnsavedChanges(true);
       return;
     }
 
-    // It is Matchday -> Go to live 2D Match Engine!
     setActiveTab('match');
   };
 
@@ -648,9 +946,24 @@ export default function App() {
     [squad, inspectedPlayerId]
   );
 
+  // Render Entry / Career Slot Selection Screen when on 'hub'
+  if (screen === 'hub') {
+    return (
+      <CareerHubScreen
+        slots={slots}
+        onStartNewCareer={handleStartNewCareer}
+        onLoadCareer={handleLoadCareer}
+        onDeleteCareer={handleDeleteCareer}
+        onImportCareer={handleImportCareer}
+        activeCareerSlot={activeSlot}
+        onReturnToActiveCareer={
+          activeSlot ? () => setScreen('club') : undefined
+        }
+      />
+    );
+  }
+
   const unreadInboxCount = messages.filter((m) => !m.read).length;
-  const userRank =
-    standings.findIndex((s) => s.clubId === USER_CLUB_ID) + 1;
 
   const primaryActionLabel =
     activeTab === 'match'
@@ -675,7 +988,7 @@ export default function App() {
         ? '2º Tempo'
         : 'Iniciar'
       : isMatchDay
-      ? `Ir p/ Jogo`
+      ? 'Ir p/ Jogo'
       : 'Continuar';
 
   const navItems = [
@@ -732,22 +1045,22 @@ export default function App() {
       {/* Fixed Sidebar Navigation (Desktop lg+) */}
       <aside className="hidden lg:flex w-64 bg-[#111319] border-r border-white/[0.07] flex-col justify-between shrink-0 select-none">
         <div>
-          {/* Brand Lockup (Reference Screen 1 Circular Electric Lime Crest) */}
+          {/* Brand Lockup */}
           <div className="h-16 px-5 border-b border-white/[0.07] flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-[#b5ff00] flex items-center justify-center font-display font-extrabold text-[#090a0f] text-base shadow-md">
               FM
             </div>
-            <div>
-              <div className="font-display text-lg font-extrabold uppercase tracking-tight text-white leading-none">
+            <div className="min-w-0">
+              <div className="font-display text-lg font-extrabold uppercase tracking-tight text-white leading-none truncate">
                 Prancheta Pro
               </div>
-              <div className="text-[11px] text-[#b5ff00] font-mono mt-0.5 leading-none">
-                Edição Brasil 2026
+              <div className="text-[11px] text-[#b5ff00] font-mono mt-0.5 leading-none truncate">
+                Slot 0{activeSlot || 1} · {managerName}
               </div>
             </div>
           </div>
 
-          {/* Navigation Menu with Electric Lime Pill Active State */}
+          {/* Navigation Menu */}
           <nav
             className="p-3.5 space-y-1.5"
             aria-label="Navegação principal do clube"
@@ -786,30 +1099,66 @@ export default function App() {
           </nav>
         </div>
 
-        {/* Sidebar Bottom Next Match Card */}
-        <div className="p-4 m-3.5 rounded-2xl border border-white/[0.07] bg-[#0b0c10] space-y-2">
-          <div className="flex items-center justify-between text-[11px] text-zinc-400">
-            <span>Próximo Compromisso</span>
-            <span className="font-mono font-bold text-[#b5ff00]">
-              {currentRound}ª Rodada
-            </span>
+        {/* Sidebar Bottom Next Match Card + Career Save / Menu Controls */}
+        <div className="p-3.5 space-y-2.5">
+          <div className="p-4 rounded-2xl border border-white/[0.07] bg-[#0b0c10] space-y-2">
+            <div className="flex items-center justify-between text-[11px] text-zinc-400">
+              <span>Próximo Compromisso</span>
+              <span className="font-mono font-bold text-[#b5ff00]">
+                {currentRound}ª Rodada
+              </span>
+            </div>
+            <div className="font-display text-base font-extrabold uppercase tracking-tight text-white truncate">
+              {homeClub.shortName} vs {awayClub.shortName}
+            </div>
+            <div className="text-[11px] text-zinc-400 truncate">
+              {homeClub.stadium}
+            </div>
           </div>
-          <div className="font-display text-base font-extrabold uppercase tracking-tight text-white truncate">
-            {homeClub.shortName} vs {awayClub.shortName}
-          </div>
-          <div className="text-[11px] text-zinc-400 truncate">
-            {homeClub.stadium}
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={handleManualSave}
+              className={`py-2.5 px-3 rounded-full text-xs font-bold border transition-colors flex items-center justify-center gap-1.5 ${
+                saveSuccessFlash
+                  ? 'bg-[#b5ff00] text-[#090a0f] border-[#b5ff00]'
+                  : 'bg-[#14171f] hover:bg-white/[0.08] text-white border-white/10'
+              }`}
+            >
+              {saveSuccessFlash ? (
+                <Check className="w-3.5 h-3.5" />
+              ) : (
+                <Save className="w-3.5 h-3.5 text-[#b5ff00]" />
+              )}
+              <span>{saveSuccessFlash ? 'Salvo!' : 'Salvar'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleReturnToHub}
+              className="py-2.5 px-3 rounded-full text-xs font-bold bg-[#14171f] hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-white/10 transition-colors flex items-center justify-center gap-1.5"
+            >
+              <FolderOpen className="w-3.5 h-3.5 text-[#b5ff00]" />
+              <span>Saves</span>
+            </button>
           </div>
         </div>
       </aside>
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Persistent Top Header Bar (h-12 on mobile, h-16 on desktop -> respects <15% mobile sticky cap) */}
+        {/* Persistent Top Header Bar */}
         <header className="sticky top-0 z-30 h-12 lg:h-16 bg-[#0b0c10]/95 border-b border-white/[0.07] px-3 sm:px-5 lg:px-6 flex items-center justify-between gap-2 sm:gap-4 shrink-0">
           {/* Left: Club Name & League Status */}
-          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-            <div className="w-7 h-7 lg:w-9 lg:h-9 rounded-full bg-[#b5ff00] flex items-center justify-center font-display font-extrabold text-xs lg:text-sm text-[#090a0f] shrink-0 shadow">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div
+              className="w-7 h-7 lg:w-9 lg:h-9 rounded-full flex items-center justify-center font-display font-extrabold text-xs lg:text-sm shrink-0 shadow border border-white/20"
+              style={{
+                backgroundColor: userClub.primaryColor,
+                color: getContrastTextColor(userClub.primaryColor),
+              }}
+            >
               {userClub.abbr}
             </div>
             <div className="min-w-0">
@@ -818,7 +1167,7 @@ export default function App() {
                   {userClub.name}
                 </h1>
                 <span className="text-xs text-zinc-400 font-mono hidden sm:inline whitespace-nowrap">
-                  · {userRank}º na Liga Nacional
+                  · {userRank}º na Série {userClub.division}
                 </span>
               </div>
               {/* Mobile compact status line */}
@@ -837,8 +1186,8 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right: Calendar Date, Cash Balance, Board Confidence (%) & Dynamic Action Pill Button */}
-          <div className="flex items-center gap-2 sm:gap-4 lg:gap-5 shrink-0">
+          {/* Right: Calendar Date, Cash Balance, Board Confidence, Save/Hub Actions & Primary Pill */}
+          <div className="flex items-center gap-1.5 sm:gap-3 lg:gap-4 shrink-0">
             {/* Data atual do calendário */}
             <div className="hidden md:flex items-center gap-2 text-xs">
               <Calendar className="w-4 h-4 text-[#b5ff00]" />
@@ -878,10 +1227,50 @@ export default function App() {
               </div>
             </div>
 
-            {/* Dynamic Primary Action Button ("Continuar" / "Ir para o Jogo") styled as Reference Lime Pill */}
+            {/* Quick Save Pill */}
+            <button
+              type="button"
+              onClick={handleManualSave}
+              aria-label="Salvar carreira"
+              title={
+                hasUnsavedChanges
+                  ? 'Salvar alterações da carreira'
+                  : 'Salvar carreira'
+              }
+              className={`px-2.5 py-1.5 lg:px-3.5 lg:py-2 rounded-full text-xs font-bold border transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+                saveSuccessFlash
+                  ? 'bg-[#b5ff00] text-[#090a0f] border-[#b5ff00]'
+                  : 'bg-[#14171f] hover:bg-white/[0.08] text-white border-white/10'
+              }`}
+            >
+              {saveSuccessFlash ? (
+                <Check className="w-3.5 h-3.5 shrink-0" />
+              ) : (
+                <Save className="w-3.5 h-3.5 text-[#b5ff00] shrink-0" />
+              )}
+              <span className="hidden sm:inline">
+                {saveSuccessFlash ? 'Salvo ✓' : 'Salvar'}
+              </span>
+              {hasUnsavedChanges && !saveSuccessFlash && (
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+              )}
+            </button>
+
+            {/* Mobile/Compact Return to Career Hub Button */}
+            <button
+              type="button"
+              onClick={handleReturnToHub}
+              aria-label="Voltar aos slots e saves"
+              title="Voltar ao menu de saves"
+              className="lg:hidden p-1.5 rounded-full bg-[#14171f] hover:bg-white/[0.08] text-zinc-300 border border-white/10 transition-colors"
+            >
+              <FolderOpen className="w-3.5 h-3.5 text-[#b5ff00]" />
+            </button>
+
+            {/* Dynamic Primary Action Button */}
             <button
               onClick={handlePrimaryHeaderAction}
-              className="px-3.5 py-1.5 lg:px-5 lg:py-2.5 rounded-full text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1.5 lg:gap-2 whitespace-nowrap shadow-md"
+              className="px-3 py-1.5 lg:px-5 lg:py-2.5 rounded-full text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1.5 lg:gap-2 whitespace-nowrap shadow-md"
             >
               <Play className="w-3 h-3 lg:w-3.5 lg:h-3.5 fill-current shrink-0" />
               <span className="hidden sm:inline">{primaryActionLabel}</span>
@@ -964,6 +1353,10 @@ export default function App() {
               clubs={clubs}
               fixtures={fixtures}
               currentRound={currentRound}
+              userClubId={userClubId}
+              userDivision={userClub.division}
+              secondaryStandings={secondaryStandings}
+              secondaryFixtures={secondaryFixtures}
             />
           )}
 
@@ -973,7 +1366,7 @@ export default function App() {
         </main>
       </div>
 
-      {/* Mobile Bottom Capsule Navigation Bar (< lg) matching Reference Screen 1 & 3 */}
+      {/* Mobile Bottom Capsule Navigation Bar (< lg) */}
       <nav
         aria-label="Navegação mobile"
         className="lg:hidden fixed bottom-2 left-2.5 right-2.5 z-40 h-14 bg-[#14171f]/95 border border-white/10 rounded-full grid grid-cols-6 items-center px-1.5 shadow-2xl select-none"

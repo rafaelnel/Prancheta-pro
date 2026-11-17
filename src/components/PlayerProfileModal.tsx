@@ -183,11 +183,14 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
 
           <div className="flex items-center gap-3 shrink-0 ml-auto">
             <div className="text-right pr-3 border-r border-white/[0.08] whitespace-nowrap">
-              <div className="text-[10px] sm:text-[11px] text-zinc-400 whitespace-nowrap">
-                Nível Geral (1-20)
+              <div
+                className="text-[10px] sm:text-[11px] text-zinc-400 whitespace-nowrap"
+                title="Escala 60 a 99 (99 = Pelé ou Messi no auge)"
+              >
+                OVR (60–99)
               </div>
               <div className="font-display text-2xl sm:text-3xl font-extrabold tabular-nums text-[#b5ff00]">
-                {overall.toFixed(1)}
+                {overall}
               </div>
             </div>
             <button

@@ -648,11 +648,11 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
                       <span className={cond.text}>
                         {Math.round(res.condition)}%
                       </span>{' '}
-                      · Geral:{' '}
+                      · OVR{' '}
                       {calculatePlayerOverall(
                         res.attributes,
                         res.position
-                      ).toFixed(1)}
+                      )}
                     </div>
                   </button>
                 );

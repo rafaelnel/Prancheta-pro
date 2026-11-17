@@ -205,7 +205,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
                 >
                   VEL
                 </th>
-                <th className="py-3.5 px-2 font-medium text-right">Geral</th>
+                <th className="py-3.5 px-2 font-medium text-right" title="Overall (60-99 · 99 = Auge Histórico)">OVR</th>
                 <th className="py-3.5 px-3 font-medium text-right">Valor</th>
                 <th className="py-3.5 px-3 font-medium text-right">Salário</th>
                 <th className="py-3.5 px-3 font-medium text-right">Ações</th>
@@ -346,7 +346,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
                       {player.attributes.velocidade}
                     </td>
                     <td className="py-2.5 px-2 text-right font-mono tabular-nums font-bold text-[#b5ff00] whitespace-nowrap">
-                      {ovr.toFixed(1)}
+                      {ovr}
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono tabular-nums text-zinc-300 whitespace-nowrap">
                       {formatCompactBRL(player.marketValue)}

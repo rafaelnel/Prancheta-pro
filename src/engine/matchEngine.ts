@@ -1,5 +1,5 @@
 import { FORMATIONS, getRoleById } from '../data/tacticsData';
-import { USER_CLUB_ID } from '../data/initialDatabase';
+import { REAL_SQUAD_SEEDS, USER_CLUB_ID } from '../data/initialDatabase';
 import {
   Club,
   FormationType,
@@ -17,7 +17,19 @@ import {
 } from '../types/football';
 
 /**
- * Calculates a player's overall rating (1.0 to 20.0) weighted by their natural position.
+ * Converts an internal 1..20 weighted rating to the 60..99 OVR scale,
+ * where 99 represents peak Pelé / Messi (all key attributes at 20).
+ */
+export function rawScoreToOvr(rawScore: number): number {
+  const normalized = Math.max(12.0, Math.min(20.0, rawScore));
+  const t = (normalized - 12.0) / 8.0;
+  const ovr = 60 + Math.pow(t, 1.42) * 39;
+  return Math.min(99, Math.max(60, Math.round(ovr)));
+}
+
+/**
+ * Calculates a player's overall rating (60 to 99) weighted by their natural position.
+ * Peak 99 corresponds to 20 across all position-relevant attributes (Pelé / Messi at their peak).
  */
 export function calculatePlayerOverall(
   attr: PlayerAttributes,
@@ -137,8 +149,8 @@ export function calculatePlayerOverall(
     totalWeight += weight ?? 1;
   }
 
-  if (totalWeight === 0) return 12.0;
-  return Number((weightedSum / totalWeight).toFixed(1));
+  if (totalWeight === 0) return 64;
+  return rawScoreToOvr(weightedSum / totalWeight);
 }
 
 /**
@@ -187,7 +199,7 @@ export function calculateTeamTacticalRatings(
 } {
   const starters = squad.filter((p) => p.isStarter);
   if (starters.length === 0) {
-    return { attack: 14, midfield: 14, defense: 14, synergy: 75 };
+    return { attack: 70, midfield: 70, defense: 70, synergy: 75 };
   }
 
   const defPlayers = starters.filter((p) => p.sector === 'DEF' || p.sector === 'GOL');
@@ -195,16 +207,16 @@ export function calculateTeamTacticalRatings(
   const attPlayers = starters.filter((p) => p.sector === 'ATA');
 
   const avgSectorRating = (players: Player[]) => {
-    if (players.length === 0) return 14.0;
+    if (players.length === 0) return 70;
     const total = players.reduce((acc, p) => {
       const base = calculatePlayerOverall(p.attributes, p.position);
-      const condFactor = 0.75 + (p.condition / 100) * 0.25;
+      const condFactor = 0.90 + (p.condition / 100) * 0.10;
       const dutyBonus =
         p.assignedDuty === 'Atacar' && p.sector === 'ATA'
-          ? 0.3
+          ? 1.2
           : p.assignedDuty === 'Defender' && p.sector === 'DEF'
-          ? 0.3
-          : 0.15;
+          ? 1.2
+          : 0.5;
       return acc + base * condFactor + dutyBonus;
     }, 0);
     return total / players.length;
@@ -214,28 +226,28 @@ export function calculateTeamTacticalRatings(
   let midfield = avgSectorRating(midPlayers);
   let defense = avgSectorRating(defPlayers);
 
-  // Apply Collective Instructions modifiers
+  // Apply Collective Instructions modifiers (60..99 scale)
   if (instructions.mentality === 'Ofensiva') {
-    attack += 0.6;
-    midfield += 0.2;
-    defense -= 0.4;
+    attack += 2.5;
+    midfield += 0.8;
+    defense -= 1.8;
   } else if (instructions.mentality === 'Cautelosa') {
-    defense += 0.6;
-    midfield += 0.1;
-    attack -= 0.4;
+    defense += 2.5;
+    midfield += 0.4;
+    attack -= 1.8;
   }
 
   if (instructions.defensiveLine === 'Alta') {
-    midfield += 0.3;
-    defense -= 0.15;
+    midfield += 1.2;
+    defense -= 0.7;
   } else if (instructions.defensiveLine === 'Baixa') {
-    defense += 0.3;
-    attack -= 0.2;
+    defense += 1.2;
+    attack -= 0.8;
   }
 
   if (instructions.pressingIntensity === 'Extrema') {
-    midfield += 0.35;
-    attack += 0.2;
+    midfield += 1.4;
+    attack += 0.8;
   }
 
   const suitabilityTotal = starters.reduce((acc, p) => {
@@ -249,9 +261,9 @@ export function calculateTeamTacticalRatings(
   );
 
   return {
-    attack: Number(Math.min(19.5, Math.max(10, attack)).toFixed(1)),
-    midfield: Number(Math.min(19.5, Math.max(10, midfield)).toFixed(1)),
-    defense: Number(Math.min(19.5, Math.max(10, defense)).toFixed(1)),
+    attack: Math.min(99, Math.max(60, Math.round(attack))),
+    midfield: Math.min(99, Math.max(60, Math.round(midfield))),
+    defense: Math.min(99, Math.max(60, Math.round(defense))),
     synergy,
   };
 }
@@ -318,20 +330,26 @@ export function buildPitchTokens(
           rating: 6.8,
         };
       } else {
+        const oppSeeds = REAL_SQUAD_SEEDS[club.id];
+        const oppStarter = oppSeeds && oppSeeds[idx];
         const starMatch = club.starPlayers[idx % Math.max(1, club.starPlayers.length)];
         const fallback = OPPONENT_DEFAULT_NAMES[idx] || {
           name: `Jogador ${idx + 1}`,
           pos: slot.label,
           sector: slot.sector,
         };
-        const displayName =
-          idx >= 7 && starMatch ? starMatch.name : fallback.name;
+        const displayName = oppStarter
+          ? oppStarter[1]
+          : idx >= 7 && starMatch
+          ? starMatch.name
+          : fallback.name;
         const parts = displayName.split(' ');
-        const shortName = parts[parts.length - 1];
+        const shortName = parts.length > 1 ? parts[parts.length - 1] : displayName;
         const jerseyNumbers = [1, 2, 3, 4, 6, 5, 8, 10, 7, 11, 9];
+        const shirtNumber = oppStarter ? oppStarter[0] : (jerseyNumbers[idx] || idx + 1);
         return {
           id: `${club.id}-p${idx + 1}`,
-          number: jerseyNumbers[idx] || idx + 1,
+          number: shirtNumber,
           name: displayName,
           shortName,
           team,
@@ -360,9 +378,10 @@ export function createInitialMatchState(
   fixture: RoundFixture,
   homeClub: Club,
   awayClub: Club,
-  userSquad: Player[]
+  userSquad: Player[],
+  userClubId: string = USER_CLUB_ID
 ): LiveMatchState {
-  const isUserHome = fixture.homeClubId === USER_CLUB_ID;
+  const isUserHome = fixture.homeClubId === userClubId;
   const { homeTokens, awayTokens } = buildPitchTokens(
     homeClub,
     awayClub,
@@ -414,7 +433,7 @@ export function createInitialMatchState(
         minute: 0,
         type: 'INICIO',
         team: 'NEUTRAL',
-        text: `Tudo pronto no ${homeClub.stadium}! ${homeClub.name} e ${awayClub.name} perfilados para a ${roundNumber}ª Rodada da Liga Nacional.`,
+        text: `Tudo pronto no ${homeClub.stadium}! ${homeClub.name} e ${awayClub.name} perfilados para a ${roundNumber}ª Rodada do Brasileirão Série ${homeClub.division}.`,
       },
     ],
     homeTokens,
@@ -480,11 +499,11 @@ export function stepMatchMinute(
   const awayMid = !state.isUserHome ? userTactics.midfield : awayClub.overallMidfield;
   const awayDef = !state.isUserHome ? userTactics.defense : awayClub.overallDefense;
 
-  // Possession check with slight home advantage (+0.35)
-  const homeMidStrength = homeMid + 0.35;
+  // Possession check with slight home advantage (+1.5 on 60..99 scale)
+  const homeMidStrength = homeMid + 1.5;
   const awayMidStrength = awayMid;
   const homePossessionProb =
-    0.5 + (homeMidStrength - awayMidStrength) * 0.045;
+    0.5 + (homeMidStrength - awayMidStrength) * 0.011;
   const homeHasBall = rng() < Math.min(0.72, Math.max(0.28, homePossessionProb));
   const possessingTeam: 'HOME' | 'AWAY' = homeHasBall ? 'HOME' : 'AWAY';
 
@@ -500,7 +519,7 @@ export function stepMatchMinute(
   let activeZone: 'DEF_HOME' | 'MIDFIELD' | 'DEF_AWAY' = 'MIDFIELD';
   const zoneRoll = rng();
   if (homeHasBall) {
-    const attackPushProb = 0.42 + (homeAtt - awayDef) * 0.03;
+    const attackPushProb = 0.42 + (homeAtt - awayDef) * 0.007;
     activeZone =
       zoneRoll < attackPushProb
         ? 'DEF_AWAY'
@@ -508,7 +527,7 @@ export function stepMatchMinute(
         ? 'MIDFIELD'
         : 'DEF_HOME';
   } else {
-    const awayPushProb = 0.40 + (awayAtt - homeDef) * 0.03;
+    const awayPushProb = 0.40 + (awayAtt - homeDef) * 0.007;
     activeZone =
       zoneRoll < awayPushProb
         ? 'DEF_HOME'
@@ -663,7 +682,7 @@ export function stepMatchMinute(
     (!homeHasBall && activeZone === 'DEF_HOME');
 
   const shotThreshold = isAttackingThird
-    ? 0.34 + ((homeHasBall ? homeAtt - awayDef : awayAtt - homeDef) * 0.015)
+    ? 0.34 + ((homeHasBall ? homeAtt - awayDef : awayAtt - homeDef) * 0.0035)
     : 0.08;
 
   if (eventRoll < shotThreshold) {
@@ -691,7 +710,7 @@ export function stepMatchMinute(
     const outcomeRoll = rng();
     const goalProb =
       shotXG * 0.92 +
-      ((homeHasBall ? homeAtt - awayDef : awayAtt - homeDef) * 0.012);
+      ((homeHasBall ? homeAtt - awayDef : awayAtt - homeDef) * 0.003);
 
     if (outcomeRoll < Math.min(0.42, Math.max(0.09, goalProb))) {
       // GOAL!
@@ -913,15 +932,15 @@ export function simulateRoundFixtures(
     const away = clubMap.get(f.awayClubId);
 
     const homePower = home
-      ? (home.overallAttack + home.overallMidfield + home.overallDefense) / 3 + 0.45
-      : 14.5;
+      ? (home.overallAttack + home.overallMidfield + home.overallDefense) / 3 + 2.0
+      : 72;
     const awayPower = away
       ? (away.overallAttack + away.overallMidfield + away.overallDefense) / 3
-      : 14.2;
+      : 71;
 
     const diff = homePower - awayPower;
-    const expectedHome = Math.max(0.4, 1.35 + diff * 0.35);
-    const expectedAway = Math.max(0.3, 1.05 - diff * 0.3);
+    const expectedHome = Math.max(0.4, 1.35 + diff * 0.08);
+    const expectedAway = Math.max(0.3, 1.05 - diff * 0.07);
 
     // Sample goals around expected values
     const sampleGoals = (lambda: number) => {

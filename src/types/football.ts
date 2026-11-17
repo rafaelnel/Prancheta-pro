@@ -129,6 +129,7 @@ export interface OpponentStarPlayer {
 
 export interface Club {
   id: string;
+  division: 'A' | 'B';
   name: string;
   shortName: string;
   abbr: string;
@@ -165,6 +166,7 @@ export interface StandingsRow {
 
 export interface RoundFixture {
   id: string;
+  division?: 'A' | 'B';
   roundNumber: number;
   homeClubId: string;
   awayClubId: string;
@@ -297,3 +299,33 @@ export interface LiveMatchState {
   maxSubstitutions: number;
   roundProcessed: boolean;
 }
+
+export type CareerSlotIndex = 1 | 2 | 3 | 4;
+
+export interface CareerSaveData {
+  version: number;
+  slotIndex: CareerSlotIndex;
+  managerName: string;
+  userClubId: string;
+  division: 'A' | 'B';
+  clubName: string;
+  clubShortName: string;
+  clubAbbr: string;
+  clubPrimaryColor: string;
+  currentRound: number;
+  dayOffset: number;
+  isMatchDay: boolean;
+  userRank: number;
+  cashBalance: number;
+  boardConfidence: number;
+  savedAt: string;
+  clubs: Club[];
+  squad: Player[];
+  standings: StandingsRow[];
+  fixtures: RoundFixture[];
+  secondaryStandings?: StandingsRow[];
+  secondaryFixtures?: RoundFixture[];
+  messages: InboxMessage[];
+  matchState: LiveMatchState;
+}
+

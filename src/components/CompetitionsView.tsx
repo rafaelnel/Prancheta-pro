@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { Trophy, Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
-import { USER_CLUB_ID } from '../data/initialDatabase';
+import {
+  USER_CLUB_ID,
+  generateLeagueSchedule,
+  getInitialStandingsForDivision,
+} from '../data/initialDatabase';
 import { Club, RoundFixture, StandingsRow } from '../types/football';
 
 interface CompetitionsViewProps {
@@ -8,6 +12,10 @@ interface CompetitionsViewProps {
   clubs: Club[];
   fixtures: RoundFixture[];
   currentRound: number;
+  userClubId?: string;
+  userDivision?: 'A' | 'B';
+  secondaryStandings?: StandingsRow[];
+  secondaryFixtures?: RoundFixture[];
 }
 
 export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
@@ -15,59 +23,105 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
   clubs,
   fixtures,
   currentRound,
+  userClubId = USER_CLUB_ID,
+  userDivision = 'A',
+  secondaryStandings,
+  secondaryFixtures,
 }) => {
+  const [viewedDivision, setViewedDivision] = useState<'A' | 'B'>(userDivision);
   const [selectedRound, setSelectedRound] = useState<number>(currentRound);
-  const [zoneFilter, setZoneFilter] = useState<'ALL' | 'G4' | 'SULA' | 'Z4'>(
+  const [zoneFilter, setZoneFilter] = useState<'ALL' | 'TOP4' | 'MID' | 'Z4'>(
     'ALL'
   );
   const clubMap = new Map(clubs.map((c) => [c.id, c]));
 
-  const roundMatches = fixtures.filter((f) => f.roundNumber === selectedRound);
+  const isViewingUserDivision = viewedDivision === userDivision;
+  const activeStandings = isViewingUserDivision
+    ? standings
+    : secondaryStandings && secondaryStandings.length > 0
+    ? secondaryStandings
+    : getInitialStandingsForDivision(viewedDivision);
+  const activeFixtures = isViewingUserDivision
+    ? fixtures
+    : secondaryFixtures && secondaryFixtures.length > 0
+    ? secondaryFixtures
+    : generateLeagueSchedule('__none__', viewedDivision);
 
-  const filteredStandings = standings
+  const roundMatches = activeFixtures.filter(
+    (f) => f.roundNumber === selectedRound
+  );
+
+  const filteredStandings = activeStandings
     .map((row, idx) => ({ row, pos: idx + 1 }))
     .filter(({ pos }) => {
-      if (zoneFilter === 'G4') return pos <= 4;
-      if (zoneFilter === 'SULA') return pos >= 5 && pos <= 12;
+      if (zoneFilter === 'TOP4') return pos <= 4;
+      if (zoneFilter === 'MID') return pos >= 5 && pos <= 12;
       if (zoneFilter === 'Z4') return pos >= 17;
       return true;
     });
 
   return (
     <div className="space-y-5">
-      {/* Reference Screen 1 Exact Header: "Explorar / LIGAS" + League Filter Pills */}
+      {/* Header + Division Toggle + Zone Filter Pills */}
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pb-2 border-b border-white/[0.07]">
         <div>
           <span className="block text-xs sm:text-sm font-normal text-zinc-400 tracking-wide">
-            Explorar competições
+            Brasileirão 2026
           </span>
           <h2 className="font-display text-3xl sm:text-5xl font-extrabold uppercase tracking-tight text-white leading-[0.95] mt-0.5">
-            LIGA NACIONAL
+            SÉRIE {viewedDivision}
           </h2>
         </div>
 
-        {/* Segmented Filter Pills (Reference Screen 1 motif) */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          {(
-            [
-              { id: 'ALL', label: 'Série A (20 Clubes)' },
-              { id: 'G4', label: 'G-4 Continental' },
-              { id: 'SULA', label: 'Sul-Americana' },
-              { id: 'Z4', label: 'Zona Z-4' },
-            ] as const
-          ).map((pill) => (
-            <button
-              key={pill.id}
-              onClick={() => setZoneFilter(pill.id)}
-              className={`px-4 py-2 rounded-full text-xs font-bold transition-colors whitespace-nowrap ${
-                zoneFilter === pill.id
-                  ? 'bg-[#b5ff00] text-[#090a0f] shadow-sm'
-                  : 'bg-[#151821] text-zinc-400 hover:text-white border border-white/[0.07]'
-              }`}
-            >
-              {pill.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Division Selector */}
+          <div className="flex items-center gap-1 bg-[#14171f] p-1 rounded-full border border-white/[0.08]">
+            {(['A', 'B'] as const).map((div) => (
+              <button
+                key={div}
+                onClick={() => {
+                  setViewedDivision(div);
+                  setZoneFilter('ALL');
+                }}
+                className={`px-4 py-1.5 rounded-full text-xs font-extrabold transition-colors whitespace-nowrap ${
+                  viewedDivision === div
+                    ? 'bg-[#b5ff00] text-[#090a0f]'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                Série {div} {div === userDivision ? '★' : ''}
+              </button>
+            ))}
+          </div>
+
+          {/* Zone Filter Pills */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(
+              [
+                { id: 'ALL', label: 'Todos (20)' },
+                {
+                  id: 'TOP4',
+                  label: viewedDivision === 'A' ? 'G-4 Continental' : 'G-4 Acesso',
+                },
+                ...(viewedDivision === 'A'
+                  ? [{ id: 'MID' as const, label: 'Sul-Americana' }]
+                  : []),
+                { id: 'Z4', label: 'Zona Z-4' },
+              ] as const
+            ).map((pill) => (
+              <button
+                key={pill.id}
+                onClick={() => setZoneFilter(pill.id)}
+                className={`px-3.5 py-2 rounded-full text-xs font-bold transition-colors whitespace-nowrap ${
+                  zoneFilter === pill.id
+                    ? 'bg-white text-[#090a0f] shadow-sm'
+                    : 'bg-[#151821] text-zinc-400 hover:text-white border border-white/[0.07]'
+                }`}
+              >
+                {pill.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -78,19 +132,25 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
             <div className="flex items-center gap-2.5">
               <Trophy className="w-4 h-4 text-[#b5ff00]" />
               <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white">
-                Classificação Oficial — Série A
+                Classificação — Série {viewedDivision}
               </h3>
             </div>
 
-            <div className="flex items-center gap-4 text-[11px] text-zinc-400">
+            <div className="flex flex-wrap items-center gap-4 text-[11px] text-zinc-400">
               <span className="text-[#b5ff00] font-semibold">
-                ■ 1º–4º Copa Continental
+                {viewedDivision === 'A'
+                  ? '■ 1º–4º Copa Continental'
+                  : '■ 1º–4º Acesso à Série A'}
               </span>
-              <span className="text-white font-semibold">
-                ■ 5º–8º Sul-Americana
-              </span>
+              {viewedDivision === 'A' && (
+                <span className="text-white font-semibold">
+                  ■ 5º–8º Sul-Americana
+                </span>
+              )}
               <span className="text-rose-400 font-semibold">
-                ■ 17º–20º Rebaixamento
+                {viewedDivision === 'A'
+                  ? '■ 17º–20º Rebaixamento'
+                  : '■ 17º–20º Série C'}
               </span>
             </div>
           </div>
@@ -118,7 +178,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
               <tbody className="divide-y divide-white/[0.05] font-mono tabular-nums">
                 {filteredStandings.map(({ row, pos }) => {
                   const club = clubMap.get(row.clubId);
-                  const isUser = row.clubId === USER_CLUB_ID;
+                  const isUser = row.clubId === userClubId;
                   const pct =
                     row.played > 0
                       ? Math.round((row.points / (row.played * 3)) * 100)
@@ -127,7 +187,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                   const posColor =
                     pos <= 4
                       ? 'text-[#b5ff00] font-bold'
-                      : pos <= 8
+                      : viewedDivision === 'A' && pos <= 8
                       ? 'text-white font-semibold'
                       : pos >= 17
                       ? 'text-rose-400 font-semibold'
@@ -146,7 +206,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                       <td className="py-2.5 px-3 font-sans">
                         <div className="flex items-center gap-2">
                           <span
-                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/15"
                             style={{
                               backgroundColor: club?.primaryColor || '#b5ff00',
                             }}
@@ -228,7 +288,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-[#b5ff00]" />
               <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white">
-                Jogos da {selectedRound}ª Rodada
+                {selectedRound}ª Rodada · Série {viewedDivision}
               </h3>
             </div>
 

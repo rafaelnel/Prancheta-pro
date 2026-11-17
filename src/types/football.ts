@@ -1,0 +1,299 @@
+export type NaturalPosition =
+  | 'GOL'
+  | 'ZAG'
+  | 'LD'
+  | 'LE'
+  | 'VOL'
+  | 'MC'
+  | 'MEI'
+  | 'PD'
+  | 'PE'
+  | 'ATA';
+
+export type PositionSector = 'GOL' | 'DEF' | 'MEI' | 'ATA';
+
+export type MoraleState =
+  | 'Exuberante'
+  | 'Muito Alta'
+  | 'Bom'
+  | 'Regular'
+  | 'Baixa';
+
+export type TacticalDuty = 'Defender' | 'Apoiar' | 'Atacar';
+
+export type FormationType = '4-3-3' | '4-2-3-1' | '4-4-2' | '3-5-2';
+
+export type MentalityType = 'Cautelosa' | 'Equilibrada' | 'Ofensiva';
+export type DefensiveLineType = 'Baixa' | 'Padrão' | 'Alta';
+export type PressingIntensityType = 'Contida' | 'Moderada' | 'Extrema';
+export type PassingStyleType = 'Curto e Apoiado' | 'Misto' | 'Direto Vertical';
+
+export interface TechnicalAttributes {
+  passe: number;
+  finalizacao: number;
+  drible: number;
+  desarme: number;
+  primeiroToque: number;
+  cruzamento: number;
+}
+
+export interface MentalAttributes {
+  decisoes: number;
+  visaoDeJogo: number;
+  compostura: number;
+  semBola: number;
+  posicionamento: number;
+  indiceDeTrabalho: number;
+}
+
+export interface PhysicalAttributes {
+  velocidade: number;
+  aceleracao: number;
+  resistencia: number;
+  forca: number;
+  impulsao: number;
+  agilidade: number;
+}
+
+export interface PlayerAttributes
+  extends TechnicalAttributes,
+    MentalAttributes,
+    PhysicalAttributes {}
+
+export type AttributeKey = keyof PlayerAttributes;
+
+export interface TacticalRoleDefinition {
+  id: string;
+  name: string;
+  shortCode: string;
+  sector: PositionSector;
+  allowedDuties: TacticalDuty[];
+  description: string;
+  keyAttributes: AttributeKey[];
+  secondaryAttributes: AttributeKey[];
+}
+
+export interface PlayerSeasonStats {
+  matches: number;
+  goals: number;
+  assists: number;
+  yellowCards: number;
+  avgRating: number;
+}
+
+export interface Player {
+  id: string;
+  number: number;
+  name: string;
+  age: number;
+  nationality: string;
+  position: NaturalPosition;
+  sector: PositionSector;
+  condition: number; // 0 to 100%
+  morale: MoraleState;
+  marketValue: number; // in BRL
+  salary: number; // monthly in BRL
+  attributes: PlayerAttributes;
+  isStarter: boolean;
+  slotIndex: number | null; // 0..10 for starters, null for bench
+  assignedRole: string; // TacticalRoleDefinition.id
+  assignedDuty: TacticalDuty;
+  injured: boolean;
+  injuryNote?: string;
+  seasonStats: PlayerSeasonStats;
+}
+
+export interface FormationSlot {
+  slotIndex: number; // 0..10
+  label: NaturalPosition;
+  sector: PositionSector;
+  defaultRole: string;
+  defaultDuty: TacticalDuty;
+  x: number; // 0..100 (left to right on horizontal pitch, or bottom to top)
+  y: number; // 0..100
+}
+
+export interface TeamInstructions {
+  mentality: MentalityType;
+  defensiveLine: DefensiveLineType;
+  pressingIntensity: PressingIntensityType;
+  passingStyle: PassingStyleType;
+}
+
+export interface OpponentStarPlayer {
+  name: string;
+  position: NaturalPosition;
+  overall: number;
+  highlightAttribute: string;
+}
+
+export interface Club {
+  id: string;
+  name: string;
+  shortName: string;
+  abbr: string;
+  city: string;
+  state: string;
+  primaryColor: string;
+  secondaryColor: string;
+  stadium: string;
+  capacity: number;
+  reputation: number; // 1 to 100
+  overallAttack: number; // 1 to 20 scale (e.g., 14.8)
+  overallMidfield: number; // 1 to 20 scale
+  overallDefense: number; // 1 to 20 scale
+  cashBalance: number;
+  wageBudget: number;
+  boardConfidence: number; // 0 to 100%
+  formation: FormationType;
+  instructions: TeamInstructions;
+  starPlayers: OpponentStarPlayer[];
+}
+
+export interface StandingsRow {
+  clubId: string;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDifference: number;
+  points: number;
+  form: ('V' | 'E' | 'D')[];
+}
+
+export interface RoundFixture {
+  id: string;
+  roundNumber: number;
+  homeClubId: string;
+  awayClubId: string;
+  homeGoals: number | null;
+  awayGoals: number | null;
+  homeXG?: number;
+  awayXG?: number;
+  played: boolean;
+  isUserMatch: boolean;
+}
+
+export type NavigationTab =
+  | 'inbox'
+  | 'squad'
+  | 'tactics'
+  | 'match'
+  | 'competitions'
+  | 'finances';
+
+export interface InboxMessage {
+  id: string;
+  date: string;
+  sender: string;
+  senderRole: string;
+  subject: string;
+  category:
+    | 'Tática'
+    | 'Departamento Médico'
+    | 'Diretoria'
+    | 'Olheiro'
+    | 'Imprensa'
+    | 'Pós-Jogo';
+  priority: 'normal' | 'warning' | 'danger' | 'positive';
+  body: string[];
+  bulletPoints?: string[];
+  read: boolean;
+  actionLabel?: string;
+  actionTargetTab?: NavigationTab;
+  relatedPlayerId?: string;
+}
+
+export type MatchEventType =
+  | 'GOL'
+  | 'DEFESA'
+  | 'CHUTE_FORA'
+  | 'TRAVE'
+  | 'CARTAO_AMARELO'
+  | 'SUBSTITUICAO'
+  | 'PASSE_CHAVE'
+  | 'DESARME'
+  | 'INICIO'
+  | 'INTERVALO'
+  | 'FIM';
+
+export interface MatchEvent {
+  id: string;
+  minute: number;
+  type: MatchEventType;
+  team: 'HOME' | 'AWAY' | 'NEUTRAL';
+  text: string;
+  scorerName?: string;
+  assistName?: string;
+  xGAdded?: number;
+}
+
+export interface PitchTokenState {
+  id: string;
+  number: number;
+  name: string;
+  shortName: string;
+  team: 'HOME' | 'AWAY';
+  sector: PositionSector;
+  baseX: number; // 0..100 horizontal pitch coordinate
+  baseY: number; // 0..100 vertical pitch coordinate
+  x: number;
+  y: number;
+  hasBall: boolean;
+  roleCode: string;
+  condition: number;
+  rating: number;
+}
+
+export type MatchPhase =
+  | 'PRE_MATCH'
+  | 'FIRST_HALF'
+  | 'HALF_TIME'
+  | 'SECOND_HALF'
+  | 'FULL_TIME';
+
+export interface LiveMatchState {
+  roundNumber: number;
+  fixtureId: string;
+  minute: number;
+  subTick: number; // 0..3 within a minute for smooth 2D movement
+  isRunning: boolean;
+  speed: 1 | 2 | 4;
+  phase: MatchPhase;
+  homeClubId: string;
+  awayClubId: string;
+  isUserHome: boolean;
+  homeGoals: number;
+  awayGoals: number;
+  homePossessionTicks: number;
+  awayPossessionTicks: number;
+  homeShots: number;
+  awayShots: number;
+  homeShotsOnTarget: number;
+  awayShotsOnTarget: number;
+  homeXG: number;
+  awayXG: number;
+  homeCorners: number;
+  awayCorners: number;
+  homePasses: number;
+  awayPasses: number;
+  homeFouls: number;
+  awayFouls: number;
+  ballX: number;
+  ballY: number;
+  ballTargetX: number;
+  ballTargetY: number;
+  ballCarrierTeam: 'HOME' | 'AWAY';
+  ballCarrierNumber: number;
+  ballCarrierName: string;
+  activeZone: 'DEF_HOME' | 'MIDFIELD' | 'DEF_AWAY';
+  lastActionLabel: string;
+  events: MatchEvent[];
+  homeTokens: PitchTokenState[];
+  awayTokens: PitchTokenState[];
+  substitutionsMade: number;
+  maxSubstitutions: number;
+  roundProcessed: boolean;
+}

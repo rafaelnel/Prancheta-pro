@@ -1,0 +1,6 @@
+{
+  "name": "Prancheta Pro — Football Manager",
+  "description": "Simulador analítico de gestão esportiva e tática de futebol com motor de partida 2D em tempo real, prancheta tática avançada e liga nacional com 20 clubes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,16 +1,16 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   Mail,
   MailOpen,
-  AlertTriangle,
   CheckCircle2,
   ArrowRight,
-  Shield,
   Swords,
   Trophy,
   UserCheck,
-  Calendar,
   MapPin,
+  Sliders,
+  Users,
+  Play,
 } from 'lucide-react';
 import {
   Club,
@@ -56,7 +56,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   isMatchDay,
   onGoToMatch,
 }) => {
-  const [selectedMsgId, setSelectedMsgId] = useState<string>(
+  const [selectedMsgId, setSelectedMsgId] = React.useState<string>(
     messages[0]?.id || ''
   );
 
@@ -85,6 +85,36 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   // Check if Caio Vinícius (p6) is still starter
   const caioInStartingXI = squad.find((p) => p.id === 'p6')?.isStarter ?? false;
 
+  // Compute match probability tiles (Home / Draw / Away) based on tactical ratings
+  const userOverall =
+    (userRatings.attack + userRatings.midfield + userRatings.defense) / 3;
+  const oppOverall = opponentClub
+    ? (opponentClub.overallAttack +
+        opponentClub.overallMidfield +
+        opponentClub.overallDefense) /
+      3
+    : 15;
+  const diff = userOverall - oppOverall + (nextFixture?.homeClubId === USER_CLUB_ID ? 0.45 : -0.2);
+  const userWinProb = Math.min(68, Math.max(22, Math.round(44 + diff * 9)));
+  const drawProb = 24;
+  const oppWinProb = Math.max(10, 100 - userWinProb - drawProb);
+
+  // Other featured fixtures of the round for the reference-inspired dual-tone cards
+  const otherRoundFixtures = clubs.length
+    ? [
+        {
+          home: clubMap.get('c3') || clubs[2],
+          away: clubMap.get('c4') || clubs[3],
+          time: '18:30',
+        },
+        {
+          home: clubMap.get('c5') || clubs[4],
+          away: clubMap.get('c6') || clubs[5],
+          time: '20:30',
+        },
+      ]
+    : [];
+
   const renderComparisonBar = (
     label: string,
     userVal: number,
@@ -92,34 +122,34 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   ) => {
     const userAdvantage = userVal >= oppVal;
     return (
-      <div className="space-y-1">
+      <div className="space-y-1.5">
         <div className="flex items-center justify-between text-xs">
           <span
-            className={`font-mono tabular-nums font-semibold ${
-              userAdvantage ? 'text-emerald-400' : 'text-slate-300'
+            className={`font-mono tabular-nums font-bold ${
+              userAdvantage ? 'text-[#b5ff00]' : 'text-zinc-300'
             }`}
           >
             {userVal.toFixed(1)}
           </span>
-          <span className="text-slate-400">{label} (1-20)</span>
+          <span className="text-zinc-400 text-[11px]">{label} (1-20)</span>
           <span
-            className={`font-mono tabular-nums font-semibold ${
-              !userAdvantage ? 'text-amber-400' : 'text-slate-300'
+            className={`font-mono tabular-nums font-bold ${
+              !userAdvantage ? 'text-amber-400' : 'text-zinc-300'
             }`}
           >
             {oppVal.toFixed(1)}
           </span>
         </div>
         <div className="grid grid-cols-2 gap-1.5 h-2">
-          <div className="bg-slate-800 rounded-l overflow-hidden flex justify-end">
+          <div className="bg-[#0b0c10] rounded-l-full overflow-hidden flex justify-end">
             <div
-              className="bg-emerald-500 h-full rounded-l"
+              className="bg-[#b5ff00] h-full rounded-l-full"
               style={{ width: `${(userVal / 20) * 100}%` }}
             />
           </div>
-          <div className="bg-slate-800 rounded-r overflow-hidden">
+          <div className="bg-[#0b0c10] rounded-r-full overflow-hidden">
             <div
-              className="bg-amber-500 h-full rounded-r"
+              className="bg-zinc-200 h-full rounded-r-full"
               style={{ width: `${(oppVal / 20) * 100}%` }}
             />
           </div>
@@ -129,391 +159,568 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   };
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
-      {/* Left + Center: Interactive Inbox (7 columns on xl) */}
-      <div className="xl:col-span-7 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-950/40">
-          <div className="flex items-center gap-2.5">
-            <Mail className="w-4 h-4 text-emerald-400" />
-            <h2 className="text-sm font-semibold text-slate-100">
-              Caixa de Entrada da Comissão Técnica
-            </h2>
-          </div>
-          <span className="text-xs text-slate-400 font-mono tabular-nums">
-            {messages.filter((m) => !m.read).length} não lidas ·{' '}
-            {messages.length} mensagens
+    <div className="space-y-6">
+      {/* Editorial Section Header + Matchday Preparation Stepper */}
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pb-2 border-b border-white/[0.07]">
+        <div>
+          <span className="block text-xs sm:text-sm font-normal text-zinc-400 tracking-wide">
+            Explorar comando técnico
           </span>
+          <h2 className="font-display text-3xl sm:text-5xl font-extrabold uppercase tracking-tight text-white leading-[0.95] mt-0.5">
+            CENTRAL DO CLUBE
+          </h2>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-12 flex-1 min-h-[460px]">
-          {/* Message List */}
-          <div className="md:col-span-5 border-b md:border-b-0 md:border-r border-slate-800 divide-y divide-slate-800/70 overflow-y-auto max-h-[520px]">
-            {messages.map((msg) => {
-              const isSelected = selectedMessage?.id === msg.id;
-              return (
-                <button
-                  key={msg.id}
-                  onClick={() => handleSelectMessage(msg.id)}
-                  className={`w-full text-left p-3.5 transition-colors flex flex-col gap-1 ${
-                    isSelected
-                      ? 'bg-slate-800/90'
-                      : 'hover:bg-slate-800/40 bg-transparent'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2 text-[11px]">
-                    <span
-                      className={`font-medium ${
-                        msg.priority === 'warning'
-                          ? 'text-amber-400'
-                          : msg.priority === 'danger'
-                          ? 'text-rose-400'
-                          : msg.priority === 'positive'
-                          ? 'text-emerald-400'
-                          : 'text-slate-400'
-                      }`}
-                    >
-                      {msg.category}
-                    </span>
-                    <span className="text-slate-400 font-mono tabular-nums">
-                      {msg.date.split('·')[0]}
-                    </span>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    {!msg.read ? (
-                      <Mail className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
-                    ) : (
-                      <MailOpen className="w-3.5 h-3.5 text-slate-500 shrink-0 mt-0.5" />
-                    )}
-                    <span
-                      className={`text-xs line-clamp-2 ${
-                        !msg.read
-                          ? 'font-semibold text-slate-100'
-                          : 'font-normal text-slate-300'
-                      }`}
-                    >
-                      {msg.subject}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-400 pl-5 truncate">
-                    {msg.sender} · {msg.senderRole}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Message Reading Pane */}
-          <div className="md:col-span-7 p-5 flex flex-col justify-between bg-slate-950/25">
-            {selectedMessage ? (
-              <div className="space-y-4">
-                <div className="pb-3.5 border-b border-slate-800">
-                  <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                    <span>
-                      {selectedMessage.category} · {selectedMessage.senderRole}
-                    </span>
-                    <span className="font-mono tabular-nums">
-                      {selectedMessage.date}
-                    </span>
-                  </div>
-                  <h3 className="text-base font-bold text-slate-100 leading-snug">
-                    {selectedMessage.subject}
-                  </h3>
-                  <div className="text-xs text-emerald-400 mt-1">
-                    Remetente: {selectedMessage.sender}
-                  </div>
-                </div>
-
-                <div className="space-y-3 text-xs text-slate-300 leading-relaxed">
-                  {selectedMessage.body.map((paragraph, i) => (
-                    <p key={i}>{paragraph}</p>
-                  ))}
-                </div>
-
-                {selectedMessage.bulletPoints &&
-                  selectedMessage.bulletPoints.length > 0 && (
-                    <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-3.5 space-y-2">
-                      <div className="text-[11px] font-semibold text-slate-300">
-                        Pontos de Atenção da Comissão:
-                      </div>
-                      <ul className="space-y-1.5 text-xs text-slate-300">
-                        {selectedMessage.bulletPoints.map((pt, idx) => (
-                          <li key={idx} className="flex items-start gap-2">
-                            <span className="text-emerald-400 font-mono">·</span>
-                            <span>{pt}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-              </div>
-            ) : null}
-
-            {/* Contextual Action Footer inside Inbox Message */}
-            {selectedMessage && (
-              <div className="pt-4 mt-5 border-t border-slate-800 flex flex-wrap items-center justify-between gap-2">
-                {selectedMessage.relatedPlayerId === 'p6' && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => {
-                        const p = squad.find(
-                          (pl) => pl.id === selectedMessage.relatedPlayerId
-                        );
-                        if (p) onInspectPlayer(p);
-                      }}
-                      className="px-3 py-2 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors whitespace-nowrap"
-                    >
-                      Ver Ficha de Caio Vinícius
-                    </button>
-                    {caioInStartingXI ? (
-                      <button
-                        onClick={onQuickSwapFatiguedPlayer}
-                        className="px-3 py-2 rounded-lg text-xs font-medium bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold transition-colors flex items-center gap-1.5 whitespace-nowrap"
-                      >
-                        <UserCheck className="w-3.5 h-3.5" />
-                        Poupar Caio (Escalar Aníbal Moreno)
-                      </button>
-                    ) : (
-                      <span className="text-xs text-emerald-400 flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5" />
-                        Aníbal Moreno já escalado como titular
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {selectedMessage.actionLabel &&
-                  selectedMessage.actionTargetTab && (
-                    <button
-                      onClick={() =>
-                        onNavigate(selectedMessage.actionTargetTab!)
-                      }
-                      className="ml-auto px-3.5 py-2 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors flex items-center gap-1.5 whitespace-nowrap"
-                    >
-                      <span>{selectedMessage.actionLabel}</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-              </div>
-            )}
-          </div>
+        {/* Guided User Workflow Stepper (1. Inbox -> 2. Táticas/Elenco -> 3. Jogo 2D) */}
+        <div
+          className="flex flex-wrap items-center gap-1.5 bg-[#151821] p-1.5 rounded-full border border-white/[0.07]"
+          aria-label="Fluxo de preparação da rodada"
+        >
+          <button
+            onClick={() => onNavigate('inbox')}
+            className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-[#b5ff00] text-[#090a0f] transition-colors flex items-center gap-1.5 whitespace-nowrap"
+          >
+            <Mail className="w-3.5 h-3.5" />
+            <span>1. Dossiê & Alertas</span>
+          </button>
+          <button
+            onClick={() => onNavigate('tactics')}
+            className="px-3.5 py-1.5 rounded-full text-xs font-semibold text-zinc-300 hover:text-white hover:bg-white/[0.06] transition-colors flex items-center gap-1.5 whitespace-nowrap"
+          >
+            <Sliders className="w-3.5 h-3.5 text-[#b5ff00]" />
+            <span>2. Prancheta ({userClub.formation})</span>
+          </button>
+          <button
+            onClick={() => onNavigate('squad')}
+            className="px-3.5 py-1.5 rounded-full text-xs font-semibold text-zinc-300 hover:text-white hover:bg-white/[0.06] transition-colors flex items-center gap-1.5 whitespace-nowrap"
+          >
+            <Users className="w-3.5 h-3.5 text-[#b5ff00]" />
+            <span>3. Elenco ({squad.length})</span>
+          </button>
+          <button
+            onClick={onGoToMatch}
+            className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-[#090a0f] hover:bg-[#b5ff00] transition-colors flex items-center gap-1.5 whitespace-nowrap"
+          >
+            <Play className="w-3.5 h-3.5 fill-current" />
+            <span>4. Jogo ao Vivo ({currentRound}ªR)</span>
+          </button>
         </div>
       </div>
 
-      {/* Right Column: Next Opponent Comparison Card + League Table Summary (5 columns on xl) */}
-      <div className="xl:col-span-5 space-y-5">
-        {/* Next Opponent Comparison Card */}
-        {opponentClub && nextFixture && (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Swords className="w-4 h-4 text-emerald-400" />
-                <h2 className="text-sm font-semibold text-slate-100">
-                  Próximo Adversário · {currentRound}ª Rodada
-                </h2>
-              </div>
-              <span className="text-xs text-slate-400 font-mono tabular-nums">
-                {isMatchDay ? 'HOJE · DIA DE JOGO' : 'Em preparação'}
-              </span>
-            </div>
-
-            {/* Teams Header */}
-            <div className="grid grid-cols-3 items-center text-center bg-slate-950/60 border border-slate-800 rounded-lg p-3.5">
-              <div>
-                <div
-                  className="w-9 h-9 mx-auto rounded-lg flex items-center justify-center font-bold font-mono text-xs text-slate-950 mb-1"
-                  style={{ backgroundColor: userClub.primaryColor }}
-                >
-                  {userClub.abbr}
-                </div>
-                <div className="text-xs font-bold text-slate-100 truncate">
-                  {userClub.shortName}
-                </div>
-                <div className="text-[11px] text-emerald-400 font-mono tabular-nums">
-                  {userStandingIndex + 1}º lugar · {userClub.formation}
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <div className="text-xs font-mono text-slate-400">VS</div>
-                <div className="text-[11px] text-slate-400 flex items-center justify-center gap-1">
-                  <MapPin className="w-3 h-3 text-slate-500" />
-                  <span className="truncate">
-                    {nextFixture.homeClubId === USER_CLUB_ID ? 'Casa' : 'Fora'}
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <div
-                  className="w-9 h-9 mx-auto rounded-lg flex items-center justify-center font-bold font-mono text-xs text-white mb-1"
-                  style={{ backgroundColor: opponentClub.primaryColor }}
-                >
-                  {opponentClub.abbr}
-                </div>
-                <div className="text-xs font-bold text-slate-100 truncate">
-                  {opponentClub.shortName}
-                </div>
-                <div className="text-[11px] text-amber-400 font-mono tabular-nums">
-                  {opponentStandingIndex + 1}º lugar · {opponentClub.formation}
-                </div>
-              </div>
-            </div>
-
-            {/* Strength Comparison Bars */}
-            <div className="space-y-2.5 pt-1">
-              {renderComparisonBar(
-                'Poder Ofensivo',
-                userRatings.attack,
-                opponentClub.overallAttack
-              )}
-              {renderComparisonBar(
-                'Domínio de Meio-Campo',
-                userRatings.midfield,
-                opponentClub.overallMidfield
-              )}
-              {renderComparisonBar(
-                'Solidez Defensiva',
-                userRatings.defense,
-                opponentClub.overallDefense
-              )}
-            </div>
-
-            {/* Key Opponent Players */}
-            <div className="pt-2 border-t border-slate-800">
-              <div className="text-xs text-slate-400 mb-2">
-                Destaques do {opponentClub.shortName} (Mentalidade{' '}
-                <strong className="text-slate-200">
-                  {opponentClub.instructions.mentality}
-                </strong>
-                ):
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {opponentClub.starPlayers.slice(0, 2).map((sp, i) => (
-                  <div
-                    key={i}
-                    className="bg-slate-950/60 border border-slate-800/80 rounded-lg px-3 py-2 flex items-center justify-between text-xs"
-                  >
-                    <div>
-                      <div className="font-semibold text-slate-200">
-                        {sp.name}
-                      </div>
-                      <div className="text-[11px] text-slate-400">
-                        {sp.position} · {sp.highlightAttribute}
-                      </div>
-                    </div>
-                    <span className="font-mono tabular-nums font-bold text-amber-400">
-                      {sp.overall.toFixed(1)}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+        {/* Left Column: Reference-Inspired Dual-Tone Match Ticket Card + G-6 Standings (5 cols) */}
+        <div className="xl:col-span-5 space-y-6">
+          {opponentClub && nextFixture && (
+            <div className="space-y-4">
+              {/* Signature Dual-Tone Match Ticket Card (Exact visual motif from reference Screen 1) */}
+              <div className="rounded-[28px] overflow-hidden border border-white/10 shadow-2xl bg-[#14171f]">
+                {/* Upper Half: Electric Lime Gradient Header with Club Badges & Black VS Circle */}
+                <div className="bg-gradient-to-b from-[#b5ff00] to-[#8fd400] px-5 pt-5 pb-6 text-[#090a0f] relative">
+                  <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase tracking-wider text-[#090a0f]/75 mb-3">
+                    <span>Liga Nacional · {currentRound}ª Rodada</span>
+                    <span>
+                      {isMatchDay ? 'HOJE · DIA DE JOGO' : 'PRÓXIMO CONFRONTO'}
                     </span>
                   </div>
-                ))}
-              </div>
-            </div>
 
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2.5 pt-1">
-              <button
-                onClick={() => onNavigate('tactics')}
-                className="flex-1 py-2 px-3 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors whitespace-nowrap"
-              >
-                Ajustar Prancheta
-              </button>
-              <button
-                onClick={onGoToMatch}
-                className="flex-1 py-2 px-3 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors whitespace-nowrap"
-              >
-                Ir para o Jogo ({currentRound}ª Rodada)
-              </button>
-            </div>
-          </div>
-        )}
+                  <div className="grid grid-cols-3 items-center text-center">
+                    {/* User Club */}
+                    <div className="flex flex-col items-center">
+                      <div className="w-14 h-14 rounded-2xl bg-[#0b0c10] text-[#b5ff00] flex items-center justify-center font-display font-extrabold text-xl shadow-lg border-2 border-[#0b0c10]/20">
+                        {userClub.abbr}
+                      </div>
+                      <div className="font-display font-extrabold text-base uppercase tracking-tight leading-tight mt-2 text-[#090a0f]">
+                        {userClub.shortName}
+                      </div>
+                      <div className="text-[11px] font-mono font-bold text-[#090a0f]/75">
+                        {userStandingIndex + 1}º · {userClub.formation}
+                      </div>
+                    </div>
 
-        {/* Mini League Table Summary */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-800 bg-slate-950/40">
-            <div className="flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-emerald-400" />
-              <h2 className="text-sm font-semibold text-slate-100">
-                Resumo da Tabela (G-6)
-              </h2>
-            </div>
-            <button
-              onClick={() => onNavigate('competitions')}
-              className="text-xs text-emerald-400 hover:text-emerald-300 font-medium transition-colors"
-            >
-              Ver 20 Clubes →
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-slate-800 text-[11px] text-slate-400 bg-slate-950/30">
-                  <th className="py-2.5 px-3 font-medium">#</th>
-                  <th className="py-2.5 px-2 font-medium">Clube</th>
-                  <th className="py-2.5 px-2 font-medium text-right">P</th>
-                  <th className="py-2.5 px-2 font-medium text-right">J</th>
-                  <th className="py-2.5 px-2 font-medium text-right">V</th>
-                  <th className="py-2.5 px-2 font-medium text-right">SG</th>
-                  <th className="py-2.5 px-3 font-medium text-right">Forma</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 font-mono tabular-nums">
-                {standings.slice(0, 6).map((row, index) => {
-                  const club = clubMap.get(row.clubId);
-                  const isUser = row.clubId === USER_CLUB_ID;
-                  const isOpponent = row.clubId === opponentClub?.id;
-                  return (
-                    <tr
-                      key={row.clubId}
-                      className={
-                        isUser
-                          ? 'bg-emerald-950/40 text-emerald-200 font-semibold'
-                          : isOpponent
-                          ? 'bg-amber-950/25 text-amber-200'
-                          : 'hover:bg-slate-800/40 text-slate-300'
-                      }
-                    >
-                      <td className="py-2 px-3 text-slate-400">{index + 1}</td>
-                      <td className="py-2 px-2 font-sans truncate max-w-[140px]">
-                        {club?.shortName || row.clubId}
-                      </td>
-                      <td className="py-2 px-2 text-right font-bold text-slate-100">
-                        {row.points}
-                      </td>
-                      <td className="py-2 px-2 text-right text-slate-400">
-                        {row.played}
-                      </td>
-                      <td className="py-2 px-2 text-right text-slate-400">
-                        {row.won}
-                      </td>
-                      <td className="py-2 px-2 text-right text-slate-300">
-                        {row.goalDifference > 0
-                          ? `+${row.goalDifference}`
-                          : row.goalDifference}
-                      </td>
-                      <td className="py-2 px-3 text-right">
-                        <span className="inline-flex items-center gap-1">
-                          {row.form.slice(-3).map((res, idx) => (
-                            <span
-                              key={idx}
-                              className={`text-[10px] font-bold ${
-                                res === 'V'
-                                  ? 'text-emerald-400'
-                                  : res === 'E'
-                                  ? 'text-amber-400'
-                                  : 'text-rose-400'
-                              }`}
-                            >
-                              {res}
-                            </span>
-                          ))}
+                    {/* Center VS Circle */}
+                    <div className="flex flex-col items-center justify-center">
+                      <div className="w-11 h-11 rounded-full bg-[#0b0c10] text-white font-display font-extrabold text-sm flex items-center justify-center shadow-md">
+                        VS
+                      </div>
+                      <div className="text-[11px] font-semibold text-[#090a0f]/80 mt-1.5 flex items-center gap-1">
+                        <MapPin className="w-3 h-3" />
+                        <span>
+                          {nextFixture.homeClubId === USER_CLUB_ID
+                            ? 'Casa'
+                            : 'Fora'}
                         </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      </div>
+                    </div>
+
+                    {/* Opponent Club */}
+                    <div className="flex flex-col items-center">
+                      <div
+                        className="w-14 h-14 rounded-2xl flex items-center justify-center font-display font-extrabold text-xl text-white shadow-lg border-2 border-white/30"
+                        style={{ backgroundColor: opponentClub.primaryColor }}
+                      >
+                        {opponentClub.abbr}
+                      </div>
+                      <div className="font-display font-extrabold text-base uppercase tracking-tight leading-tight mt-2 text-[#090a0f]">
+                        {opponentClub.shortName}
+                      </div>
+                      <div className="text-[11px] font-mono font-bold text-[#090a0f]/75">
+                        {opponentStandingIndex + 1}º · {opponentClub.formation}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Lower Half: Crisp Light Ticket Stub with Kickoff Time & Metadata */}
+                <div className="bg-gradient-to-b from-white to-zinc-200 px-5 py-4 text-[#090a0f] flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-semibold">
+                      Competição
+                    </div>
+                    <div className="font-display font-extrabold text-base uppercase tracking-tight text-[#090a0f]">
+                      SÉRIE A · R{currentRound}
+                    </div>
+                  </div>
+
+                  <div className="text-center px-3 border-x border-zinc-300/80">
+                    <div className="font-display font-extrabold text-3xl leading-none tracking-tight text-[#090a0f] tabular-nums">
+                      16:00
+                    </div>
+                    <div className="text-[11px] font-medium text-zinc-600 mt-0.5">
+                      {userClub.stadium}
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-semibold">
+                      Favoritismo
+                    </div>
+                    <div className="font-display font-extrabold text-base uppercase tracking-tight text-[#090a0f] tabular-nums">
+                      1X2 {userClub.abbr}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Tactical Comparison & Probability Block inside Dark Card Base */}
+                <div className="p-5 space-y-4 bg-[#14171f]">
+                  {/* 3-Tile Probability Strip (Reference Screen 2 motif: Lime / White / Soft Lime) */}
+                  <div>
+                    <div className="flex items-center justify-between text-xs text-zinc-400 mb-2">
+                      <span>Projeção Tática & Forma Recente</span>
+                      <span className="font-mono text-[11px] text-zinc-300">
+                        {userClub.abbr} vs {opponentClub.abbr}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-[#b5ff00] text-[#090a0f] rounded-2xl p-3 flex flex-col justify-between min-h-[68px]">
+                        <span className="text-[10px] font-mono font-bold uppercase opacity-75">
+                          Vitória {userClub.abbr}
+                        </span>
+                        <span className="font-display text-2xl font-extrabold tabular-nums leading-none">
+                          {userWinProb}%
+                        </span>
+                      </div>
+                      <div className="bg-white text-[#090a0f] rounded-2xl p-3 flex flex-col justify-between min-h-[68px]">
+                        <span className="text-[10px] font-mono font-bold uppercase text-zinc-500">
+                          Empate
+                        </span>
+                        <span className="font-display text-2xl font-extrabold tabular-nums leading-none">
+                          {drawProb}%
+                        </span>
+                      </div>
+                      <div className="bg-[#d9ff7a] text-[#090a0f] rounded-2xl p-3 flex flex-col justify-between min-h-[68px]">
+                        <span className="text-[10px] font-mono font-bold uppercase opacity-75">
+                          Vitória {opponentClub.abbr}
+                        </span>
+                        <span className="font-display text-2xl font-extrabold tabular-nums leading-none">
+                          {oppWinProb}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Strength Comparison Bars */}
+                  <div className="space-y-2.5 pt-2 border-t border-white/[0.07]">
+                    {renderComparisonBar(
+                      'Poder Ofensivo',
+                      userRatings.attack,
+                      opponentClub.overallAttack
+                    )}
+                    {renderComparisonBar(
+                      'Domínio de Meio-Campo',
+                      userRatings.midfield,
+                      opponentClub.overallMidfield
+                    )}
+                    {renderComparisonBar(
+                      'Solidez Defensiva',
+                      userRatings.defense,
+                      opponentClub.overallDefense
+                    )}
+                  </div>
+
+                  {/* Key Opponent Players */}
+                  <div className="pt-2 border-t border-white/[0.07]">
+                    <div className="text-xs text-zinc-400 mb-2">
+                      Destaques do {opponentClub.shortName} (Mentalidade{' '}
+                      <strong className="text-white">
+                        {opponentClub.instructions.mentality}
+                      </strong>
+                      ):
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {opponentClub.starPlayers.slice(0, 2).map((sp, i) => (
+                        <div
+                          key={i}
+                          className="bg-[#0b0c10] border border-white/[0.06] rounded-xl px-3 py-2 flex items-center justify-between text-xs"
+                        >
+                          <div className="min-w-0">
+                            <div className="font-semibold text-zinc-100 truncate">
+                              {sp.name}
+                            </div>
+                            <div className="text-[11px] text-zinc-400">
+                              {sp.position} · {sp.highlightAttribute}
+                            </div>
+                          </div>
+                          <span className="font-mono tabular-nums font-bold text-[#b5ff00] ml-2">
+                            {sp.overall.toFixed(1)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="grid grid-cols-2 gap-2.5 pt-1">
+                    <button
+                      onClick={() => onNavigate('tactics')}
+                      className="py-3 px-4 rounded-2xl text-xs font-bold bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-100 border border-white/10 transition-colors whitespace-nowrap"
+                    >
+                      Ajustar Prancheta
+                    </button>
+                    <button
+                      onClick={onGoToMatch}
+                      className="py-3 px-4 rounded-2xl text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors whitespace-nowrap shadow-md"
+                    >
+                      Ir para o Jogo ({currentRound}ªR)
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Secondary Silver Match Ticket Card (Reference Screen 1 stacked card motif) */}
+              {otherRoundFixtures[0] && (
+                <div className="rounded-[24px] bg-gradient-to-b from-zinc-200 to-zinc-300 text-[#090a0f] p-4 shadow-lg flex items-center justify-between">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className="w-10 h-10 rounded-xl flex items-center justify-center font-display font-extrabold text-sm text-white shrink-0"
+                      style={{
+                        backgroundColor:
+                          otherRoundFixtures[0].home.primaryColor,
+                      }}
+                    >
+                      {otherRoundFixtures[0].home.abbr}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-display font-extrabold text-sm uppercase truncate">
+                        {otherRoundFixtures[0].home.shortName}
+                      </div>
+                      <div className="text-[11px] text-zinc-600 font-mono">
+                        Destaque da Rodada
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="w-8 h-8 rounded-full bg-[#0b0c10] text-white font-display font-bold text-xs flex items-center justify-center shrink-0 mx-2">
+                    VS
+                  </div>
+
+                  <div className="flex items-center gap-3 min-w-0 text-right">
+                    <div className="min-w-0">
+                      <div className="font-display font-extrabold text-sm uppercase truncate">
+                        {otherRoundFixtures[0].away.shortName}
+                      </div>
+                      <div className="text-[11px] text-zinc-600 font-mono">
+                        {otherRoundFixtures[0].time}
+                      </div>
+                    </div>
+                    <div
+                      className="w-10 h-10 rounded-xl flex items-center justify-center font-display font-extrabold text-sm text-white shrink-0"
+                      style={{
+                        backgroundColor:
+                          otherRoundFixtures[0].away.primaryColor,
+                      }}
+                    >
+                      {otherRoundFixtures[0].away.abbr}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Mini League Table Summary */}
+          <div className="bg-[#14171f] border border-white/[0.07] rounded-[24px] overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
+              <div className="flex items-center gap-2">
+                <Trophy className="w-4 h-4 text-[#b5ff00]" />
+                <h3 className="font-display text-lg font-extrabold uppercase tracking-tight text-white">
+                  Resumo da Tabela (G-6)
+                </h3>
+              </div>
+              <button
+                onClick={() => onNavigate('competitions')}
+                className="text-xs text-[#b5ff00] hover:underline font-semibold transition-colors"
+              >
+                Ver 20 Clubes →
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-white/[0.07] text-[11px] text-zinc-400 bg-[#0b0c10]/60">
+                    <th className="py-2.5 px-3 font-medium">#</th>
+                    <th className="py-2.5 px-2 font-medium">Clube</th>
+                    <th className="py-2.5 px-2 font-medium text-right">P</th>
+                    <th className="py-2.5 px-2 font-medium text-right">J</th>
+                    <th className="py-2.5 px-2 font-medium text-right">V</th>
+                    <th className="py-2.5 px-2 font-medium text-right">SG</th>
+                    <th className="py-2.5 px-3 font-medium text-right">
+                      Forma
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.05] font-mono tabular-nums">
+                  {standings.slice(0, 6).map((row, index) => {
+                    const club = clubMap.get(row.clubId);
+                    const isUser = row.clubId === USER_CLUB_ID;
+                    const isOpponent = row.clubId === opponentClub?.id;
+                    return (
+                      <tr
+                        key={row.clubId}
+                        className={
+                          isUser
+                            ? 'bg-[#b5ff00]/10 text-[#b5ff00] font-semibold'
+                            : isOpponent
+                            ? 'bg-white/[0.05] text-white'
+                            : 'hover:bg-white/[0.03] text-zinc-300'
+                        }
+                      >
+                        <td className="py-2.5 px-3 text-zinc-400">
+                          {index + 1}
+                        </td>
+                        <td className="py-2.5 px-2 font-sans truncate max-w-[140px]">
+                          {club?.shortName || row.clubId}
+                        </td>
+                        <td className="py-2.5 px-2 text-right font-bold text-white">
+                          {row.points}
+                        </td>
+                        <td className="py-2.5 px-2 text-right text-zinc-400">
+                          {row.played}
+                        </td>
+                        <td className="py-2.5 px-2 text-right text-zinc-400">
+                          {row.won}
+                        </td>
+                        <td className="py-2.5 px-2 text-right text-zinc-300">
+                          {row.goalDifference > 0
+                            ? `+${row.goalDifference}`
+                            : row.goalDifference}
+                        </td>
+                        <td className="py-2.5 px-3 text-right">
+                          <span className="inline-flex items-center gap-1">
+                            {row.form.slice(-3).map((res, idx) => (
+                              <span
+                                key={idx}
+                                className={`text-[10px] font-bold ${
+                                  res === 'V'
+                                    ? 'text-[#b5ff00]'
+                                    : res === 'E'
+                                    ? 'text-amber-400'
+                                    : 'text-rose-400'
+                                }`}
+                              >
+                                {res}
+                              </span>
+                            ))}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column: Interactive Coaching Inbox (7 columns on xl) */}
+        <div className="xl:col-span-7 bg-[#14171f] border border-white/[0.07] rounded-[28px] overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
+            <div className="flex items-center gap-2.5">
+              <Mail className="w-4 h-4 text-[#b5ff00]" />
+              <h3 className="font-display text-lg font-extrabold uppercase tracking-tight text-white">
+                Caixa de Entrada da Comissão Técnica
+              </h3>
+            </div>
+            <span className="text-xs text-zinc-400 font-mono tabular-nums">
+              {messages.filter((m) => !m.read).length} não lidas ·{' '}
+              {messages.length} mensagens
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-12 flex-1 min-h-[540px]">
+            {/* Message List */}
+            <div className="md:col-span-5 border-b md:border-b-0 md:border-r border-white/[0.07] divide-y divide-white/[0.05] overflow-y-auto max-h-[580px]">
+              {messages.map((msg) => {
+                const isSelected = selectedMessage?.id === msg.id;
+                return (
+                  <button
+                    key={msg.id}
+                    onClick={() => handleSelectMessage(msg.id)}
+                    className={`w-full text-left p-4 transition-colors flex flex-col gap-1.5 ${
+                      isSelected
+                        ? 'bg-white/[0.08]'
+                        : 'hover:bg-white/[0.03] bg-transparent'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[11px]">
+                      <span
+                        className={`font-semibold ${
+                          msg.priority === 'warning'
+                            ? 'text-amber-400'
+                            : msg.priority === 'danger'
+                            ? 'text-rose-400'
+                            : msg.priority === 'positive'
+                            ? 'text-[#b5ff00]'
+                            : 'text-zinc-400'
+                        }`}
+                      >
+                        {msg.category}
+                      </span>
+                      <span className="text-zinc-400 font-mono tabular-nums">
+                        {msg.date.split('·')[0]}
+                      </span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      {!msg.read ? (
+                        <Mail className="w-3.5 h-3.5 text-[#b5ff00] shrink-0 mt-0.5" />
+                      ) : (
+                        <MailOpen className="w-3.5 h-3.5 text-zinc-500 shrink-0 mt-0.5" />
+                      )}
+                      <span
+                        className={`text-xs line-clamp-2 ${
+                          !msg.read
+                            ? 'font-bold text-white'
+                            : 'font-normal text-zinc-300'
+                        }`}
+                      >
+                        {msg.subject}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-zinc-400 pl-5 truncate">
+                      {msg.sender} · {msg.senderRole}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Message Reading Pane */}
+            <div className="md:col-span-7 p-5 sm:p-6 flex flex-col justify-between bg-[#0b0c10]/40">
+              {selectedMessage ? (
+                <div className="space-y-4">
+                  <div className="pb-4 border-b border-white/[0.07]">
+                    <div className="flex items-center justify-between text-xs text-zinc-400 mb-1.5">
+                      <span>
+                        {selectedMessage.category} ·{' '}
+                        {selectedMessage.senderRole}
+                      </span>
+                      <span className="font-mono tabular-nums">
+                        {selectedMessage.date}
+                      </span>
+                    </div>
+                    <h4 className="text-base sm:text-lg font-bold text-white leading-snug">
+                      {selectedMessage.subject}
+                    </h4>
+                    <div className="text-xs text-[#b5ff00] font-medium mt-1">
+                      Remetente: {selectedMessage.sender}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 text-xs sm:text-sm text-zinc-300 leading-relaxed">
+                    {selectedMessage.body.map((paragraph, i) => (
+                      <p key={i}>{paragraph}</p>
+                    ))}
+                  </div>
+
+                  {selectedMessage.bulletPoints &&
+                    selectedMessage.bulletPoints.length > 0 && (
+                      <div className="bg-[#0b0c10] border border-white/[0.07] rounded-2xl p-4 space-y-2">
+                        <div className="text-xs font-bold text-white">
+                          Pontos de Atenção da Comissão:
+                        </div>
+                        <ul className="space-y-1.5 text-xs text-zinc-300">
+                          {selectedMessage.bulletPoints.map((pt, idx) => (
+                            <li key={idx} className="flex items-start gap-2">
+                              <span className="text-[#b5ff00] font-mono font-bold">
+                                ·
+                              </span>
+                              <span>{pt}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                </div>
+              ) : null}
+
+              {/* Contextual Action Footer inside Inbox Message */}
+              {selectedMessage && (
+                <div className="pt-4 mt-5 border-t border-white/[0.07] flex flex-wrap items-center justify-between gap-2">
+                  {selectedMessage.relatedPlayerId === 'p6' && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => {
+                          const p = squad.find(
+                            (pl) => pl.id === selectedMessage.relatedPlayerId
+                          );
+                          if (p) onInspectPlayer(p);
+                        }}
+                        className="px-3.5 py-2 rounded-full text-xs font-semibold bg-white/[0.08] hover:bg-white/[0.14] text-white transition-colors whitespace-nowrap"
+                      >
+                        Ver Ficha de Caio Vinícius
+                      </button>
+                      {caioInStartingXI ? (
+                        <button
+                          onClick={onQuickSwapFatiguedPlayer}
+                          className="px-3.5 py-2 rounded-full text-xs font-bold bg-amber-400 hover:bg-amber-300 text-[#090a0f] transition-colors flex items-center gap-1.5 whitespace-nowrap"
+                        >
+                          <UserCheck className="w-3.5 h-3.5" />
+                          Poupar Caio (Escalar Aníbal Moreno)
+                        </button>
+                      ) : (
+                        <span className="text-xs text-[#b5ff00] font-medium flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Aníbal Moreno já escalado como titular
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {selectedMessage.actionLabel &&
+                    selectedMessage.actionTargetTab && (
+                      <button
+                        onClick={() =>
+                          onNavigate(selectedMessage.actionTargetTab!)
+                        }
+                        className="ml-auto px-4 py-2 rounded-full text-xs font-bold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1.5 whitespace-nowrap"
+                      >
+                        <span>{selectedMessage.actionLabel}</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

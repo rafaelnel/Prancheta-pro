@@ -2,7 +2,6 @@ import React from 'react';
 import {
   Wallet,
   TrendingUp,
-  TrendingDown,
   ShieldCheck,
   Building2,
 } from 'lucide-react';
@@ -81,97 +80,103 @@ export const FinancesView: React.FC<FinancesViewProps> = ({ club, squad }) => {
 
   return (
     <div className="space-y-5">
-      {/* Top KPI Cards */}
+      {/* Editorial Section Header */}
+      <div className="pb-2 border-b border-white/[0.07]">
+        <span className="block text-xs sm:text-sm font-normal text-zinc-400 tracking-wide">
+          Explorar balanço patrimonial
+        </span>
+        <h2 className="font-display text-3xl sm:text-5xl font-extrabold uppercase tracking-tight text-white leading-[0.95] mt-0.5">
+          FINANÇAS
+        </h2>
+      </div>
+
+      {/* Top KPI Cards (Lime / White / Dark Surface Discipline) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <div className="flex items-center justify-between text-xs text-slate-400">
+        <div className="bg-[#b5ff00] text-[#090a0f] rounded-[24px] p-5 shadow-lg">
+          <div className="flex items-center justify-between text-xs font-bold uppercase font-mono opacity-80">
             <span>Saldo em Caixa Disponível</span>
-            <Wallet className="w-4 h-4 text-emerald-400" />
+            <Wallet className="w-4 h-4" />
           </div>
-          <div className="text-2xl font-bold font-mono tabular-nums text-emerald-400 mt-1.5">
+          <div className="font-display text-4xl font-extrabold tabular-nums mt-1.5 leading-none">
             {formatCompactBRL(club.cashBalance)}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1 font-mono tabular-nums">
+          <div className="text-[11px] opacity-80 mt-1.5 font-mono tabular-nums font-semibold">
             Exato: {formatBRL(club.cashBalance)}
           </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <div className="flex items-center justify-between text-xs text-slate-400">
+        <div className="bg-white text-[#090a0f] rounded-[24px] p-5 shadow-lg">
+          <div className="flex items-center justify-between text-xs font-bold uppercase font-mono text-zinc-500">
             <span>Folha Salarial Mensal</span>
-            <Building2 className="w-4 h-4 text-sky-400" />
+            <Building2 className="w-4 h-4 text-[#090a0f]" />
           </div>
-          <div className="text-2xl font-bold font-mono tabular-nums text-slate-100 mt-1.5">
+          <div className="font-display text-4xl font-extrabold tabular-nums mt-1.5 leading-none">
             {formatCompactBRL(totalMonthlyPayroll)}{' '}
-            <span className="text-xs font-normal text-slate-400">
+            <span className="text-sm font-sans font-semibold text-zinc-500">
               / {formatCompactBRL(club.wageBudget)}
             </span>
           </div>
-          <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mt-2">
+          <div className="w-full h-2 bg-zinc-200 rounded-full overflow-hidden mt-2.5">
             <div
-              className="h-full bg-emerald-500"
+              className="h-full bg-[#090a0f]"
               style={{ width: `${Math.min(100, wageUsagePct)}%` }}
             />
           </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <div className="flex items-center justify-between text-xs text-slate-400">
+        <div className="bg-[#14171f] border border-white/[0.07] rounded-[24px] p-5">
+          <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Resultado Operacional / Mês</span>
-            <TrendingUp className="w-4 h-4 text-emerald-400" />
+            <TrendingUp className="w-4 h-4 text-[#b5ff00]" />
           </div>
           <div
-            className={`text-2xl font-bold font-mono tabular-nums mt-1.5 ${
-              monthlyNetResult >= 0 ? 'text-emerald-400' : 'text-rose-400'
+            className={`font-display text-4xl font-extrabold tabular-nums mt-1.5 leading-none ${
+              monthlyNetResult >= 0 ? 'text-[#b5ff00]' : 'text-rose-400'
             }`}
           >
             +{formatCompactBRL(monthlyNetResult)}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
+          <div className="text-[11px] text-zinc-400 mt-1.5">
             Superávit operacional recorrente
           </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <div className="flex items-center justify-between text-xs text-slate-400">
+        <div className="bg-[#14171f] border border-white/[0.07] rounded-[24px] p-5">
+          <div className="flex items-center justify-between text-xs text-zinc-400">
             <span>Patrimônio de Elenco (22 Atletas)</span>
-            <ShieldCheck className="w-4 h-4 text-amber-400" />
+            <ShieldCheck className="w-4 h-4 text-[#b5ff00]" />
           </div>
-          <div className="text-2xl font-bold font-mono tabular-nums text-amber-400 mt-1.5">
+          <div className="font-display text-4xl font-extrabold tabular-nums text-white mt-1.5 leading-none">
             {formatCompactBRL(totalSquadValuation)}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
-            Confiança Financeira da Diretoria: {club.boardConfidence}%
+          <div className="text-[11px] text-zinc-400 mt-1.5">
+            Confiança da Diretoria: {club.boardConfidence}%
           </div>
         </div>
       </div>
 
       {/* Main Split: Monthly Cashflow Breakdown + Squad Payroll Ledger */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         {/* Cashflow Breakdown (6 cols) */}
-        <div className="xl:col-span-6 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-5">
+        <div className="xl:col-span-6 bg-[#14171f] border border-white/[0.07] rounded-[28px] p-5 space-y-5">
           <div>
-            <h3 className="text-sm font-semibold text-slate-100 pb-2.5 border-b border-slate-800 flex items-center justify-between">
+            <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white pb-2.5 border-b border-white/[0.07] flex items-center justify-between">
               <span>Receitas Mensais Recorrentes</span>
-              <span className="font-mono tabular-nums text-emerald-400">
+              <span className="font-mono text-sm tabular-nums text-[#b5ff00]">
                 +{formatBRL(totalMonthlyRevenue)}
               </span>
             </h3>
-            <div className="divide-y divide-slate-800/60 mt-2">
+            <div className="divide-y divide-white/[0.05] mt-2">
               {revenueItems.map((item, i) => (
                 <div
                   key={i}
-                  className="py-2.5 flex items-center justify-between text-xs"
+                  className="py-3 flex items-center justify-between text-xs"
                 >
                   <div>
-                    <div className="font-medium text-slate-200">
-                      {item.label}
-                    </div>
-                    <div className="text-[11px] text-slate-400">
-                      {item.note}
-                    </div>
+                    <div className="font-semibold text-white">{item.label}</div>
+                    <div className="text-[11px] text-zinc-400">{item.note}</div>
                   </div>
-                  <span className="font-mono tabular-nums font-semibold text-emerald-400">
+                  <span className="font-mono tabular-nums font-bold text-[#b5ff00]">
                     +{formatCompactBRL(item.amount)}
                   </span>
                 </div>
@@ -180,27 +185,23 @@ export const FinancesView: React.FC<FinancesViewProps> = ({ club, squad }) => {
           </div>
 
           <div>
-            <h3 className="text-sm font-semibold text-slate-100 pb-2.5 border-b border-slate-800 flex items-center justify-between">
+            <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white pb-2.5 border-b border-white/[0.07] flex items-center justify-between">
               <span>Despesas Operacionais Mensais</span>
-              <span className="font-mono tabular-nums text-rose-400">
+              <span className="font-mono text-sm tabular-nums text-rose-400">
                 -{formatBRL(totalMonthlyExpense)}
               </span>
             </h3>
-            <div className="divide-y divide-slate-800/60 mt-2">
+            <div className="divide-y divide-white/[0.05] mt-2">
               {expenseItems.map((item, i) => (
                 <div
                   key={i}
-                  className="py-2.5 flex items-center justify-between text-xs"
+                  className="py-3 flex items-center justify-between text-xs"
                 >
                   <div>
-                    <div className="font-medium text-slate-200">
-                      {item.label}
-                    </div>
-                    <div className="text-[11px] text-slate-400">
-                      {item.note}
-                    </div>
+                    <div className="font-semibold text-white">{item.label}</div>
+                    <div className="text-[11px] text-zinc-400">{item.note}</div>
                   </div>
-                  <span className="font-mono tabular-nums font-semibold text-rose-400">
+                  <span className="font-mono tabular-nums font-bold text-rose-400">
                     -{formatCompactBRL(item.amount)}
                   </span>
                 </div>
@@ -210,12 +211,12 @@ export const FinancesView: React.FC<FinancesViewProps> = ({ club, squad }) => {
         </div>
 
         {/* Squad Salary & Market Value Ledger (6 cols) */}
-        <div className="xl:col-span-6 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col">
-          <div className="px-5 py-3.5 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-slate-100">
-              Folha Salarial e Valor de Mercado por Atleta
+        <div className="xl:col-span-6 bg-[#14171f] border border-white/[0.07] rounded-[28px] overflow-hidden flex flex-col">
+          <div className="px-5 py-4 border-b border-white/[0.07] flex items-center justify-between">
+            <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white">
+              Folha Salarial e Valor por Atleta
             </h3>
-            <span className="text-xs font-mono text-slate-400">
+            <span className="text-xs font-mono text-zinc-400">
               Ordenado por maior salário
             </span>
           </div>
@@ -223,38 +224,40 @@ export const FinancesView: React.FC<FinancesViewProps> = ({ club, squad }) => {
           <div className="overflow-y-auto max-h-[420px]">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="border-b border-slate-800 bg-slate-950/60 text-[11px] text-slate-400">
-                  <th className="py-2.5 px-4 font-medium">Atleta</th>
-                  <th className="py-2.5 px-2 font-medium">Pos</th>
-                  <th className="py-2.5 px-2 font-medium">Status</th>
-                  <th className="py-2.5 px-3 font-medium text-right">
+                <tr className="border-b border-white/[0.07] bg-[#0b0c10]/60 text-[11px] text-zinc-400">
+                  <th className="py-3 px-4 font-medium">Atleta</th>
+                  <th className="py-3 px-2 font-medium">Pos</th>
+                  <th className="py-3 px-2 font-medium">Status</th>
+                  <th className="py-3 px-3 font-medium text-right">
                     Valor de Mercado
                   </th>
-                  <th className="py-2.5 px-4 font-medium text-right">
+                  <th className="py-3 px-4 font-medium text-right">
                     Salário Mensal
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 font-mono tabular-nums">
+              <tbody className="divide-y divide-white/[0.05] font-mono tabular-nums">
                 {sortedBySalary.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-800/40">
-                    <td className="py-2 px-4 font-sans font-medium text-slate-200">
+                  <tr key={p.id} className="hover:bg-white/[0.03]">
+                    <td className="py-2.5 px-4 font-sans font-semibold text-white">
                       #{p.number} {p.name}
                     </td>
-                    <td className="py-2 px-2 text-slate-400">{p.position}</td>
-                    <td className="py-2 px-2 font-sans">
+                    <td className="py-2.5 px-2 text-zinc-400">{p.position}</td>
+                    <td className="py-2.5 px-2 font-sans">
                       <span
                         className={
-                          p.isStarter ? 'text-emerald-400' : 'text-slate-500'
+                          p.isStarter
+                            ? 'text-[#b5ff00] font-semibold'
+                            : 'text-zinc-500'
                         }
                       >
                         {p.isStarter ? 'Titular' : 'Reserva'}
                       </span>
                     </td>
-                    <td className="py-2 px-3 text-right text-slate-300">
+                    <td className="py-2.5 px-3 text-right text-zinc-300">
                       {formatCompactBRL(p.marketValue)}
                     </td>
-                    <td className="py-2 px-4 text-right font-semibold text-emerald-400">
+                    <td className="py-2.5 px-4 text-right font-bold text-[#b5ff00]">
                       {formatBRL(p.salary)}
                     </td>
                   </tr>

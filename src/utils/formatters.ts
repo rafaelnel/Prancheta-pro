@@ -26,10 +26,10 @@ export function formatCompactBRL(value: number): string {
 }
 
 export function getAttributeColorClass(value: number): string {
-  if (value >= 16) return 'text-emerald-400 font-semibold';
-  if (value >= 13) return 'text-emerald-200/90 font-medium';
+  if (value >= 16) return 'text-[#b5ff00] font-bold';
+  if (value >= 13) return 'text-[#d9ff7a] font-medium';
   if (value >= 10) return 'text-amber-300 font-normal';
-  return 'text-slate-400 font-normal';
+  return 'text-zinc-400 font-normal';
 }
 
 export function getConditionColor(condition: number): {
@@ -39,8 +39,8 @@ export function getConditionColor(condition: number): {
 } {
   if (condition >= 88) {
     return {
-      text: 'text-emerald-400',
-      bar: 'bg-emerald-500',
+      text: 'text-[#b5ff00]',
+      bar: 'bg-[#b5ff00]',
       label: 'Pleno',
     };
   }
@@ -61,11 +61,11 @@ export function getConditionColor(condition: number): {
 export function getMoraleColor(morale: MoraleState): string {
   switch (morale) {
     case 'Exuberante':
-      return 'text-emerald-400';
+      return 'text-[#b5ff00]';
     case 'Muito Alta':
-      return 'text-emerald-300';
+      return 'text-[#d9ff7a]';
     case 'Bom':
-      return 'text-sky-300';
+      return 'text-zinc-200';
     case 'Regular':
       return 'text-amber-400';
     case 'Baixa':

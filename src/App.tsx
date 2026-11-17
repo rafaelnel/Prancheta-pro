@@ -728,28 +728,28 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col lg:flex-row">
+    <div className="min-h-screen bg-[#0b0c10] text-zinc-100 flex flex-col lg:flex-row">
       {/* Fixed Sidebar Navigation (Desktop lg+) */}
-      <aside className="hidden lg:flex w-60 bg-slate-900 border-r border-slate-800 flex-col justify-between shrink-0 select-none">
+      <aside className="hidden lg:flex w-64 bg-[#111319] border-r border-white/[0.07] flex-col justify-between shrink-0 select-none">
         <div>
-          {/* Brand Lockup */}
-          <div className="h-16 px-5 border-b border-slate-800 flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center font-mono font-bold text-slate-950 text-sm">
+          {/* Brand Lockup (Reference Screen 1 Circular Electric Lime Crest) */}
+          <div className="h-16 px-5 border-b border-white/[0.07] flex items-center gap-3">
+            <div className="w-9 h-9 rounded-full bg-[#b5ff00] flex items-center justify-center font-display font-extrabold text-[#090a0f] text-base shadow-md">
               FM
             </div>
             <div>
-              <div className="text-sm font-bold tracking-tight text-slate-100 leading-none">
+              <div className="font-display text-lg font-extrabold uppercase tracking-tight text-white leading-none">
                 Prancheta Pro
               </div>
-              <div className="text-[11px] text-emerald-400 font-mono mt-1 leading-none">
+              <div className="text-[11px] text-[#b5ff00] font-mono mt-0.5 leading-none">
                 Edição Brasil 2026
               </div>
             </div>
           </div>
 
-          {/* Navigation Menu */}
+          {/* Navigation Menu with Electric Lime Pill Active State */}
           <nav
-            className="p-3 space-y-1"
+            className="p-3.5 space-y-1.5"
             aria-label="Navegação principal do clube"
           >
             {navItems.map((item) => {
@@ -759,10 +759,10 @@ export default function App() {
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg text-xs font-medium transition-colors ${
+                  className={`w-full flex items-center justify-between px-4 py-2.5 rounded-full text-xs transition-all ${
                     isActive
-                      ? 'bg-emerald-600 text-white font-semibold'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/70'
+                      ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold shadow-md'
+                      : 'text-zinc-400 hover:text-white hover:bg-white/[0.05] font-medium'
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
@@ -771,8 +771,10 @@ export default function App() {
                   </div>
                   {item.badge && (
                     <span
-                      className={`font-mono tabular-nums text-[11px] ${
-                        isActive ? 'text-emerald-100' : 'text-slate-400'
+                      className={`font-mono tabular-nums text-[11px] px-2 py-0.5 rounded-full ${
+                        isActive
+                          ? 'bg-[#090a0f] text-[#b5ff00] font-bold'
+                          : 'text-zinc-400 bg-white/[0.05]'
                       }`}
                     >
                       {item.badge}
@@ -784,18 +786,18 @@ export default function App() {
           </nav>
         </div>
 
-        {/* Sidebar Bottom Next Match Summary */}
-        <div className="p-4 border-t border-slate-800 bg-slate-950/40 space-y-2">
-          <div className="flex items-center justify-between text-[11px] text-slate-400">
+        {/* Sidebar Bottom Next Match Card */}
+        <div className="p-4 m-3.5 rounded-2xl border border-white/[0.07] bg-[#0b0c10] space-y-2">
+          <div className="flex items-center justify-between text-[11px] text-zinc-400">
             <span>Próximo Compromisso</span>
-            <span className="font-mono text-emerald-400">
+            <span className="font-mono font-bold text-[#b5ff00]">
               {currentRound}ª Rodada
             </span>
           </div>
-          <div className="text-xs font-semibold text-slate-200 truncate">
+          <div className="font-display text-base font-extrabold uppercase tracking-tight text-white truncate">
             {homeClub.shortName} vs {awayClub.shortName}
           </div>
-          <div className="text-[11px] text-slate-400 truncate">
+          <div className="text-[11px] text-zinc-400 truncate">
             {homeClub.stadium}
           </div>
         </div>
@@ -804,89 +806,82 @@ export default function App() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Persistent Top Header Bar (h-12 on mobile, h-16 on desktop -> respects <15% mobile sticky cap) */}
-        <header className="sticky top-0 z-30 h-12 lg:h-16 bg-slate-900/95 border-b border-slate-800 px-3 sm:px-5 lg:px-6 flex items-center justify-between gap-2 sm:gap-4 shrink-0">
+        <header className="sticky top-0 z-30 h-12 lg:h-16 bg-[#0b0c10]/95 border-b border-white/[0.07] px-3 sm:px-5 lg:px-6 flex items-center justify-between gap-2 sm:gap-4 shrink-0">
           {/* Left: Club Name & League Status */}
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-            <div
-              className="w-7 h-7 lg:w-9 lg:h-9 rounded-lg flex items-center justify-center font-mono font-bold text-[11px] lg:text-xs text-slate-950 shrink-0"
-              style={{ backgroundColor: userClub.primaryColor }}
-            >
+            <div className="w-7 h-7 lg:w-9 lg:h-9 rounded-full bg-[#b5ff00] flex items-center justify-center font-display font-extrabold text-xs lg:text-sm text-[#090a0f] shrink-0 shadow">
               {userClub.abbr}
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 sm:gap-2">
-                <h1 className="text-xs sm:text-sm lg:text-base font-bold text-slate-100 truncate">
+                <h1 className="font-display text-sm sm:text-base lg:text-xl font-extrabold uppercase tracking-tight text-white truncate">
                   {userClub.name}
                 </h1>
-                <span className="text-xs text-slate-400 font-mono hidden sm:inline whitespace-nowrap">
+                <span className="text-xs text-zinc-400 font-mono hidden sm:inline whitespace-nowrap">
                   · {userRank}º na Liga Nacional
                 </span>
               </div>
               {/* Mobile compact status line */}
-              <div className="text-[10px] text-slate-400 font-mono tabular-nums truncate md:hidden">
+              <div className="text-[10px] text-zinc-400 font-mono tabular-nums truncate md:hidden">
                 {formatCalendarDate(dayOffset).split(',')[1]?.trim()} ·{' '}
-                <span className="text-emerald-400">
+                <span className="text-[#b5ff00] font-bold">
                   {formatCompactBRL(userClub.cashBalance)}
                 </span>{' '}
                 · Conf. {userClub.boardConfidence}%
               </div>
               {/* Desktop status line */}
-              <div className="hidden md:block text-xs text-slate-400 truncate">
+              <div className="hidden md:block text-xs text-zinc-400 truncate">
                 {userClub.stadium} · Esquema {userClub.formation} (
                 {userClub.instructions.mentality})
               </div>
             </div>
           </div>
 
-          {/* Right: Calendar Date, Cash Balance, Board Confidence (%) & Dynamic Action Button */}
+          {/* Right: Calendar Date, Cash Balance, Board Confidence (%) & Dynamic Action Pill Button */}
           <div className="flex items-center gap-2 sm:gap-4 lg:gap-5 shrink-0">
             {/* Data atual do calendário */}
             <div className="hidden md:flex items-center gap-2 text-xs">
-              <Calendar className="w-4 h-4 text-emerald-400" />
+              <Calendar className="w-4 h-4 text-[#b5ff00]" />
               <div>
-                <div className="text-[10px] text-slate-400 leading-none">
+                <div className="text-[10px] text-zinc-400 leading-none">
                   Calendário Oficial
                 </div>
-                <div className="font-mono tabular-nums font-semibold text-slate-100 mt-0.5">
+                <div className="font-mono tabular-nums font-semibold text-white mt-0.5">
                   {formatCalendarDate(dayOffset)}
                 </div>
               </div>
             </div>
 
             {/* Saldo em Caixa */}
-            <div className="hidden xl:flex items-center gap-2 text-xs border-l border-slate-800 pl-4">
-              <Wallet className="w-4 h-4 text-emerald-400" />
+            <div className="hidden xl:flex items-center gap-2 text-xs border-l border-white/[0.08] pl-4">
+              <Wallet className="w-4 h-4 text-[#b5ff00]" />
               <div>
-                <div className="text-[10px] text-slate-400 leading-none">
+                <div className="text-[10px] text-zinc-400 leading-none">
                   Saldo em Caixa
                 </div>
-                <div className="font-mono tabular-nums font-semibold text-emerald-400 mt-0.5">
+                <div className="font-mono tabular-nums font-bold text-[#b5ff00] mt-0.5">
                   {formatCompactBRL(userClub.cashBalance)}
                 </div>
               </div>
             </div>
 
             {/* Confiança da Diretoria (%) */}
-            <div className="hidden lg:flex items-center gap-2 text-xs border-l border-slate-800 pl-4">
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <div className="hidden lg:flex items-center gap-2 text-xs border-l border-white/[0.08] pl-4">
+              <ShieldCheck className="w-4 h-4 text-[#b5ff00]" />
               <div>
-                <div className="text-[10px] text-slate-400 leading-none">
+                <div className="text-[10px] text-zinc-400 leading-none">
                   Confiança da Diretoria
                 </div>
-                <div className="font-mono tabular-nums font-semibold text-slate-100 mt-0.5">
+                <div className="font-mono tabular-nums font-semibold text-white mt-0.5">
                   {userClub.boardConfidence}%
                 </div>
               </div>
             </div>
 
-            {/* Dynamic Primary Action Button ("Continuar" / "Ir para o Jogo") */}
+            {/* Dynamic Primary Action Button ("Continuar" / "Ir para o Jogo") styled as Reference Lime Pill */}
             <button
               onClick={handlePrimaryHeaderAction}
-              className={`px-3 py-1.5 lg:px-4 lg:py-2.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 lg:gap-2 whitespace-nowrap shadow-sm ${
-                isMatchDay || activeTab === 'match'
-                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                  : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold'
-              }`}
+              className="px-3.5 py-1.5 lg:px-5 lg:py-2.5 rounded-full text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1.5 lg:gap-2 whitespace-nowrap shadow-md"
             >
               <Play className="w-3 h-3 lg:w-3.5 lg:h-3.5 fill-current shrink-0" />
               <span className="hidden sm:inline">{primaryActionLabel}</span>
@@ -897,7 +892,7 @@ export default function App() {
         </header>
 
         {/* Active Module Viewport */}
-        <main className="flex-1 p-3 sm:p-5 lg:p-6 pb-20 lg:pb-6 overflow-y-auto overflow-x-hidden">
+        <main className="flex-1 p-3.5 sm:p-5 lg:p-6 pb-20 lg:pb-6 overflow-y-auto overflow-x-hidden">
           {activeTab === 'inbox' && (
             <DashboardInbox
               messages={messages}
@@ -978,10 +973,10 @@ export default function App() {
         </main>
       </div>
 
-      {/* Mobile Fixed Bottom Navigation Bar (< lg) */}
+      {/* Mobile Bottom Capsule Navigation Bar (< lg) matching Reference Screen 1 & 3 */}
       <nav
         aria-label="Navegação mobile"
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-40 h-14 bg-slate-900/95 border-t border-slate-800 grid grid-cols-6 items-center px-1 select-none"
+        className="lg:hidden fixed bottom-2 left-2.5 right-2.5 z-40 h-14 bg-[#14171f]/95 border border-white/10 rounded-full grid grid-cols-6 items-center px-1.5 shadow-2xl select-none"
       >
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -990,21 +985,21 @@ export default function App() {
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`h-full flex flex-col items-center justify-center gap-0.5 transition-colors ${
+              className={`h-10 rounded-full flex flex-col items-center justify-center gap-0.5 transition-all ${
                 isActive
-                  ? 'text-emerald-400 font-semibold'
-                  : 'text-slate-400 hover:text-slate-200'
+                  ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold shadow-sm'
+                  : 'text-zinc-400 hover:text-white'
               }`}
             >
               <div className="relative flex items-center justify-center">
                 <Icon className="w-4 h-4" />
-                {item.id === 'inbox' && unreadInboxCount > 0 && (
-                  <span className="absolute -top-1 -right-2.5 text-[9px] font-mono font-bold text-emerald-300">
+                {item.id === 'inbox' && unreadInboxCount > 0 && !isActive && (
+                  <span className="absolute -top-1 -right-2.5 text-[9px] font-mono font-bold text-[#b5ff00]">
                     {unreadInboxCount}
                   </span>
                 )}
               </div>
-              <span className="text-[10px] leading-none tracking-tight whitespace-nowrap">
+              <span className="text-[9px] leading-none tracking-tight whitespace-nowrap">
                 {item.mobileLabel}
               </span>
             </button>

@@ -119,28 +119,28 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-2.5 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="player-modal-title"
     >
       <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
         {/* Top Header */}
-        <div className="flex items-start justify-between gap-4 p-5 border-b border-slate-800 bg-slate-950/50">
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-lg bg-emerald-950 border border-emerald-500/40 flex flex-col items-center justify-center shrink-0">
+        <div className="flex flex-wrap sm:flex-nowrap items-start justify-between gap-3 sm:gap-4 p-3.5 sm:p-5 border-b border-slate-800 bg-slate-950/50">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg bg-emerald-950 border border-emerald-500/40 flex flex-col items-center justify-center shrink-0">
               <span className="text-xs text-emerald-400 font-mono leading-none">
                 #{player.number}
               </span>
-              <span className="text-lg font-bold font-mono text-emerald-300 leading-tight mt-0.5">
+              <span className="text-base sm:text-lg font-bold font-mono text-emerald-300 leading-tight mt-0.5">
                 {player.position}
               </span>
             </div>
-            <div>
-              <div className="flex items-center gap-3">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
                 <h2
                   id="player-modal-title"
-                  className="text-xl font-bold text-slate-100"
+                  className="text-base sm:text-xl font-bold text-slate-100 truncate"
                 >
                   {player.name}
                 </h2>
@@ -149,9 +149,9 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                   {player.isStarter ? 'Titular' : 'Reserva'}
                 </span>
               </div>
-              <div className="flex flex-wrap items-center gap-4 mt-1.5 text-xs text-slate-400">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[11px] sm:text-xs text-slate-400">
                 <span>
-                  Valor de Mercado:{' '}
+                  Valor:{' '}
                   <strong className="text-slate-200 font-mono tabular-nums">
                     {formatCompactBRL(player.marketValue)}
                   </strong>
@@ -165,9 +165,9 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                 </span>
                 <span>·</span>
                 <span>
-                  Condição Física:{' '}
+                  Condição:{' '}
                   <strong className={`font-mono tabular-nums ${condStyle.text}`}>
-                    {player.condition}% ({condStyle.label})
+                    {Math.round(player.condition)}% ({condStyle.label})
                   </strong>
                 </span>
                 <span>·</span>
@@ -181,12 +181,12 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="text-right pr-3 border-r border-slate-800 whitespace-nowrap">
-              <div className="text-[11px] text-slate-400 whitespace-nowrap">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
+            <div className="text-right pr-2.5 sm:pr-3 border-r border-slate-800 whitespace-nowrap">
+              <div className="text-[10px] sm:text-[11px] text-slate-400 whitespace-nowrap">
                 Nível Geral (1-20)
               </div>
-              <div className="text-2xl font-bold font-mono tabular-nums text-emerald-400">
+              <div className="text-xl sm:text-2xl font-bold font-mono tabular-nums text-emerald-400">
                 {overall.toFixed(1)}
               </div>
             </div>

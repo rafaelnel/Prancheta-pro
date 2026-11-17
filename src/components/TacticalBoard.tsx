@@ -138,23 +138,23 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3 sm:space-y-5">
       {/* Top Bar: Formations + Collective Instructions + Team Tactical Ratings */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
         {/* Formation & Collective Instructions */}
-        <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-xl p-3 sm:p-4 grid grid-cols-2 xl:grid-cols-4 gap-2.5 sm:gap-4">
           {/* Esquema Tático */}
           <div>
-            <span className="block text-[11px] text-slate-400 font-medium mb-1.5">
-              Esquema Tático (Formação)
+            <span className="block text-[10px] sm:text-[11px] text-slate-400 font-medium mb-1 sm:mb-1.5">
+              Esquema (Formação)
             </span>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-2 gap-1 sm:gap-1.5">
               {(['4-3-3', '4-2-3-1', '4-4-2', '3-5-2'] as FormationType[]).map(
                 (fmt) => (
                   <button
                     key={fmt}
                     onClick={() => onChangeFormation(fmt)}
-                    className={`py-1.5 px-2.5 rounded-lg text-xs font-mono font-semibold transition-colors whitespace-nowrap ${
+                    className={`py-1 sm:py-1.5 px-2 rounded-lg text-[11px] sm:text-xs font-mono font-semibold transition-colors whitespace-nowrap ${
                       formation === fmt
                         ? 'bg-emerald-600 text-white'
                         : 'bg-slate-950 text-slate-300 border border-slate-800 hover:bg-slate-800'
@@ -169,8 +169,8 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
 
           {/* Mentalidade Coletiva */}
           <div>
-            <span className="block text-[11px] text-slate-400 font-medium mb-1.5">
-              Mentalidade da Equipe
+            <span className="block text-[10px] sm:text-[11px] text-slate-400 font-medium mb-1 sm:mb-1.5">
+              Mentalidade
             </span>
             <div className="flex flex-col gap-1">
               {(
@@ -181,7 +181,7 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
                   onClick={() =>
                     onChangeInstructions({ ...instructions, mentality: ment })
                   }
-                  className={`py-1 px-2.5 rounded text-xs font-medium text-left transition-colors flex items-center justify-between ${
+                  className={`py-1 px-2 sm:px-2.5 rounded text-[11px] sm:text-xs font-medium text-left transition-colors flex items-center justify-between ${
                     instructions.mentality === ment
                       ? ment === 'Ofensiva'
                         ? 'bg-emerald-600 text-white'
@@ -191,9 +191,11 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
                       : 'bg-slate-950 text-slate-400 border border-slate-800 hover:text-slate-200'
                   }`}
                 >
-                  <span>{ment}</span>
+                  <span className="truncate">{ment}</span>
                   {instructions.mentality === ment && (
-                    <span className="text-[10px] font-mono">Ativa</span>
+                    <span className="hidden sm:inline text-[10px] font-mono">
+                      Ativa
+                    </span>
                   )}
                 </button>
               ))}
@@ -202,8 +204,8 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
 
           {/* Linha Defensiva */}
           <div>
-            <span className="block text-[11px] text-slate-400 font-medium mb-1.5">
-              Altura da Linha Defensiva
+            <span className="block text-[10px] sm:text-[11px] text-slate-400 font-medium mb-1 sm:mb-1.5">
+              Linha Defensiva
             </span>
             <div className="flex flex-col gap-1">
               {(['Baixa', 'Padrão', 'Alta'] as DefensiveLineType[]).map(
@@ -216,13 +218,13 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
                         defensiveLine: line,
                       })
                     }
-                    className={`py-1 px-2.5 rounded text-xs font-medium text-left transition-colors flex items-center justify-between ${
+                    className={`py-1 px-2 sm:px-2.5 rounded text-[11px] sm:text-xs font-medium text-left transition-colors flex items-center justify-between ${
                       instructions.defensiveLine === line
                         ? 'bg-emerald-600 text-white'
                         : 'bg-slate-950 text-slate-400 border border-slate-800 hover:text-slate-200'
                     }`}
                   >
-                    <span>Linha {line}</span>
+                    <span className="truncate">Linha {line}</span>
                   </button>
                 )
               )}
@@ -231,8 +233,8 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
 
           {/* Intensidade de Pressão */}
           <div>
-            <span className="block text-[11px] text-slate-400 font-medium mb-1.5">
-              Intensidade de Pressão
+            <span className="block text-[10px] sm:text-[11px] text-slate-400 font-medium mb-1 sm:mb-1.5">
+              Pressão Sem Bola
             </span>
             <div className="flex flex-col gap-1">
               {(
@@ -246,7 +248,7 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
                       pressingIntensity: press,
                     })
                   }
-                  className={`py-1 px-2.5 rounded text-xs font-medium text-left transition-colors flex items-center justify-between ${
+                  className={`py-1 px-2 sm:px-2.5 rounded text-[11px] sm:text-xs font-medium text-left transition-colors flex items-center justify-between ${
                     instructions.pressingIntensity === press
                       ? press === 'Extrema'
                         ? 'bg-amber-500 text-slate-950 font-semibold'
@@ -254,7 +256,7 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
                       : 'bg-slate-950 text-slate-400 border border-slate-800 hover:text-slate-200'
                   }`}
                 >
-                  <span>Pressão {press}</span>
+                  <span className="truncate">Pressão {press}</span>
                 </button>
               ))}
             </div>
@@ -262,32 +264,38 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
         </div>
 
         {/* Dynamic Tactical Synergy & Sector Ratings */}
-        <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+        <div className="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-xl p-3 sm:p-4 flex flex-col justify-between">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
             <span className="text-xs font-semibold text-slate-200">
-              Avaliação Tática Coletiva ({formation})
+              Avaliação Coletiva ({formation})
             </span>
             <span className="text-xs font-mono tabular-nums text-emerald-400 font-bold">
               Sinergia: {teamRatings.synergy}%
             </span>
           </div>
 
-          <div className="grid grid-cols-3 gap-2.5 my-2">
-            <div className="bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-center">
-              <div className="text-[11px] text-slate-400">Ataque</div>
-              <div className="text-lg font-bold font-mono tabular-nums text-emerald-400">
+          <div className="grid grid-cols-3 gap-2 my-2">
+            <div className="bg-slate-950 border border-slate-800 rounded-lg p-2 text-center">
+              <div className="text-[10px] sm:text-[11px] text-slate-400">
+                Ataque
+              </div>
+              <div className="text-base sm:text-lg font-bold font-mono tabular-nums text-emerald-400">
                 {teamRatings.attack.toFixed(1)}
               </div>
             </div>
-            <div className="bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-center">
-              <div className="text-[11px] text-slate-400">Meio-Campo</div>
-              <div className="text-lg font-bold font-mono tabular-nums text-sky-400">
+            <div className="bg-slate-950 border border-slate-800 rounded-lg p-2 text-center">
+              <div className="text-[10px] sm:text-[11px] text-slate-400">
+                Meio-Campo
+              </div>
+              <div className="text-base sm:text-lg font-bold font-mono tabular-nums text-sky-400">
                 {teamRatings.midfield.toFixed(1)}
               </div>
             </div>
-            <div className="bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-center">
-              <div className="text-[11px] text-slate-400">Defesa</div>
-              <div className="text-lg font-bold font-mono tabular-nums text-amber-400">
+            <div className="bg-slate-950 border border-slate-800 rounded-lg p-2 text-center">
+              <div className="text-[10px] sm:text-[11px] text-slate-400">
+                Defesa
+              </div>
+              <div className="text-base sm:text-lg font-bold font-mono tabular-nums text-amber-400">
                 {teamRatings.defense.toFixed(1)}
               </div>
             </div>
@@ -518,29 +526,30 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
                 >
                   {/* Circle Token */}
                   <div
-                    className={`w-10 h-10 rounded-full flex flex-col items-center justify-center font-mono font-bold shadow-lg border-2 transition-colors ${dutyBorder} ${
+                    className={`w-7 h-7 sm:w-9 sm:h-9 lg:w-10 lg:h-10 rounded-full flex flex-col items-center justify-center font-mono font-bold shadow-lg border-2 transition-colors ${dutyBorder} ${
                       isSelected
-                        ? 'bg-emerald-500 text-slate-950 ring-4 ring-emerald-400/40'
+                        ? 'bg-emerald-500 text-slate-950 ring-2 sm:ring-4 ring-emerald-400/40'
                         : 'bg-slate-950/95 text-slate-100 group-hover:bg-slate-900'
                     }`}
                   >
-                    <span className="text-xs leading-none">
+                    <span className="text-[10px] sm:text-xs leading-none">
                       {player.number}
                     </span>
-                    <span className="text-[9px] leading-none opacity-85 mt-0.5">
+                    <span className="hidden sm:inline text-[8px] lg:text-[9px] leading-none opacity-85 mt-0.5">
                       {role.shortCode}
                     </span>
                   </div>
 
                   {/* Name & Role Tag */}
                   <div
-                    className={`mt-1 px-2 py-0.5 rounded text-[10px] font-medium whitespace-nowrap shadow ${
+                    className={`mt-0.5 sm:mt-1 px-1.5 sm:px-2 py-0.5 rounded text-[9px] sm:text-[10px] font-medium whitespace-nowrap shadow ${
                       isSelected
                         ? 'bg-emerald-500 text-slate-950 font-bold'
                         : 'bg-slate-950/90 text-slate-200 border border-slate-800'
                     }`}
                   >
-                    {lastName} · {fit.score}%
+                    <span>{lastName}</span>
+                    <span className="hidden sm:inline"> · {fit.score}%</span>
                   </div>
                 </button>
               );

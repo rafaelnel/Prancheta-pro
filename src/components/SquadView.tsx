@@ -108,8 +108,8 @@ export const SquadView: React.FC<SquadViewProps> = ({
           ))}
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="relative">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          <div className="relative flex-1 sm:flex-initial">
             <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -117,13 +117,13 @@ export const SquadView: React.FC<SquadViewProps> = ({
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Buscar jogador..."
               aria-label="Buscar jogador pelo nome"
-              className="bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 w-48"
+              className="bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-emerald-500 w-full sm:w-48"
             />
           </div>
 
           <button
             onClick={onAutoPickBestXI}
-            className="px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 transition-colors flex items-center gap-1.5 whitespace-nowrap"
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap w-full sm:w-auto"
           >
             <Sparkles className="w-3.5 h-3.5" />
             Escalar 11 Ideais (Físico + Nota)

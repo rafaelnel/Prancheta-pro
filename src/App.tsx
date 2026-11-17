@@ -660,15 +660,77 @@ export default function App() {
         ? `Em Jogo (${matchState.minute}') · Pausar`
         : matchState.phase === 'HALF_TIME'
         ? 'Iniciar 2º Tempo'
-        : 'Apito Inicial (0\')'
+        : "Apito Inicial (0')"
       : isMatchDay
       ? `Ir para o Jogo (${currentRound}ª Rodada)`
       : 'Continuar Calendário';
 
+  const mobilePrimaryActionLabel =
+    activeTab === 'match'
+      ? matchState.phase === 'FULL_TIME'
+        ? 'Ver Tabela'
+        : matchState.isRunning
+        ? `Pausar (${matchState.minute}')`
+        : matchState.phase === 'HALF_TIME'
+        ? '2º Tempo'
+        : 'Iniciar'
+      : isMatchDay
+      ? `Ir p/ Jogo`
+      : 'Continuar';
+
+  const navItems = [
+    {
+      id: 'inbox' as const,
+      label: 'Início / Inbox',
+      mobileLabel: 'Início',
+      icon: Inbox,
+      badge: unreadInboxCount > 0 ? String(unreadInboxCount) : null,
+    },
+    {
+      id: 'squad' as const,
+      label: 'Elenco',
+      mobileLabel: 'Elenco',
+      icon: Users,
+      badge: `${squad.length}`,
+    },
+    {
+      id: 'tactics' as const,
+      label: 'Táticas',
+      mobileLabel: 'Táticas',
+      icon: Sliders,
+      badge: userClub.formation,
+    },
+    {
+      id: 'match' as const,
+      label: 'Motor de Partida 2D',
+      mobileLabel: 'Jogo 2D',
+      icon: PlayCircle,
+      badge:
+        matchState.phase === 'FIRST_HALF' ||
+        matchState.phase === 'SECOND_HALF'
+          ? `${matchState.minute}'`
+          : `R${currentRound}`,
+    },
+    {
+      id: 'competitions' as const,
+      label: 'Competições',
+      mobileLabel: 'Liga',
+      icon: Trophy,
+      badge: `${userRank}º`,
+    },
+    {
+      id: 'finances' as const,
+      label: 'Finanças',
+      mobileLabel: 'Finanças',
+      icon: Wallet,
+      badge: null,
+    },
+  ];
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex">
-      {/* Fixed Sidebar Navigation */}
-      <aside className="w-60 bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0 select-none">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col lg:flex-row">
+      {/* Fixed Sidebar Navigation (Desktop lg+) */}
+      <aside className="hidden lg:flex w-60 bg-slate-900 border-r border-slate-800 flex-col justify-between shrink-0 select-none">
         <div>
           {/* Brand Lockup */}
           <div className="h-16 px-5 border-b border-slate-800 flex items-center gap-3">
@@ -690,50 +752,7 @@ export default function App() {
             className="p-3 space-y-1"
             aria-label="Navegação principal do clube"
           >
-            {(
-              [
-                {
-                  id: 'inbox',
-                  label: 'Início / Inbox',
-                  icon: Inbox,
-                  badge: unreadInboxCount > 0 ? String(unreadInboxCount) : null,
-                },
-                {
-                  id: 'squad',
-                  label: 'Elenco',
-                  icon: Users,
-                  badge: `${squad.length}`,
-                },
-                {
-                  id: 'tactics',
-                  label: 'Táticas',
-                  icon: Sliders,
-                  badge: userClub.formation,
-                },
-                {
-                  id: 'match',
-                  label: 'Motor de Partida 2D',
-                  icon: PlayCircle,
-                  badge:
-                    matchState.phase === 'FIRST_HALF' ||
-                    matchState.phase === 'SECOND_HALF'
-                      ? `${matchState.minute}'`
-                      : `R${currentRound}`,
-                },
-                {
-                  id: 'competitions',
-                  label: 'Competições',
-                  icon: Trophy,
-                  badge: `${userRank}º`,
-                },
-                {
-                  id: 'finances',
-                  label: 'Finanças',
-                  icon: Wallet,
-                  badge: null,
-                },
-              ] as const
-            ).map((item) => {
+            {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (
@@ -784,26 +803,35 @@ export default function App() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Persistent Top Header Bar */}
-        <header className="h-16 bg-slate-900/95 border-b border-slate-800 px-6 flex items-center justify-between gap-4 shrink-0">
+        {/* Persistent Top Header Bar (h-12 on mobile, h-16 on desktop -> respects <15% mobile sticky cap) */}
+        <header className="sticky top-0 z-30 h-12 lg:h-16 bg-slate-900/95 border-b border-slate-800 px-3 sm:px-5 lg:px-6 flex items-center justify-between gap-2 sm:gap-4 shrink-0">
           {/* Left: Club Name & League Status */}
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <div
-              className="w-9 h-9 rounded-lg flex items-center justify-center font-mono font-bold text-xs text-slate-950 shrink-0"
+              className="w-7 h-7 lg:w-9 lg:h-9 rounded-lg flex items-center justify-center font-mono font-bold text-[11px] lg:text-xs text-slate-950 shrink-0"
               style={{ backgroundColor: userClub.primaryColor }}
             >
               {userClub.abbr}
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <h1 className="text-base font-bold text-slate-100 truncate">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <h1 className="text-xs sm:text-sm lg:text-base font-bold text-slate-100 truncate">
                   {userClub.name}
                 </h1>
-                <span className="text-xs text-slate-400 font-mono hidden sm:inline">
+                <span className="text-xs text-slate-400 font-mono hidden sm:inline whitespace-nowrap">
                   · {userRank}º na Liga Nacional
                 </span>
               </div>
-              <div className="text-xs text-slate-400 truncate">
+              {/* Mobile compact status line */}
+              <div className="text-[10px] text-slate-400 font-mono tabular-nums truncate md:hidden">
+                {formatCalendarDate(dayOffset).split(',')[1]?.trim()} ·{' '}
+                <span className="text-emerald-400">
+                  {formatCompactBRL(userClub.cashBalance)}
+                </span>{' '}
+                · Conf. {userClub.boardConfidence}%
+              </div>
+              {/* Desktop status line */}
+              <div className="hidden md:block text-xs text-slate-400 truncate">
                 {userClub.stadium} · Esquema {userClub.formation} (
                 {userClub.instructions.mentality})
               </div>
@@ -811,7 +839,7 @@ export default function App() {
           </div>
 
           {/* Right: Calendar Date, Cash Balance, Board Confidence (%) & Dynamic Action Button */}
-          <div className="flex items-center gap-5 shrink-0">
+          <div className="flex items-center gap-2 sm:gap-4 lg:gap-5 shrink-0">
             {/* Data atual do calendário */}
             <div className="hidden md:flex items-center gap-2 text-xs">
               <Calendar className="w-4 h-4 text-emerald-400" />
@@ -826,7 +854,7 @@ export default function App() {
             </div>
 
             {/* Saldo em Caixa */}
-            <div className="hidden lg:flex items-center gap-2 text-xs border-l border-slate-800 pl-4">
+            <div className="hidden xl:flex items-center gap-2 text-xs border-l border-slate-800 pl-4">
               <Wallet className="w-4 h-4 text-emerald-400" />
               <div>
                 <div className="text-[10px] text-slate-400 leading-none">
@@ -839,7 +867,7 @@ export default function App() {
             </div>
 
             {/* Confiança da Diretoria (%) */}
-            <div className="hidden sm:flex items-center gap-2 text-xs border-l border-slate-800 pl-4">
+            <div className="hidden lg:flex items-center gap-2 text-xs border-l border-slate-800 pl-4">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
               <div>
                 <div className="text-[10px] text-slate-400 leading-none">
@@ -854,21 +882,22 @@ export default function App() {
             {/* Dynamic Primary Action Button ("Continuar" / "Ir para o Jogo") */}
             <button
               onClick={handlePrimaryHeaderAction}
-              className={`px-4 py-2.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-2 whitespace-nowrap shadow-sm ${
+              className={`px-3 py-1.5 lg:px-4 lg:py-2.5 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 lg:gap-2 whitespace-nowrap shadow-sm ${
                 isMatchDay || activeTab === 'match'
                   ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
                   : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold'
               }`}
             >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              <span>{primaryActionLabel}</span>
-              <ChevronRight className="w-3.5 h-3.5" />
+              <Play className="w-3 h-3 lg:w-3.5 lg:h-3.5 fill-current shrink-0" />
+              <span className="hidden sm:inline">{primaryActionLabel}</span>
+              <span className="sm:hidden">{mobilePrimaryActionLabel}</span>
+              <ChevronRight className="w-3.5 h-3.5 hidden sm:inline" />
             </button>
           </div>
         </header>
 
         {/* Active Module Viewport */}
-        <main className="flex-1 p-6 overflow-y-auto">
+        <main className="flex-1 p-3 sm:p-5 lg:p-6 pb-20 lg:pb-6 overflow-y-auto overflow-x-hidden">
           {activeTab === 'inbox' && (
             <DashboardInbox
               messages={messages}
@@ -948,6 +977,40 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {/* Mobile Fixed Bottom Navigation Bar (< lg) */}
+      <nav
+        aria-label="Navegação mobile"
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-40 h-14 bg-slate-900/95 border-t border-slate-800 grid grid-cols-6 items-center px-1 select-none"
+      >
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = activeTab === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id)}
+              className={`h-full flex flex-col items-center justify-center gap-0.5 transition-colors ${
+                isActive
+                  ? 'text-emerald-400 font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <div className="relative flex items-center justify-center">
+                <Icon className="w-4 h-4" />
+                {item.id === 'inbox' && unreadInboxCount > 0 && (
+                  <span className="absolute -top-1 -right-2.5 text-[9px] font-mono font-bold text-emerald-300">
+                    {unreadInboxCount}
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] leading-none tracking-tight whitespace-nowrap">
+                {item.mobileLabel}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
 
       {/* Detailed 18-Attribute Player Profile Modal */}
       <PlayerProfileModal

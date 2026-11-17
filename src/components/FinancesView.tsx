@@ -6,21 +6,32 @@ import {
   Building2,
 } from 'lucide-react';
 import { Club, Player } from '../types/football';
+import {
+  getEffectivePayroll,
+  getPlayerPaidSalary,
+} from '../engine/transferEngine';
 import { formatBRL, formatCompactBRL } from '../utils/formatters';
 
 interface FinancesViewProps {
   club: Club;
   squad: Player[];
+  loanedOutPlayers?: Player[];
 }
 
-export const FinancesView: React.FC<FinancesViewProps> = ({ club, squad }) => {
-  const totalMonthlyPayroll = squad.reduce((acc, p) => acc + p.salary, 0);
+export const FinancesView: React.FC<FinancesViewProps> = ({
+  club,
+  squad,
+  loanedOutPlayers = [],
+}) => {
+  const totalMonthlyPayroll = getEffectivePayroll(squad, loanedOutPlayers);
   const totalSquadValuation = squad.reduce((acc, p) => acc + p.marketValue, 0);
   const wageUsagePct = Math.round(
     (totalMonthlyPayroll / club.wageBudget) * 100
   );
 
-  const sortedBySalary = [...squad].sort((a, b) => b.salary - a.salary);
+  const sortedBySalary = [...squad].sort(
+    (a, b) => getPlayerPaidSalary(b) - getPlayerPaidSalary(a)
+  );
 
   const revenueItems = [
     {
@@ -47,7 +58,11 @@ export const FinancesView: React.FC<FinancesViewProps> = ({ club, squad }) => {
 
   const expenseItems = [
     {
-      label: 'Folha Salarial do Elenco Profissional (22 Atletas)',
+      label: `Folha Salarial do Elenco (${squad.length} Atletas${
+        loanedOutPlayers.length > 0
+          ? ` + ${loanedOutPlayers.length} em empréstimo`
+          : ''
+      })`,
       amount: totalMonthlyPayroll,
       note: `${wageUsagePct}% do orçamento aprovado`,
     },
@@ -143,7 +158,7 @@ export const FinancesView: React.FC<FinancesViewProps> = ({ club, squad }) => {
 
         <div className="bg-[#14171f] border border-white/[0.07] rounded-[24px] p-5">
           <div className="flex items-center justify-between text-xs text-zinc-400">
-            <span>Patrimônio de Elenco (22 Atletas)</span>
+            <span>Patrimônio de Elenco ({squad.length} Atletas)</span>
             <ShieldCheck className="w-4 h-4 text-[#b5ff00]" />
           </div>
           <div className="font-display text-4xl font-extrabold tabular-nums text-white mt-1.5 leading-none">
@@ -258,7 +273,12 @@ export const FinancesView: React.FC<FinancesViewProps> = ({ club, squad }) => {
                       {formatCompactBRL(p.marketValue)}
                     </td>
                     <td className="py-2.5 px-4 text-right font-bold text-[#b5ff00]">
-                      {formatBRL(p.salary)}
+                      {formatBRL(getPlayerPaidSalary(p))}
+                      {p.contractType === 'EMPRESTADO' && (
+                        <span className="block text-[10px] font-normal text-zinc-400">
+                          Emp. ({Math.round((p.wageSharePaid ?? 1) * 100)}%)
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

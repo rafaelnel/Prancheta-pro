@@ -286,10 +286,12 @@ export function buildPitchTokens(
   homeClub: Club,
   awayClub: Club,
   userSquad: Player[],
-  isUserHome: boolean
+  isUserHome: boolean,
+  excludedPlayerIds: string[] = []
 ): { homeTokens: PitchTokenState[]; awayTokens: PitchTokenState[] } {
   const homeFormationSlots = FORMATIONS[homeClub.formation] || FORMATIONS['4-3-3'];
   const awayFormationSlots = FORMATIONS[awayClub.formation] || FORMATIONS['4-2-3-1'];
+  const excludedSet = new Set(excludedPlayerIds);
 
   const starters = [...userSquad]
     .filter((p) => p.isStarter)
@@ -301,6 +303,31 @@ export function buildPitchTokens(
     slots: typeof homeFormationSlots,
     club: Club
   ): PitchTokenState[] => {
+    const oppSeeds = REAL_SQUAD_SEEDS[club.id];
+    const availableOppPool = oppSeeds
+      ? oppSeeds
+          .map((seed, seedIdx) => ({
+            seed,
+            id: `${club.id}-p${seedIdx + 1}`,
+          }))
+          .filter((item) => !excludedSet.has(item.id))
+      : [];
+
+    const pickOppReplacement = (idx: number) => {
+      if (!oppSeeds) return null;
+      const directId = `${club.id}-p${idx + 1}`;
+      if (!excludedSet.has(directId) && oppSeeds[idx]) {
+        return { seed: oppSeeds[idx], id: directId };
+      }
+      // Pick first non-starter or remaining available player not already used in first 11
+      const fallbackPool = availableOppPool.filter(
+        (item) =>
+          oppSeeds.indexOf(item.seed) >= 11 ||
+          !slots.some((_, sIdx) => `${club.id}-p${sIdx + 1}` === item.id && sIdx !== idx)
+      );
+      return fallbackPool[0] || availableOppPool[idx % Math.max(1, availableOppPool.length)] || null;
+    };
+
     return slots.map((slot, idx) => {
       // Home attacks from Left (x: 6..48) to Right (x: 52..94)
       // Base coordinates when ball is at midfield
@@ -330,8 +357,8 @@ export function buildPitchTokens(
           rating: 6.8,
         };
       } else {
-        const oppSeeds = REAL_SQUAD_SEEDS[club.id];
-        const oppStarter = oppSeeds && oppSeeds[idx];
+        const chosenOpp = pickOppReplacement(idx);
+        const oppStarter = chosenOpp?.seed;
         const starMatch = club.starPlayers[idx % Math.max(1, club.starPlayers.length)];
         const fallback = OPPONENT_DEFAULT_NAMES[idx] || {
           name: `Jogador ${idx + 1}`,
@@ -348,7 +375,7 @@ export function buildPitchTokens(
         const jerseyNumbers = [1, 2, 3, 4, 6, 5, 8, 10, 7, 11, 9];
         const shirtNumber = oppStarter ? oppStarter[0] : (jerseyNumbers[idx] || idx + 1);
         return {
-          id: `${club.id}-p${idx + 1}`,
+          id: chosenOpp?.id || `${club.id}-p${idx + 1}`,
           number: shirtNumber,
           name: displayName,
           shortName,
@@ -379,14 +406,16 @@ export function createInitialMatchState(
   homeClub: Club,
   awayClub: Club,
   userSquad: Player[],
-  userClubId: string = USER_CLUB_ID
+  userClubId: string = USER_CLUB_ID,
+  excludedPlayerIds: string[] = []
 ): LiveMatchState {
   const isUserHome = fixture.homeClubId === userClubId;
   const { homeTokens, awayTokens } = buildPitchTokens(
     homeClub,
     awayClub,
     userSquad,
-    isUserHome
+    isUserHome,
+    excludedPlayerIds
   );
 
   const initialCarrier = homeTokens[5] || homeTokens[0];

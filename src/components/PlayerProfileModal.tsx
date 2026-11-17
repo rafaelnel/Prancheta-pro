@@ -22,6 +22,7 @@ import {
 
 interface PlayerProfileModalProps {
   player: Player | null;
+  readOnly?: boolean;
   onClose: () => void;
   onUpdateRoleDuty: (
     playerId: string,
@@ -32,6 +33,7 @@ interface PlayerProfileModalProps {
 
 export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   player,
+  readOnly = false,
   onClose,
   onUpdateRoleDuty,
 }) => {
@@ -226,6 +228,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
               <select
                 id="modal-role-select"
                 value={player.assignedRole}
+                disabled={readOnly}
                 onChange={(e) => {
                   const newRole = getRoleById(e.target.value);
                   const validDuty = newRole.allowedDuties.includes(
@@ -235,7 +238,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                     : newRole.allowedDuties[0];
                   onUpdateRoleDuty(player.id, newRole.id, validDuty);
                 }}
-                className="w-full bg-[#14171f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#b5ff00]"
+                className="w-full bg-[#14171f] border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#b5ff00] disabled:opacity-60"
               >
                 {TACTICAL_ROLES.map((r) => (
                   <option key={r.id} value={r.id}>
@@ -257,14 +260,14 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                     return (
                       <button
                         key={duty}
-                        disabled={!allowed}
+                        disabled={readOnly || !allowed}
                         onClick={() =>
                           onUpdateRoleDuty(player.id, currentRole.id, duty)
                         }
                         className={`flex-1 py-1.5 px-2.5 rounded-full text-xs font-bold transition-colors whitespace-nowrap ${
                           active
                             ? 'bg-[#b5ff00] text-[#090a0f]'
-                            : allowed
+                            : allowed && !readOnly
                             ? 'text-zinc-300 hover:text-white'
                             : 'text-zinc-600 cursor-not-allowed'
                         }`}

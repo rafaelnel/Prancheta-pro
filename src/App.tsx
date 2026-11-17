@@ -13,6 +13,7 @@ import {
   Save,
   Check,
   FolderOpen,
+  ArrowLeftRight,
 } from 'lucide-react';
 import {
   ALL_WORLD_CLUBS,
@@ -34,6 +35,7 @@ import {
   getCupPrizeMoney,
 } from './data/cupFactory';
 import { createNewCareerSave } from './data/careerFactory';
+import { createInitialFreeAgents } from './data/transferCatalog';
 import { FORMATIONS, getRoleById } from './data/tacticsData';
 import {
   buildPitchTokens,
@@ -44,6 +46,12 @@ import {
   updateStandingsWithRound,
 } from './engine/matchEngine';
 import {
+  LoanWageShare,
+  evaluateTransferNegotiation,
+  executeIncomingTransfer,
+  executeOutgoingTransfer,
+} from './engine/transferEngine';
+import {
   CareerSaveData,
   CareerSlotIndex,
   Club,
@@ -52,6 +60,7 @@ import {
   InboxMessage,
   LibertadoresState,
   LiveMatchState,
+  MarketPlayerListing,
   MentalityType,
   NavigationTab,
   Player,
@@ -59,6 +68,9 @@ import {
   StandingsRow,
   TacticalDuty,
   TeamInstructions,
+  TransferDealMode,
+  TransferOfferTier,
+  TransferRecord,
 } from './types/football';
 import {
   formatCalendarDate,
@@ -77,6 +89,7 @@ import { DashboardInbox } from './components/DashboardInbox';
 import { SquadView } from './components/SquadView';
 import { TacticalBoard } from './components/TacticalBoard';
 import { MatchEngineView } from './components/MatchEngineView';
+import { MarketFeedback, MarketView } from './components/MarketView';
 import { AnnualCalendarView } from './components/AnnualCalendarView';
 import { CompetitionsView } from './components/CompetitionsView';
 import { FinancesView } from './components/FinancesView';
@@ -149,6 +162,20 @@ export default function App() {
   const [messages, setMessages] = useState<InboxMessage[]>(
     () => initialAutostartSave?.messages || INITIAL_INBOX_MESSAGES
   );
+  const [freeAgents, setFreeAgents] = useState<Player[]>(
+    () => initialAutostartSave?.freeAgents || createInitialFreeAgents()
+  );
+  const [loanedOutPlayers, setLoanedOutPlayers] = useState<Player[]>(
+    () => initialAutostartSave?.loanedOutPlayers || []
+  );
+  const [transferHistory, setTransferHistory] = useState<TransferRecord[]>(
+    () => initialAutostartSave?.transferHistory || []
+  );
+  const [transferredOutClubPlayerIds, setTransferredOutClubPlayerIds] =
+    useState<string[]>(
+      () => initialAutostartSave?.transferredOutClubPlayerIds || []
+    );
+  const [marketFeedback, setMarketFeedback] = useState<MarketFeedback>(null);
 
   // Calendar & Multi-Competition Progression
   const [seasonStepIndex, setSeasonStepIndex] = useState<number>(
@@ -169,10 +196,12 @@ export default function App() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
   const saveTimerRef = useRef<number | null>(null);
 
-  // Modal state for inspecting 18 attributes of any player
+  // Modal state for inspecting 18 attributes of any squad or market player
   const [inspectedPlayerId, setInspectedPlayerId] = useState<string | null>(
     null
   );
+  const [inspectedExternalPlayer, setInspectedExternalPlayer] =
+    useState<Player | null>(null);
 
   const userClub = useMemo(
     () => clubs.find((c) => c.id === userClubId) || clubs[0],
@@ -288,6 +317,11 @@ export default function App() {
         libertadores: override?.libertadores ?? libertadores,
         messages: override?.messages ?? messages,
         matchState: override?.matchState ?? matchState,
+        freeAgents: override?.freeAgents ?? freeAgents,
+        loanedOutPlayers: override?.loanedOutPlayers ?? loanedOutPlayers,
+        transferHistory: override?.transferHistory ?? transferHistory,
+        transferredOutClubPlayerIds:
+          override?.transferredOutClubPlayerIds ?? transferredOutClubPlayerIds,
       };
 
       saveCareerToSlot(payload);
@@ -314,6 +348,10 @@ export default function App() {
       libertadores,
       messages,
       matchState,
+      freeAgents,
+      loanedOutPlayers,
+      transferHistory,
+      transferredOutClubPlayerIds,
     ]
   );
 
@@ -339,12 +377,18 @@ export default function App() {
       save.libertadores || createInitialLibertadores(save.userClubId)
     );
     setMessages(save.messages);
+    setFreeAgents(save.freeAgents || createInitialFreeAgents());
+    setLoanedOutPlayers(save.loanedOutPlayers || []);
+    setTransferHistory(save.transferHistory || []);
+    setTransferredOutClubPlayerIds(save.transferredOutClubPlayerIds || []);
+    setMarketFeedback(null);
     setCurrentRound(save.currentRound);
     setSeasonStepIndex(save.seasonStepIndex ?? 0);
     setDayOffset(save.dayOffset);
     setIsMatchDay(save.isMatchDay);
     setMatchState({ ...save.matchState, isRunning: false });
     setInspectedPlayerId(null);
+    setInspectedExternalPlayer(null);
     setActiveTab('inbox');
     setHasUnsavedChanges(false);
     setScreen('club');
@@ -770,7 +814,8 @@ export default function App() {
           homeClub,
           awayClub,
           updated,
-          matchState.isUserHome
+          matchState.isUserHome,
+          transferredOutClubPlayerIds
         );
         setMatchState((m) => ({ ...m, homeTokens, awayTokens }));
       }
@@ -905,7 +950,8 @@ export default function App() {
           nextHome,
           nextAway,
           updated,
-          matchState.isUserHome
+          matchState.isUserHome,
+          transferredOutClubPlayerIds
         );
         setMatchState((m) => ({ ...m, homeTokens, awayTokens }));
       }
@@ -1135,7 +1181,8 @@ export default function App() {
       nextHome,
       nextAway,
       recoveredSquad,
-      userClubId
+      userClubId,
+      transferredOutClubPlayerIds
     );
 
     setSquad(recoveredSquad);
@@ -1158,6 +1205,252 @@ export default function App() {
       dayOffset: nextDayOffset,
       isMatchDay: false,
       matchState: nextMatch,
+    });
+  };
+
+  const handleProposeTransfer = (params: {
+    listing: MarketPlayerListing;
+    dealMode: TransferDealMode;
+    offerTier: TransferOfferTier;
+    loanWageShare: LoanWageShare;
+  }) => {
+    const { listing, dealMode, offerTier, loanWageShare } = params;
+    const evaluation = evaluateTransferNegotiation({
+      userClub,
+      userSquad: squad,
+      loanedOutPlayers,
+      listing,
+      dealMode,
+      offerTier,
+      loanWageShare,
+    });
+
+    if (evaluation.isBlocked) {
+      setMarketFeedback({
+        type: 'error',
+        title: 'Operação bloqueada pelos limites financeiros',
+        detail: evaluation.blockReason || 'Saldo ou folha insuficiente.',
+      });
+      return;
+    }
+
+    const result = executeIncomingTransfer({
+      userClub,
+      userSquad: squad,
+      freeAgents,
+      transferredOutClubPlayerIds,
+      listing,
+      dealMode,
+      evaluation,
+      loanWageShare,
+    });
+
+    const dateLabel = formatCalendarDate(dayOffset);
+    const counterpartyName = listing.originClub?.shortName || 'Passe Livre';
+    const recordType: TransferRecord['type'] =
+      dealMode === 'FREE'
+        ? 'LIVRE'
+        : dealMode === 'LOAN'
+        ? 'EMPRESTIMO_IN'
+        : 'COMPRA';
+
+    if (!result.accepted || !result.signedPlayer) {
+      const rejectedRec: TransferRecord = {
+        id: `tr-rej-${Date.now()}`,
+        date: dateLabel,
+        type: recordType,
+        status: 'RECUSADA',
+        playerName: listing.player.name,
+        position: listing.player.position,
+        ovr: listing.ovr,
+        counterpartyClubName: counterpartyName,
+        feeAmount: evaluation.effectiveFee,
+        monthlySalaryImpact: evaluation.effectiveSalary,
+        note: `Dificuldade ${evaluation.level} (${evaluation.acceptanceChance}% chance).`,
+      };
+      const nextHistory = [rejectedRec, ...transferHistory];
+      setTransferHistory(nextHistory);
+      setMarketFeedback({
+        type: 'rejected',
+        title: `${counterpartyName} recusou a proposta por ${listing.player.name}`,
+        detail: `Dificuldade ${evaluation.level} (${evaluation.acceptanceChance}% de aceite). Dica: aumente a oferta para +15%/+30% ou tente um Empréstimo com maior cobertura salarial.`,
+      });
+      persistCareer({ transferHistory: nextHistory });
+      return;
+    }
+
+    const updatedClubs = clubs.map((c) =>
+      c.id === userClubId ? result.updatedClub : c
+    );
+    const acceptedRec: TransferRecord = {
+      id: `tr-acc-${Date.now()}`,
+      date: dateLabel,
+      type: recordType,
+      status: 'CONCLUIDA',
+      playerName: result.signedPlayer.name,
+      position: result.signedPlayer.position,
+      ovr: listing.ovr,
+      counterpartyClubName: counterpartyName,
+      feeAmount: evaluation.effectiveFee,
+      monthlySalaryImpact: evaluation.effectiveSalary,
+      note:
+        dealMode === 'LOAN'
+          ? `Empréstimo 2026 (${Math.round(loanWageShare * 100)}% salário).`
+          : dealMode === 'FREE'
+          ? 'Contrato sem custo de transferência.'
+          : 'Compra definitiva concluída.',
+    };
+
+    const nextHistory = [acceptedRec, ...transferHistory];
+    const transferMsg: InboxMessage = {
+      id: `msg-tr-${Date.now()}`,
+      date: `${dateLabel} · 14:30`,
+      sender: 'Departamento de Futebol',
+      senderRole: 'Mercado & Contratações',
+      subject: `Reforço Oficializado: ${result.signedPlayer.name} (${result.signedPlayer.position} · OVR ${listing.ovr})`,
+      category: 'Mercado',
+      priority: 'positive',
+      read: false,
+      relatedPlayerId: result.signedPlayer.id,
+      body: [
+        `${result.signedPlayer.name} fechou com o ${userClub.shortName} (${acceptedRec.note}) vindo de ${counterpartyName}.`,
+        `Investimento imediato: ${
+          evaluation.effectiveFee === 0
+            ? 'R$ 0 (Passe Livre)'
+            : formatCompactBRL(evaluation.effectiveFee)
+        } · Folha adicional: +${formatCompactBRL(evaluation.effectiveSalary)}/mês.`,
+      ],
+      actionLabel: 'Ver Elenco',
+      actionTargetTab: 'squad',
+    };
+    const nextMessages = [transferMsg, ...messages];
+
+    let nextMatchState = matchState;
+    if (matchState.phase === 'PRE_MATCH') {
+      const { homeTokens, awayTokens } = buildPitchTokens(
+        homeClub,
+        awayClub,
+        result.updatedSquad,
+        matchState.isUserHome,
+        result.updatedTransferredOutIds
+      );
+      nextMatchState = { ...matchState, homeTokens, awayTokens };
+      setMatchState(nextMatchState);
+    }
+
+    setClubs(updatedClubs);
+    setSquad(result.updatedSquad);
+    setFreeAgents(result.updatedFreeAgents);
+    setTransferredOutClubPlayerIds(result.updatedTransferredOutIds);
+    setTransferHistory(nextHistory);
+    setMessages(nextMessages);
+    setMarketFeedback({
+      type: 'success',
+      title: `${result.signedPlayer.name} contratado com sucesso!`,
+      detail: `${acceptedRec.note} Já integrado ao elenco com camisa #${result.signedPlayer.number}.`,
+    });
+
+    persistCareer({
+      clubs: updatedClubs,
+      squad: result.updatedSquad,
+      freeAgents: result.updatedFreeAgents,
+      transferredOutClubPlayerIds: result.updatedTransferredOutIds,
+      transferHistory: nextHistory,
+      messages: nextMessages,
+      matchState: nextMatchState,
+    });
+  };
+
+  const handleOutgoingTransfer = (params: {
+    player: Player;
+    action: 'VENDA' | 'EMPRESTIMO_OUT' | 'DEVOLVER_EMPRESTIMO';
+  }) => {
+    const { player, action } = params;
+    const result = executeOutgoingTransfer({
+      userClub,
+      userSquad: squad,
+      loanedOutPlayers,
+      player,
+      action,
+      destinationClubName:
+        action === 'EMPRESTIMO_OUT' ? 'Clube Parceiro 2026' : undefined,
+    });
+
+    if (!result.success) {
+      setMarketFeedback({
+        type: 'error',
+        title: 'Não foi possível concluir a saída',
+        detail: 'Verifique os limites mínimos do elenco.',
+      });
+      return;
+    }
+
+    const updatedClubs = clubs.map((c) =>
+      c.id === userClubId ? result.updatedClub : c
+    );
+    const ovr = calculatePlayerOverall(player.attributes, player.position);
+    const dateLabel = formatCalendarDate(dayOffset);
+    const record: TransferRecord = {
+      id: `tr-out-${Date.now()}`,
+      date: dateLabel,
+      type: action === 'EMPRESTIMO_OUT' ? 'EMPRESTIMO_OUT' : 'VENDA',
+      status: 'CONCLUIDA',
+      playerName: player.name,
+      position: player.position,
+      ovr,
+      counterpartyClubName:
+        action === 'DEVOLVER_EMPRESTIMO'
+          ? player.loanOriginClubName || 'Clube de Origem'
+          : action === 'EMPRESTIMO_OUT'
+          ? 'Clube Parceiro 2026'
+          : 'Mercado Nacional/Ext.',
+      feeAmount: result.feeReceived,
+      monthlySalaryImpact: -result.monthlyWageRelief,
+      note:
+        action === 'DEVOLVER_EMPRESTIMO'
+          ? 'Devolução antecipada de empréstimo.'
+          : action === 'EMPRESTIMO_OUT'
+          ? 'Emprestado para alívio de 90% da folha.'
+          : 'Venda definitiva concluída.',
+    };
+
+    const nextHistory = [record, ...transferHistory];
+    let nextMatchState = matchState;
+    if (matchState.phase === 'PRE_MATCH') {
+      const { homeTokens, awayTokens } = buildPitchTokens(
+        homeClub,
+        awayClub,
+        result.updatedSquad,
+        matchState.isUserHome,
+        transferredOutClubPlayerIds
+      );
+      nextMatchState = { ...matchState, homeTokens, awayTokens };
+      setMatchState(nextMatchState);
+    }
+
+    setClubs(updatedClubs);
+    setSquad(result.updatedSquad);
+    setLoanedOutPlayers(result.updatedLoanedOutPlayers);
+    setTransferHistory(nextHistory);
+    setMarketFeedback({
+      type: 'success',
+      title:
+        action === 'VENDA'
+          ? `${player.name} vendido por ${formatCompactBRL(result.feeReceived)}`
+          : action === 'EMPRESTIMO_OUT'
+          ? `${player.name} emprestado com alívio de ${formatCompactBRL(result.monthlyWageRelief)}/mês`
+          : `${player.name} devolvido ao clube de origem`,
+      detail: result.promotedStarterName
+        ? `${result.promotedStarterName} assumiu automaticamente a vaga titular.`
+        : `Folha mensal reduzida em ${formatCompactBRL(result.monthlyWageRelief)}.`,
+    });
+
+    persistCareer({
+      clubs: updatedClubs,
+      squad: result.updatedSquad,
+      loanedOutPlayers: result.updatedLoanedOutPlayers,
+      transferHistory: nextHistory,
+      matchState: nextMatchState,
     });
   };
 
@@ -1189,10 +1482,11 @@ export default function App() {
     setActiveTab('match');
   };
 
-  const inspectedPlayer = useMemo(
+  const inspectedSquadPlayer = useMemo(
     () => squad.find((p) => p.id === inspectedPlayerId) || null,
     [squad, inspectedPlayerId]
   );
+  const inspectedPlayer = inspectedExternalPlayer || inspectedSquadPlayer;
 
   const activeRoundFixturesForMatchView = useMemo(() => {
     if (
@@ -1305,6 +1599,13 @@ export default function App() {
         matchState.phase === 'SECOND_HALF'
           ? `${matchState.minute}'`
           : `R${currentRound}`,
+    },
+    {
+      id: 'market' as const,
+      label: 'Mercado',
+      mobileLabel: 'Merc.',
+      icon: ArrowLeftRight,
+      badge: transferHistory.length > 0 ? String(transferHistory.length) : null,
     },
     {
       id: 'calendar' as const,
@@ -1591,6 +1892,8 @@ export default function App() {
               nextFixture={currentUserFixture}
               opponentClub={opponentClub}
               standings={standings}
+              secondaryStandings={secondaryStandings}
+              libertadores={libertadores}
               clubs={clubs}
               squad={squad}
               currentRound={currentRound}
@@ -1647,6 +1950,26 @@ export default function App() {
             />
           )}
 
+          {activeTab === 'market' && (
+            <MarketView
+              userClub={userClub}
+              clubs={clubs}
+              squad={squad}
+              freeAgents={freeAgents}
+              loanedOutPlayers={loanedOutPlayers}
+              transferHistory={transferHistory}
+              transferredOutClubPlayerIds={transferredOutClubPlayerIds}
+              lastFeedback={marketFeedback}
+              onClearFeedback={() => setMarketFeedback(null)}
+              onInspectPlayer={(p) => {
+                setInspectedPlayerId(null);
+                setInspectedExternalPlayer(p);
+              }}
+              onProposeTransfer={handleProposeTransfer}
+              onOutgoingTransfer={handleOutgoingTransfer}
+            />
+          )}
+
           {activeTab === 'calendar' && (
             <AnnualCalendarView
               userClub={userClub}
@@ -1682,7 +2005,11 @@ export default function App() {
           )}
 
           {activeTab === 'finances' && (
-            <FinancesView club={userClub} squad={squad} />
+            <FinancesView
+              club={userClub}
+              squad={squad}
+              loanedOutPlayers={loanedOutPlayers}
+            />
           )}
         </main>
       </div>
@@ -1690,7 +2017,7 @@ export default function App() {
       {/* Mobile Bottom Capsule Navigation Bar (< lg) */}
       <nav
         aria-label="Navegação mobile"
-        className="lg:hidden fixed bottom-2 left-2 right-2 z-40 h-14 bg-[#14171f]/95 border border-white/10 rounded-full grid grid-cols-7 items-center px-1 shadow-2xl select-none"
+        className="lg:hidden fixed bottom-2 left-1.5 right-1.5 z-40 h-14 bg-[#14171f]/95 border border-white/10 rounded-full grid grid-cols-8 items-center px-1 shadow-2xl select-none"
       >
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -1699,21 +2026,21 @@ export default function App() {
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`h-10 rounded-full flex flex-col items-center justify-center gap-0.5 transition-all ${
+              className={`h-11 rounded-full flex flex-col items-center justify-center gap-0.5 transition-all ${
                 isActive
                   ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold shadow-sm'
                   : 'text-zinc-400 hover:text-white'
               }`}
             >
               <div className="relative flex items-center justify-center">
-                <Icon className="w-4 h-4" />
+                <Icon className="w-3.5 h-3.5" />
                 {item.id === 'inbox' && unreadInboxCount > 0 && !isActive && (
-                  <span className="absolute -top-1 -right-2.5 text-[9px] font-mono font-bold text-[#b5ff00]">
+                  <span className="absolute -top-1 -right-2 text-[8px] font-mono font-bold text-[#b5ff00]">
                     {unreadInboxCount}
                   </span>
                 )}
               </div>
-              <span className="text-[9px] leading-none tracking-tight whitespace-nowrap">
+              <span className="text-[8.5px] leading-none tracking-tight whitespace-nowrap">
                 {item.mobileLabel}
               </span>
             </button>
@@ -1724,7 +2051,11 @@ export default function App() {
       {/* Detailed 18-Attribute Player Profile Modal */}
       <PlayerProfileModal
         player={inspectedPlayer}
-        onClose={() => setInspectedPlayerId(null)}
+        readOnly={Boolean(inspectedExternalPlayer)}
+        onClose={() => {
+          setInspectedPlayerId(null);
+          setInspectedExternalPlayer(null);
+        }}
         onUpdateRoleDuty={handleUpdateRoleDuty}
       />
     </div>

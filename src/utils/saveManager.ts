@@ -4,6 +4,7 @@ import {
   createInitialCopaDoBrasil,
   createInitialLibertadores,
 } from '../data/cupFactory';
+import { createInitialFreeAgents } from '../data/transferCatalog';
 
 export const MAX_CAREER_SLOTS = 4;
 export const CAREER_SLOTS: CareerSlotIndex[] = [1, 2, 3, 4];
@@ -98,6 +99,10 @@ function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
       save.copaDoBrasil ?? createInitialCopaDoBrasil(save.userClubId),
     libertadores:
       save.libertadores ?? createInitialLibertadores(save.userClubId),
+    freeAgents: save.freeAgents ?? createInitialFreeAgents(),
+    loanedOutPlayers: save.loanedOutPlayers ?? [],
+    transferHistory: save.transferHistory ?? [],
+    transferredOutClubPlayerIds: save.transferredOutClubPlayerIds ?? [],
   };
 }
 

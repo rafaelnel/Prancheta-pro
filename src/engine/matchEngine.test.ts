@@ -499,4 +499,295 @@ test('SEASON_CALENDAR spans all 12 months of 2026 chronologically across Brasile
   assert.equal(monthsSeen.size, 12, 'Expected fixtures across all 12 months (Jan-Dec 2026)');
 });
 
+test('Opponent Scout generates standings-based analytical summary and detects defensive/form weaknesses', async () => {
+  const { ALL_WORLD_CLUBS } = await import('../data/initialDatabase');
+  const {
+    generateOpponentScoutingSummary,
+    resolveOpponentStandingsContext,
+  } = await import('./opponentScout');
+  const { createInitialLibertadores } = await import('../data/cupFactory');
+
+  const flamengo = ALL_WORLD_CLUBS.find((c) => c.id === 'flamengo')!;
+  const saoPaulo = ALL_WORLD_CLUBS.find((c) => c.id === 'sao-paulo')!;
+
+  // 1. Mid-season standings where São Paulo has conceded heavily & is in poor form
+  const customStandings = INITIAL_STANDINGS.map((row) => {
+    if (row.clubId === 'flamengo') {
+      return {
+        ...row,
+        played: 6,
+        won: 5,
+        drawn: 1,
+        lost: 0,
+        goalsFor: 14,
+        goalsAgainst: 4,
+        goalDifference: 10,
+        points: 16,
+        form: ['V', 'V', 'E'] as ('V' | 'E' | 'D')[],
+      };
+    }
+    if (row.clubId === 'sao-paulo') {
+      return {
+        ...row,
+        played: 6,
+        won: 1,
+        drawn: 1,
+        lost: 4,
+        goalsFor: 4,
+        goalsAgainst: 13,
+        goalDifference: -9,
+        points: 4,
+        form: ['D', 'E', 'D'] as ('V' | 'E' | 'D')[],
+      };
+    }
+    return { ...row, played: 6, won: 3, drawn: 1, lost: 2, goalsFor: 8, goalsAgainst: 7, goalDifference: 1, points: 10 };
+  }).sort((a, b) => b.points - a.points || b.goalDifference - a.goalDifference);
+
+  const report = generateOpponentScoutingSummary({
+    opponentClub: saoPaulo,
+    userClub: flamengo,
+    opponentTable: customStandings,
+    tableLabel: 'Brasileirão Série A',
+    userSquad: INITIAL_USER_SQUAD,
+  });
+
+  assert.equal(report.played, 6);
+  assert.equal(report.position, 20);
+  assert.ok(report.summary.includes('São Paulo'));
+  assert.ok(report.summary.includes('13 GC'));
+  assert.ok(report.weaknesses.some((w) => w.id === 'leaky-defense'));
+  assert.ok(report.weaknesses.some((w) => w.id === 'low-attack'));
+  assert.ok(report.weaknesses.some((w) => w.id === 'poor-form'));
+
+  // 2. Libertadores cross-country opponent resolves to its Libertadores group table
+  const ldu = ALL_WORLD_CLUBS.find((c) => c.id === 'ldu-quito')!;
+  const lib = createInitialLibertadores('flamengo');
+  const ctx = resolveOpponentStandingsContext({
+    opponentClub: ldu,
+    userClub: flamengo,
+    activeCompetition: 'LIBERTADORES',
+    standings: INITIAL_STANDINGS,
+    libertadores: lib,
+  });
+  assert.equal(ctx.label, 'Libertadores · Grupo A');
+  assert.equal(ctx.table.length, 4);
+});
+
+test('Transfer Catalog & Difficulty Engine evaluate Club x Club and Player x Squad gaps, enforce cash/payroll caps, and execute buys/loans/sales', async () => {
+  const { ALL_WORLD_CLUBS } = await import('../data/initialDatabase');
+  const {
+    createInitialFreeAgents,
+    getInternationalMarketListings,
+    INTERNATIONAL_MARKET_CLUBS,
+  } = await import('../data/transferCatalog');
+  const {
+    buildAllMarketListings,
+    evaluateOutgoingPlayer,
+    evaluateTransferNegotiation,
+    executeIncomingTransfer,
+    executeOutgoingTransfer,
+    getEffectivePayroll,
+  } = await import('./transferEngine');
+  const { createNewCareerSave } = await import('../data/careerFactory');
+
+  // 1. International & Free Agents catalogs integrity
+  const intl = getInternationalMarketListings();
+  const freeAgents = createInitialFreeAgents();
+  assert.ok(INTERNATIONAL_MARKET_CLUBS.length >= 12);
+  assert.ok(intl.length >= 40);
+  assert.equal(freeAgents.length, 20);
+  for (const item of intl) {
+    assert.ok(item.ovr >= 60 && item.ovr <= 99);
+    assert.equal(Object.keys(item.player.attributes).length, 18);
+  }
+
+  // 2. Build market listings for Ponte Preta (Série B) vs Flamengo (Série A)
+  const ponteCareer = createNewCareerSave(1, 'ponte-preta', 'Técnico');
+  const flamengoCareer = createNewCareerSave(2, 'flamengo', 'Técnico');
+  const ponteClub = ponteCareer.clubs.find((c) => c.id === 'ponte-preta')!;
+  const flamengoClub = flamengoCareer.clubs.find((c) => c.id === 'flamengo')!;
+
+  const flamengoListings = buildAllMarketListings({
+    clubs: flamengoCareer.clubs,
+    userClubId: flamengoClub.id,
+    freeAgents,
+    transferredOutClubPlayerIds: [],
+  });
+  const ponteListings = buildAllMarketListings({
+    clubs: ponteCareer.clubs,
+    userClubId: ponteClub.id,
+    freeAgents,
+    transferredOutClubPlayerIds: [],
+  });
+
+  // Excludes user club's own players
+  assert.ok(flamengoListings.every((l) => l.originClub?.id !== 'flamengo'));
+
+  // 3. Club x Club & Player x Squad Difficulty comparison:
+  // Buying an international starter (e.g. Martinelli at Arsenal) as Série B Ponte Preta is harder than as Flamengo
+  const intlStarter = intl.find((l) => l.isClubStarter && l.ovr >= 80)!;
+  const ponteVsStar = evaluateTransferNegotiation({
+    userClub: { ...ponteClub, cashBalance: 500_000_000, wageBudget: 50_000_000 },
+    userSquad: ponteCareer.squad,
+    listing: intlStarter,
+    dealMode: 'BUY',
+  });
+  const flamengoVsStar = evaluateTransferNegotiation({
+    userClub: { ...flamengoClub, cashBalance: 500_000_000, wageBudget: 50_000_000 },
+    userSquad: flamengoCareer.squad,
+    listing: intlStarter,
+    dealMode: 'BUY',
+  });
+  assert.ok(
+    ponteVsStar.resistanceScore > flamengoVsStar.resistanceScore,
+    'Smaller club should face higher resistance for international star'
+  );
+  assert.ok(
+    ponteVsStar.acceptanceChance < flamengoVsStar.acceptanceChance,
+    'Smaller club should have lower acceptance probability'
+  );
+
+  // Loan of a young international reserve with +30% offer & 100% salary is much easier than buying a starter
+  const intlLoanProspect = intl.find((l) => l.loanAvailable && !l.isClubStarter)!;
+  const loanStd = evaluateTransferNegotiation({
+    userClub: { ...flamengoClub, cashBalance: 500_000_000, wageBudget: 50_000_000 },
+    userSquad: flamengoCareer.squad,
+    listing: intlLoanProspect,
+    dealMode: 'LOAN',
+    offerTier: 'PADRAO',
+    loanWageShare: 0.5,
+  });
+  const loanStrong = evaluateTransferNegotiation({
+    userClub: { ...flamengoClub, cashBalance: 500_000_000, wageBudget: 50_000_000 },
+    userSquad: flamengoCareer.squad,
+    listing: intlLoanProspect,
+    dealMode: 'LOAN',
+    offerTier: 'AGRESSIVA_30',
+    loanWageShare: 1.0,
+  });
+  assert.ok(loanStrong.acceptanceChance >= loanStd.acceptanceChance);
+
+  // 4. Financial guardrails: low cash & exceeded wage budget block transfer
+  const noCashEval = evaluateTransferNegotiation({
+    userClub: { ...flamengoClub, cashBalance: 100_000 },
+    userSquad: flamengoCareer.squad,
+    listing: intlStarter,
+    dealMode: 'BUY',
+  });
+  assert.equal(noCashEval.canAffordCash, false);
+  assert.equal(noCashEval.isBlocked, true);
+
+  const freeTarget = flamengoListings.find((l) => l.scope === 'LIVRES')!;
+  const tightWageEval = evaluateTransferNegotiation({
+    userClub: {
+      ...flamengoClub,
+      wageBudget: getEffectivePayroll(flamengoCareer.squad),
+    },
+    userSquad: flamengoCareer.squad,
+    listing: freeTarget,
+    dealMode: 'FREE',
+  });
+  assert.equal(tightWageEval.fitsWageBudget, false);
+  assert.equal(tightWageEval.isBlocked, true);
+
+  // 5. Buying a starter from a Serie A rival (Palmeiras) removes them from rival pitch tokens
+  const palmeirasStarterListing = flamengoListings.find(
+    (l) => l.originClub?.id === 'palmeiras' && l.isClubStarter
+  )!;
+  const richFlamengo = {
+    ...flamengoClub,
+    cashBalance: 300_000_000,
+    wageBudget: 40_000_000,
+  };
+  const buyEval = evaluateTransferNegotiation({
+    userClub: richFlamengo,
+    userSquad: flamengoCareer.squad,
+    listing: palmeirasStarterListing,
+    dealMode: 'BUY',
+    offerTier: 'AGRESSIVA_30',
+  });
+  const buyExec = executeIncomingTransfer({
+    userClub: richFlamengo,
+    userSquad: flamengoCareer.squad,
+    freeAgents,
+    transferredOutClubPlayerIds: [],
+    listing: palmeirasStarterListing,
+    dealMode: 'BUY',
+    evaluation: buyEval,
+    rng: () => 0.01,
+  });
+  assert.equal(buyExec.accepted, true);
+  assert.ok(buyExec.signedPlayer);
+  assert.equal(buyExec.updatedSquad.length, 23);
+  assert.ok(
+    buyExec.updatedTransferredOutIds.includes(palmeirasStarterListing.player.id)
+  );
+
+  // Verify createInitialMatchState skips the transferred Palmeiras player in awayTokens
+  const palmeirasClub = ALL_WORLD_CLUBS.find((c) => c.id === 'palmeiras')!;
+  const matchVsPal = createInitialMatchState(
+    1,
+    {
+      id: 'test-fix',
+      roundNumber: 1,
+      homeClubId: flamengoClub.id,
+      awayClubId: palmeirasClub.id,
+      homeGoals: null,
+      awayGoals: null,
+      played: false,
+      isUserMatch: true,
+    },
+    flamengoClub,
+    palmeirasClub,
+    buyExec.updatedSquad,
+    flamengoClub.id,
+    buyExec.updatedTransferredOutIds
+  );
+  assert.ok(
+    matchVsPal.awayTokens.every((t) => t.id !== palmeirasStarterListing.player.id),
+    'Sold rival player must not appear in rival 2D pitch tokens'
+  );
+
+  // 6. Outgoing loan reduces payroll by 90% and outgoing sale of a starter auto-promotes replacement
+  const starterToSell = buyExec.updatedSquad.find((p) => p.isStarter && p.sector === 'MEI')!;
+  const sellRes = executeOutgoingTransfer({
+    userClub: buyExec.updatedClub,
+    userSquad: buyExec.updatedSquad,
+    loanedOutPlayers: [],
+    player: starterToSell,
+    action: 'VENDA',
+  });
+  assert.equal(sellRes.success, true);
+  assert.equal(sellRes.updatedSquad.length, 22);
+  assert.equal(sellRes.updatedSquad.filter((p) => p.isStarter).length, 11);
+  assert.ok(sellRes.promotedStarterName);
+
+  const reserveToLoanOut = sellRes.updatedSquad.find((p) => !p.isStarter && p.position !== 'GOL')!;
+  const payrollBeforeLoanOut = getEffectivePayroll(sellRes.updatedSquad, []);
+  const loanOutRes = executeOutgoingTransfer({
+    userClub: sellRes.updatedClub,
+    userSquad: sellRes.updatedSquad,
+    loanedOutPlayers: [],
+    player: reserveToLoanOut,
+    action: 'EMPRESTIMO_OUT',
+    destinationClubName: 'Coritiba',
+  });
+  assert.equal(loanOutRes.success, true);
+  assert.equal(loanOutRes.updatedLoanedOutPlayers.length, 1);
+  const payrollAfterLoanOut = getEffectivePayroll(
+    loanOutRes.updatedSquad,
+    loanOutRes.updatedLoanedOutPlayers
+  );
+  assert.ok(payrollAfterLoanOut < payrollBeforeLoanOut);
+
+  // Minimum GK & minimum 18 squad size guardrails
+  const onlyGkSquad = loanOutRes.updatedSquad.slice(0, 18);
+  const gkInSmall = onlyGkSquad.find((p) => p.position === 'GOL')!;
+  const blockedMin = evaluateOutgoingPlayer(gkInSmall, onlyGkSquad);
+  assert.equal(blockedMin.canSell, false);
+  assert.equal(blockedMin.canLoanOut, false);
+});
+
+
+
 

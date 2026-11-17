@@ -80,7 +80,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
             Explorar plantel profissional
           </span>
           <h2 className="font-display text-3xl sm:text-5xl font-extrabold uppercase tracking-tight text-white leading-[0.95] mt-0.5">
-            ELENCO (22)
+            ELENCO ({squad.length})
           </h2>
         </div>
 
@@ -267,6 +267,12 @@ export const SquadView: React.FC<SquadViewProps> = ({
                       </div>
                       <div className="text-[11px] text-zinc-400">
                         {player.age} anos · {player.nationality}
+                        {player.contractType === 'EMPRESTADO' && (
+                          <span className="text-amber-300 font-medium">
+                            {' '}
+                            · Empréstimo ({player.loanOriginClubName || 'Clube'})
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="py-2.5 px-2 font-mono font-bold text-white">

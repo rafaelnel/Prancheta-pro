@@ -101,6 +101,12 @@ export interface Player {
   injured: boolean;
   injuryNote?: string;
   seasonStats: PlayerSeasonStats;
+  contractType?: 'DEFINITIVO' | 'EMPRESTADO';
+  loanOriginClubId?: string;
+  loanOriginClubName?: string;
+  wageSharePaid?: number;
+  purchaseOptionFee?: number;
+  loanDestinationClubName?: string;
 }
 
 export interface FormationSlot {
@@ -254,6 +260,7 @@ export type NavigationTab =
   | 'squad'
   | 'tactics'
   | 'match'
+  | 'market'
   | 'calendar'
   | 'competitions'
   | 'finances';
@@ -269,6 +276,7 @@ export interface InboxMessage {
     | 'Departamento Médico'
     | 'Diretoria'
     | 'Olheiro'
+    | 'Mercado'
     | 'Imprensa'
     | 'Pós-Jogo';
   priority: 'normal' | 'warning' | 'danger' | 'positive';
@@ -278,6 +286,83 @@ export interface InboxMessage {
   actionLabel?: string;
   actionTargetTab?: NavigationTab;
   relatedPlayerId?: string;
+}
+
+export type MarketLeagueScope =
+  | 'SERIE_A'
+  | 'SERIE_B'
+  | 'LIBERTADORES'
+  | 'INTERNACIONAL'
+  | 'LIVRES';
+
+export interface MarketClubProfile {
+  id: string;
+  name: string;
+  shortName: string;
+  abbr: string;
+  country: string;
+  leagueName: string;
+  scope: MarketLeagueScope;
+  primaryColor: string;
+  reputation: number;
+  avgStrength: number;
+}
+
+export type TransferDealMode = 'BUY' | 'LOAN' | 'FREE';
+export type TransferOfferTier = 'PADRAO' | 'BONUS_15' | 'AGRESSIVA_30';
+export type TransferDifficultyLevel =
+  | 'Fácil'
+  | 'Moderada'
+  | 'Difícil'
+  | 'Muito Difícil';
+
+export interface MarketPlayerListing {
+  player: Player;
+  ovr: number;
+  originClub: MarketClubProfile | null;
+  scope: MarketLeagueScope;
+  isClubStarter: boolean;
+  buyFee: number;
+  loanFee: number;
+  loanAvailable: boolean;
+}
+
+export interface TransferEvaluation {
+  level: TransferDifficultyLevel;
+  resistanceScore: number;
+  acceptanceChance: number;
+  clubGapNote: string;
+  playerGapNote: string;
+  effectiveFee: number;
+  effectiveSalary: number;
+  projectedCash: number;
+  projectedPayroll: number;
+  projectedWagePct: number;
+  canAffordCash: boolean;
+  fitsWageBudget: boolean;
+  isBlocked: boolean;
+  blockReason: string | null;
+}
+
+export type TransferRecordType =
+  | 'COMPRA'
+  | 'LIVRE'
+  | 'EMPRESTIMO_IN'
+  | 'VENDA'
+  | 'EMPRESTIMO_OUT';
+
+export interface TransferRecord {
+  id: string;
+  date: string;
+  type: TransferRecordType;
+  status: 'CONCLUIDA' | 'RECUSADA';
+  playerName: string;
+  position: NaturalPosition;
+  ovr: number;
+  counterpartyClubName: string;
+  feeAmount: number;
+  monthlySalaryImpact: number;
+  note: string;
 }
 
 export type MatchEventType =
@@ -409,5 +494,9 @@ export interface CareerSaveData {
   libertadores?: LibertadoresState;
   messages: InboxMessage[];
   matchState: LiveMatchState;
+  freeAgents?: Player[];
+  loanedOutPlayers?: Player[];
+  transferHistory?: TransferRecord[];
+  transferredOutClubPlayerIds?: string[];
 }
 

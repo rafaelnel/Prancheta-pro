@@ -11,17 +11,25 @@ import {
   Sliders,
   Users,
   Play,
+  Target,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import {
   Club,
   CompetitionType,
   InboxMessage,
+  LibertadoresState,
   NavigationTab,
   Player,
   RoundFixture,
   StandingsRow,
 } from '../types/football';
 import { calculateTeamTacticalRatings } from '../engine/matchEngine';
+import {
+  generateOpponentScoutingSummary,
+  resolveOpponentStandingsContext,
+} from '../engine/opponentScout';
 import { getContrastTextColor } from '../utils/formatters';
 
 interface DashboardInboxProps {
@@ -34,6 +42,8 @@ interface DashboardInboxProps {
   nextFixture: RoundFixture | undefined;
   opponentClub: Club | undefined;
   standings: StandingsRow[];
+  secondaryStandings?: StandingsRow[];
+  libertadores?: LibertadoresState;
   clubs: Club[];
   squad: Player[];
   currentRound: number;
@@ -53,6 +63,8 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   nextFixture,
   opponentClub,
   standings,
+  secondaryStandings,
+  libertadores,
   clubs,
   squad,
   currentRound,
@@ -64,6 +76,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   const [selectedMsgId, setSelectedMsgId] = React.useState<string>(
     messages[0]?.id || ''
   );
+  const [scoutFocusMode, setScoutFocusMode] = React.useState<'ALL' | 'TACTICAL'>('ALL');
 
   const selectedMessage =
     messages.find((m) => m.id === selectedMsgId) || messages[0];
@@ -86,6 +99,35 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   const opponentStandingIndex = opponentClub
     ? standings.findIndex((s) => s.clubId === opponentClub.id)
     : -1;
+
+  const opponentScoutReport = React.useMemo(() => {
+    if (!opponentClub) return null;
+    const { table, label } = resolveOpponentStandingsContext({
+      opponentClub,
+      userClub,
+      activeCompetition,
+      standings,
+      secondaryStandings,
+      libertadores,
+    });
+    return generateOpponentScoutingSummary({
+      opponentClub,
+      userClub,
+      opponentTable: table,
+      tableLabel: label,
+      userSquad: squad,
+      nextFixture,
+    });
+  }, [
+    opponentClub,
+    userClub,
+    activeCompetition,
+    standings,
+    secondaryStandings,
+    libertadores,
+    squad,
+    nextFixture,
+  ]);
 
   // Dynamic medical quick-swap resolution for any club
   const relatedFatiguedPlayer = selectedMessage?.relatedPlayerId
@@ -601,15 +643,217 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Interactive Coaching Inbox (7 columns on xl) */}
-        <div className="xl:col-span-7 bg-[#14171f] border border-white/[0.07] rounded-[28px] overflow-hidden flex flex-col">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
-            <div className="flex items-center gap-2.5">
-              <Mail className="w-4 h-4 text-[#b5ff00]" />
-              <h3 className="font-display text-lg font-extrabold uppercase tracking-tight text-white">
-                Caixa de Entrada da Comissão Técnica
-              </h3>
-            </div>
+        {/* Right Column: Analytical Opponent Scout + Interactive Coaching Inbox (7 columns on xl) */}
+        <div className="xl:col-span-7 space-y-6">
+          {opponentClub && opponentScoutReport && (
+            <section
+              aria-label="Resumo analítico do próximo adversário"
+              className="bg-[#14171f] border border-white/[0.08] rounded-[28px] overflow-hidden shadow-xl"
+            >
+              {/* Header */}
+              <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-white/[0.07]">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-[#b5ff00]/15 border border-[#b5ff00]/30 flex items-center justify-center shrink-0">
+                    <Target className="w-4 h-4 text-[#b5ff00]" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-display text-lg font-extrabold uppercase tracking-tight text-white leading-none truncate">
+                      Análise do Adversário · {opponentClub.shortName}
+                    </h3>
+                    <div className="text-[11px] font-mono text-zinc-400 mt-1 truncate">
+                      {opponentScoutReport.standingsBadge}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setScoutFocusMode((m) => (m === 'ALL' ? 'TACTICAL' : 'ALL'))
+                    }
+                    className="px-3 py-1.5 rounded-full text-[11px] font-bold bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-200 border border-white/10 transition-colors flex items-center gap-1.5 whitespace-nowrap"
+                    title="Alternar foco entre resumo completo e dica tática rápida"
+                  >
+                    <RefreshCw className="w-3 h-3 text-[#b5ff00]" />
+                    <span>
+                      {scoutFocusMode === 'ALL'
+                        ? 'Foco Tático'
+                        : 'Visão Completa'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-5 space-y-4">
+                {/* Opponent Standings Telemetry Row */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="bg-[#0b0c10] border border-white/[0.06] rounded-2xl px-3 py-2.5">
+                    <div className="text-[10px] font-mono uppercase text-zinc-400">
+                      Classificação
+                    </div>
+                    <div className="font-display text-xl font-extrabold text-white mt-0.5 tabular-nums">
+                      {opponentScoutReport.position}º
+                      <span className="text-xs font-mono font-normal text-zinc-500">
+                        /{opponentScoutReport.totalTeams}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#0b0c10] border border-white/[0.06] rounded-2xl px-3 py-2.5">
+                    <div className="text-[10px] font-mono uppercase text-zinc-400">
+                      Campanha (V-E-D)
+                    </div>
+                    <div className="font-mono text-sm font-bold text-zinc-100 mt-1 tabular-nums">
+                      {opponentScoutReport.won}V · {opponentScoutReport.drawn}E ·{' '}
+                      {opponentScoutReport.lost}D
+                    </div>
+                  </div>
+
+                  <div className="bg-[#0b0c10] border border-white/[0.06] rounded-2xl px-3 py-2.5">
+                    <div className="text-[10px] font-mono uppercase text-zinc-400">
+                      Gols (Pró / Contra)
+                    </div>
+                    <div className="font-mono text-sm font-bold text-zinc-100 mt-1 tabular-nums">
+                      <span className="text-[#b5ff00]">
+                        {opponentScoutReport.goalsFor}
+                      </span>{' '}
+                      /{' '}
+                      <span className="text-rose-400">
+                        {opponentScoutReport.goalsAgainst}
+                      </span>
+                      <span className="text-zinc-500 text-xs ml-1.5">
+                        (SG{' '}
+                        {opponentScoutReport.goalDifference > 0
+                          ? `+${opponentScoutReport.goalDifference}`
+                          : opponentScoutReport.goalDifference}
+                        )
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#0b0c10] border border-white/[0.06] rounded-2xl px-3 py-2.5">
+                    <div className="text-[10px] font-mono uppercase text-zinc-400">
+                      Forma na Tabela
+                    </div>
+                    <div className="flex items-center gap-1 mt-1.5">
+                      {opponentScoutReport.recentForm.length > 0 ? (
+                        opponentScoutReport.recentForm.map((res, idx) => (
+                          <span
+                            key={idx}
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-extrabold ${
+                              res === 'V'
+                                ? 'bg-[#b5ff00]/20 text-[#b5ff00]'
+                                : res === 'E'
+                                ? 'bg-amber-400/20 text-amber-300'
+                                : 'bg-rose-500/20 text-rose-300'
+                            }`}
+                          >
+                            {res}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs font-mono text-zinc-400">
+                          Estreia
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Analytical Summary */}
+                <div className="bg-[#0b0c10]/80 border border-white/[0.07] rounded-2xl p-4 text-xs sm:text-sm text-zinc-200 leading-relaxed">
+                  {opponentScoutReport.summary}
+                </div>
+
+                {/* Suggested Weaknesses based on Standings */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                      Pontos Fracos Identificados
+                    </span>
+                    <span className="text-[11px] font-mono text-zinc-500">
+                      Base: {opponentScoutReport.tableLabel}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                    {(scoutFocusMode === 'TACTICAL'
+                      ? opponentScoutReport.weaknesses.slice(0, 2)
+                      : opponentScoutReport.weaknesses
+                    ).map((wk, idx) => (
+                      <div
+                        key={wk.id}
+                        className={`bg-[#0b0c10] border border-white/[0.07] rounded-2xl p-3.5 space-y-1.5 ${
+                          idx === 2 && scoutFocusMode === 'ALL'
+                            ? 'md:col-span-2'
+                            : ''
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-white">
+                            {wk.title}
+                          </span>
+                          <span
+                            className={`text-[10px] font-mono font-extrabold uppercase px-2 py-0.5 rounded-full border shrink-0 ${
+                              wk.severity === 'alta'
+                                ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                                : 'bg-amber-400/15 text-amber-300 border-amber-400/30'
+                            }`}
+                          >
+                            {wk.severity === 'alta' ? 'Prioridade' : 'Atenção'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-zinc-400 leading-relaxed">
+                          {wk.evidence}
+                        </p>
+                        <p className="text-[11px] text-[#b5ff00] font-medium leading-snug pt-0.5">
+                          Sugestão: {wk.exploitationTip}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Action Footer */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/[0.07]">
+                  <span className="text-[11px] text-zinc-400">
+                    Recomendação:{' '}
+                    <strong className="text-white">
+                      {opponentScoutReport.tacticalRecommendation}
+                    </strong>
+                  </span>
+                  <div className="flex items-center gap-2 ml-auto">
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('competitions')}
+                      className="px-3 py-1.5 rounded-full text-xs font-semibold bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-200 border border-white/10 transition-colors whitespace-nowrap"
+                    >
+                      Ver Tabela
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('tactics')}
+                      className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1 whitespace-nowrap"
+                    >
+                      <span>Ajustar Tática</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          <div className="bg-[#14171f] border border-white/[0.07] rounded-[28px] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
+              <div className="flex items-center gap-2.5">
+                <Mail className="w-4 h-4 text-[#b5ff00]" />
+                <h3 className="font-display text-lg font-extrabold uppercase tracking-tight text-white">
+                  Caixa de Entrada da Comissão Técnica
+                </h3>
+              </div>
             <span className="text-xs text-zinc-400 font-mono tabular-nums">
               {messages.filter((m) => !m.read).length} não lidas ·{' '}
               {messages.length} mensagens
@@ -768,6 +1012,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                 </div>
               )}
             </div>
+          </div>
           </div>
         </div>
       </div>

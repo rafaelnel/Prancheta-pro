@@ -10,6 +10,7 @@ import {
   createInitialCopaDoBrasil,
   createInitialLibertadores,
 } from './cupFactory';
+import { createInitialFreeAgents } from './transferCatalog';
 import { createInitialMatchState } from '../engine/matchEngine';
 import {
   CareerSaveData,
@@ -218,5 +219,9 @@ export function createNewCareerSave(
     libertadores,
     messages,
     matchState,
+    freeAgents: createInitialFreeAgents(),
+    loanedOutPlayers: [],
+    transferHistory: [],
+    transferredOutClubPlayerIds: [],
   };
 }

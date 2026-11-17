@@ -109,8 +109,8 @@ export function buildPlayersFromSeeds(
 ): Player[] {
   const rng = createRng(`real-squad-${club.id}`);
   const formationSlots = FORMATIONS[club.formation] || FORMATIONS['4-2-3-1'];
-  const avgStarterWage = Math.round((club.wageBudget * 0.72) / 11);
-  const avgReserveWage = Math.round((club.wageBudget * 0.28) / 11);
+  const avgStarterWage = Math.round((club.wageBudget * 0.55) / 11);
+  const avgReserveWage = Math.round((club.wageBudget * 0.21) / 11);
   const repFactor = club.reputation / 82;
 
   return seeds.map((seed, idx) => {

@@ -24,13 +24,46 @@ import {
 } from './matchEngine';
 import type { PlayerAttributes } from '../types/football';
 
-test('Database contains 40 real clubs (20 Série A + 20 Série B) and 880 real players with 18 attributes (1-20)', () => {
+test('Database contains 40 official 2026 clubs (20 Série A + 20 Série B) and 880 real players with 18 attributes (1-20)', () => {
   assert.equal(SERIE_A_CLUBS.length, 20);
   assert.equal(SERIE_B_CLUBS.length, 20);
   assert.equal(INITIAL_CLUBS.length, 40);
   assert.equal(INITIAL_STANDINGS.length, 20);
   assert.equal(getInitialStandingsForDivision('B').length, 20);
   assert.equal(INITIAL_USER_SQUAD.length, 22);
+
+  // Verify 2026 promoted clubs to Série A (Coritiba, Athletico-PR, Chapecoense, Remo)
+  const serieAIds = new Set(SERIE_A_CLUBS.map((c) => c.id));
+  for (const id of ['coritiba', 'athletico-pr', 'chapecoense', 'remo']) {
+    assert.ok(serieAIds.has(id), `Expected ${id} in 2026 Série A`);
+  }
+
+  // Verify 2026 Série B includes relegated from A (Fortaleza, Sport, Ceará, Juventude) and promoted from C (Ponte Preta, Náutico, Londrina, São Bernardo)
+  const serieBIds = new Set(SERIE_B_CLUBS.map((c) => c.id));
+  for (const id of [
+    'fortaleza',
+    'sport',
+    'ceara',
+    'juventude',
+    'ponte-preta',
+    'nautico',
+    'londrina',
+    'sao-bernardo',
+  ]) {
+    assert.ok(serieBIds.has(id), `Expected ${id} in 2026 Série B`);
+  }
+
+  // Verify season starts with 0 matches played
+  assert.ok(
+    INITIAL_STANDINGS.every((row) => row.played === 0 && row.points === 0),
+    'Expected Série A standings to start at 0 played / 0 points for the beginning of 2026 season'
+  );
+  assert.ok(
+    getInitialStandingsForDivision('B').every(
+      (row) => row.played === 0 && row.points === 0
+    ),
+    'Expected Série B standings to start at 0 played / 0 points for the beginning of 2026 season'
+  );
 
   for (const club of INITIAL_CLUBS) {
     const squad = getRealSquadForClub(club);
@@ -42,6 +75,7 @@ test('Database contains 40 real clubs (20 Série A + 20 Série B) and 880 real p
     );
 
     for (const player of squad) {
+      assert.equal(player.seasonStats.matches, 0);
       const attrKeys = Object.keys(player.attributes);
       assert.equal(attrKeys.length, 18);
       for (const val of Object.values(player.attributes)) {
@@ -114,15 +148,15 @@ test('Role suitability and team tactical ratings respond to mentality and role c
   assert.ok(offensiveRatings.attack > balancedRatings.attack);
 });
 
-test('2D Match Engine initializes 22 real tokens (including real opponent squad) and simulates 0 to 90 minutes', () => {
+test('2D Match Engine initializes 22 real tokens (including real opponent squad) for Round 1 of 2026 and simulates 0 to 90 minutes', () => {
   const schedule = generateLeagueSchedule(USER_CLUB_ID, 'A');
-  const r6UserMatch = schedule.find((f) => f.roundNumber === 6 && f.isUserMatch)!;
-  const homeClub = INITIAL_CLUBS.find((c) => c.id === r6UserMatch.homeClubId)!;
-  const awayClub = INITIAL_CLUBS.find((c) => c.id === r6UserMatch.awayClubId)!;
+  const r1UserMatch = schedule.find((f) => f.roundNumber === 1 && f.isUserMatch)!;
+  const homeClub = INITIAL_CLUBS.find((c) => c.id === r1UserMatch.homeClubId)!;
+  const awayClub = INITIAL_CLUBS.find((c) => c.id === r1UserMatch.awayClubId)!;
 
   let match = createInitialMatchState(
-    6,
-    r6UserMatch,
+    1,
+    r1UserMatch,
     homeClub,
     awayClub,
     INITIAL_USER_SQUAD,
@@ -171,38 +205,43 @@ test('2D Match Engine initializes 22 real tokens (including real opponent squad)
   assert.ok(match.homePasses + match.awayPasses > 100);
 });
 
-test('Round simulation simulates all 10 matches of the round and updates 20-club table', () => {
+test('Round 1 simulation simulates all 10 matches of the opening round and updates 20-club table', () => {
   const schedule = generateLeagueSchedule(USER_CLUB_ID, 'A');
-  const r6UserMatch = schedule.find((f) => f.roundNumber === 6 && f.isUserMatch)!;
+  const r1UserMatch = schedule.find((f) => f.roundNumber === 1 && f.isUserMatch)!;
+
+  // In CBF 2026 Round 1, São Paulo hosts Flamengo (sao-paulo vs flamengo)
+  const userIsHome = r1UserMatch.homeClubId === USER_CLUB_ID;
+  const homeGoals = userIsHome ? 2 : 1;
+  const awayGoals = userIsHome ? 1 : 2;
 
   const updatedFixtures = simulateRoundFixtures(
     schedule,
-    6,
+    1,
     {
-      fixtureId: r6UserMatch.id,
-      homeGoals: 2,
-      awayGoals: 1,
-      homeXG: 2.15,
-      awayXG: 0.94,
+      fixtureId: r1UserMatch.id,
+      homeGoals,
+      awayGoals,
+      homeXG: 1.95,
+      awayXG: 1.12,
     },
     INITIAL_CLUBS
   );
 
-  const r6Completed = updatedFixtures.filter((f) => f.roundNumber === 6);
-  assert.equal(r6Completed.length, 10);
-  assert.ok(r6Completed.every((f) => f.played && f.homeGoals !== null && f.awayGoals !== null));
+  const r1Completed = updatedFixtures.filter((f) => f.roundNumber === 1);
+  assert.equal(r1Completed.length, 10);
+  assert.ok(r1Completed.every((f) => f.played && f.homeGoals !== null && f.awayGoals !== null));
 
-  const newStandings = updateStandingsWithRound(INITIAL_STANDINGS, r6Completed);
+  const newStandings = updateStandingsWithRound(INITIAL_STANDINGS, r1Completed);
   assert.equal(newStandings.length, 20);
-  assert.ok(newStandings.every((row) => row.played === 6));
+  assert.ok(newStandings.every((row) => row.played === 1));
 
   const userRow = newStandings.find((r) => r.clubId === USER_CLUB_ID)!;
-  assert.equal(userRow.points, 15); // 12 + 3 for winning 2-1
+  assert.equal(userRow.points, 3); // 0 + 3 for winning Round 1
 });
 
-test('Career factory generates complete real squads and schedules for Série A and Série B clubs', async () => {
+test('Career factory generates complete real squads and schedules starting at Round 1 for 2026 Série A and Série B clubs', async () => {
   const { createNewCareerSave } = await import('../data/careerFactory');
-  const clubsToTest = ['flamengo', 'palmeiras', 'athletico-pr', 'coritiba'];
+  const clubsToTest = ['flamengo', 'palmeiras', 'coritiba', 'fortaleza', 'ponte-preta'];
 
   for (const clubId of clubsToTest) {
     const career = createNewCareerSave(2, clubId, 'Técnico Teste');
@@ -211,22 +250,23 @@ test('Career factory generates complete real squads and schedules for Série A a
     assert.equal(career.slotIndex, 2);
     assert.equal(career.userClubId, clubId);
     assert.equal(career.division, club.division);
+    assert.equal(career.currentRound, 1);
     assert.equal(career.managerName, 'Técnico Teste');
     assert.equal(career.squad.length, 22);
     assert.equal(career.squad.filter((p) => p.isStarter).length, 11);
     assert.equal(career.standings.length, 20);
     assert.equal(career.secondaryStandings?.length, 20);
 
-    const r6UserMatch = career.fixtures.find(
-      (f) => f.roundNumber === 6 && f.isUserMatch
+    const r1UserMatch = career.fixtures.find(
+      (f) => f.roundNumber === 1 && f.isUserMatch
     );
-    assert.ok(r6UserMatch, `Round 6 user match missing for ${clubId}`);
+    assert.ok(r1UserMatch, `Round 1 user match missing for ${clubId}`);
     assert.ok(
-      r6UserMatch.homeClubId === clubId || r6UserMatch.awayClubId === clubId
+      r1UserMatch.homeClubId === clubId || r1UserMatch.awayClubId === clubId
     );
     assert.equal(
       career.matchState.isUserHome,
-      r6UserMatch.homeClubId === clubId
+      r1UserMatch.homeClubId === clubId
     );
     assert.equal(career.messages.length, 3);
   }
@@ -261,27 +301,27 @@ test('Save manager supports 4 independent Série A/B career slots, latest save d
   const career1 = createNewCareerSave(1, 'flamengo', 'Carlos');
   saveCareerToSlot(career1, mockStorage);
 
-  const career3 = createNewCareerSave(3, 'athletico-pr', 'Fernanda');
-  career3.currentRound = 9;
+  const career3 = createNewCareerSave(3, 'ponte-preta', 'Fernanda');
+  career3.currentRound = 4;
   const saved3 = saveCareerToSlot(career3, mockStorage);
 
   const allSlots = loadAllCareerSlots(mockStorage);
   assert.equal(allSlots[0]?.userClubId, 'flamengo');
   assert.equal(allSlots[0]?.division, 'A');
   assert.equal(allSlots[1], null);
-  assert.equal(allSlots[2]?.userClubId, 'athletico-pr');
+  assert.equal(allSlots[2]?.userClubId, 'ponte-preta');
   assert.equal(allSlots[2]?.division, 'B');
   assert.equal(allSlots[3], null);
 
   const loaded3 = loadCareerSlot(3, mockStorage);
-  assert.equal(loaded3?.currentRound, 9);
+  assert.equal(loaded3?.currentRound, 4);
   assert.equal(loaded3?.managerName, 'Fernanda');
 
   const backupJson = serializeCareerBackup(saved3);
   const importedToSlot4 = parseCareerBackup(backupJson, 4);
   assert.ok(importedToSlot4);
   assert.equal(importedToSlot4?.slotIndex, 4);
-  assert.equal(importedToSlot4?.userClubId, 'athletico-pr');
+  assert.equal(importedToSlot4?.userClubId, 'ponte-preta');
 
   deleteCareerSlot(1, mockStorage);
   assert.equal(loadCareerSlot(1, mockStorage), null);

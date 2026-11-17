@@ -4,21 +4,41 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0b0c10" />
-    <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
-    <link rel="apple-touch-icon" href="%BASE_URL%favicon.svg" />
-    <title>Prancheta Pro — Football Manager</title>
-    <meta name="description" content="Simulador analítico de gestão esportiva e tática de futebol com motor de partida 2D em tempo real, prancheta tática e Brasileirão Série A e B com 40 clubes reais." />
-    <meta property="og:title" content="Prancheta Pro — Football Manager" />
-    <meta property="og:description" content="Simulador analítico de gestão esportiva e tática de futebol com motor de partida 2D em tempo real, prancheta tática e Brasileirão Série A e B com 40 clubes reais." />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="apple-touch-icon" href="./favicon.svg" />
+    <title>Prancheta Pro — Football Manager 2026</title>
+    <meta name="description" content="Simulador analítico de gestão esportiva e tática de futebol com motor de partida 2D em tempo real, prancheta tática e Brasileirão 2026 Série A e B com 40 clubes reais." />
+    <meta property="og:title" content="Prancheta Pro — Football Manager 2026" />
+    <meta property="og:description" content="Simulador analítico de gestão esportiva e tática de futebol com motor de partida 2D em tempo real, prancheta tática e Brasileirão 2026 Série A e B com 40 clubes reais." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <script>
+      // Remove Service Workers e caches antigos de outros projetos no mesmo domínio github.io (ex: Mais-saudavel)
+      (function () {
+        try {
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function (registrations) {
+              for (var i = 0; i < registrations.length; i++) {
+                registrations[i].unregister();
+              }
+            });
+          }
+          if ('caches' in window) {
+            caches.keys().then(function (keys) {
+              for (var j = 0; j < keys.length; j++) {
+                caches.delete(keys[j]);
+              }
+            });
+          }
+        } catch (e) {}
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   </head>
   <body class="bg-[#0b0c10] text-zinc-100 antialiased selection:bg-[#b5ff00]/30 selection:text-[#b5ff00]">
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="./src/main.tsx"></script>
   </body>
 </html>
-

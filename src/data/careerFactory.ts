@@ -28,11 +28,10 @@ export function createInitialInboxForCareer(
   fixtures: RoundFixture[],
   managerName: string
 ): InboxMessage[] {
-  const r6Fix = fixtures.find((f) => f.roundNumber === 6 && f.isUserMatch);
-  const isHome = r6Fix ? r6Fix.homeClubId === club.id : true;
+  const r1Fix = fixtures.find((f) => f.roundNumber === 1 && f.isUserMatch);
+  const isHome = r1Fix ? r1Fix.homeClubId === club.id : true;
   const userRank = standings.findIndex((s) => s.clubId === club.id) + 1;
   const userRow = standings.find((s) => s.clubId === club.id);
-  const oppRank = standings.findIndex((s) => s.clubId === opponentClub.id) + 1;
   const divLabel = club.division === 'B' ? 'Série B' : 'Série A';
 
   const fatiguedStarter =
@@ -60,15 +59,15 @@ export function createInitialInboxForCareer(
   return [
     {
       id: `${club.id}-msg-1`,
-      date: '16 Mai 2026 · 09:15',
+      date: '28 Jan 2026 · 09:15',
       sender: 'Comissão Técnica',
       senderRole: 'Auxiliar Técnico',
-      subject: `Dossiê 6ª Rodada (${divLabel}): ${club.shortName} vs ${opponentClub.shortName}`,
+      subject: `Estreia 2026 — 1ª Rodada (${divLabel}): ${club.shortName} vs ${opponentClub.shortName}`,
       category: 'Tática',
       priority: 'positive',
       read: false,
       body: [
-        `Bem-vindo ao ${club.name}, ${managerName}. O próximo duelo pela ${divLabel} será contra o ${opponentClub.name} (${oppRank}º lugar, esquema ${opponentClub.formation}).`,
+        `Bem-vindo ao ${club.name} para a temporada 2026, ${managerName}. A estreia oficial na ${divLabel} 2026 será contra o ${opponentClub.name} (esquema ${opponentClub.formation}).`,
         oppStar
           ? `Principal atenção no adversário: ${oppStar.name} (${oppStar.position}, ${oppStar.highlightAttribute}).`
           : `Ajuste a prancheta antes do apito inicial.`,
@@ -82,16 +81,16 @@ export function createInitialInboxForCareer(
     },
     {
       id: `${club.id}-msg-2`,
-      date: '16 Mai 2026 · 08:40',
+      date: '28 Jan 2026 · 08:40',
       sender: 'Departamento Médico',
       senderRole: 'Fisiologia',
-      subject: `Fadiga: ${fatiguedStarter.name} (${fatiguedStarter.condition}%)`,
+      subject: `Carga de Pré-Temporada: ${fatiguedStarter.name} (${fatiguedStarter.condition}%)`,
       category: 'Departamento Médico',
       priority: 'warning',
       read: false,
       relatedPlayerId: fatiguedStarter.id,
       body: [
-        `${fatiguedStarter.name} (${fatiguedStarter.position}) apresenta desgaste físico (${fatiguedStarter.condition}%). ${healthyBackup.name} (${healthyBackup.condition}%) está pronto no banco.`,
+        `${fatiguedStarter.name} (${fatiguedStarter.position}) apresenta desgaste de pré-temporada (${fatiguedStarter.condition}%). ${healthyBackup.name} (${healthyBackup.condition}%) está pronto no banco.`,
       ],
       bulletPoints: [
         `${fatiguedStarter.name}: ${fatiguedStarter.condition}% de condição.`,
@@ -105,24 +104,24 @@ export function createInitialInboxForCareer(
     },
     {
       id: `${club.id}-msg-3`,
-      date: '15 Mai 2026 · 18:10',
+      date: '27 Jan 2026 · 18:10',
       sender: 'Diretoria',
       senderRole: club.shortName,
-      subject: `Objetivos na ${divLabel} e Finanças`,
+      subject: `Objetivos 2026 na ${divLabel} e Finanças`,
       category: 'Diretoria',
       priority: 'normal',
       read: false,
       body: [
-        `Posição atual: ${userRank}º lugar (${userRow?.points ?? 0} pts). Caixa disponível: ${formatCompactBRL(club.cashBalance)} | Bilheteria prevista: ${formatCompactBRL(gateEstimate)}.`,
+        `Início da temporada 2026 (${userRank}º na listagem inicial, ${userRow?.points ?? 0} pts). Caixa disponível: ${formatCompactBRL(club.cashBalance)} | Bilheteria prevista na estreia: ${formatCompactBRL(gateEstimate)}.`,
       ],
       bulletPoints: [
         club.division === 'B'
           ? club.reputation >= 74
-            ? 'Meta: Acesso direto no G-4 da Série B.'
-            : 'Meta: Campanha segura na Série B.'
+            ? 'Meta 2026: Acesso direto no G-4 da Série B.'
+            : 'Meta 2026: Campanha segura na Série B.'
           : club.reputation >= 85
-          ? 'Meta: Título e vaga no G-4.'
-          : 'Meta: Permanência e vaga continental.',
+          ? 'Meta 2026: Título e vaga no G-4.'
+          : 'Meta 2026: Permanência e vaga continental.',
         `Folha mensal: ${formatCompactBRL(club.wageBudget)}.`,
       ],
       actionLabel: 'Ver Finanças',
@@ -154,12 +153,12 @@ export function createNewCareerSave(
 
   const squad = createSquadForClub(userClub);
 
-  const r6Fixture =
-    fixtures.find((f) => f.roundNumber === 6 && f.isUserMatch) || fixtures[0];
-  const homeClub = clubs.find((c) => c.id === r6Fixture.homeClubId) || clubs[0];
-  const awayClub = clubs.find((c) => c.id === r6Fixture.awayClubId) || clubs[1];
+  const r1Fixture =
+    fixtures.find((f) => f.roundNumber === 1 && f.isUserMatch) || fixtures[0];
+  const homeClub = clubs.find((c) => c.id === r1Fixture.homeClubId) || clubs[0];
+  const awayClub = clubs.find((c) => c.id === r1Fixture.awayClubId) || clubs[1];
   const opponentClub =
-    r6Fixture.homeClubId === userClub.id ? awayClub : homeClub;
+    r1Fixture.homeClubId === userClub.id ? awayClub : homeClub;
 
   const messages = createInitialInboxForCareer(
     userClub,
@@ -171,8 +170,8 @@ export function createNewCareerSave(
   );
 
   const matchState = createInitialMatchState(
-    6,
-    r6Fixture,
+    1,
+    r1Fixture,
     homeClub,
     awayClub,
     squad,
@@ -182,7 +181,7 @@ export function createNewCareerSave(
   const userRank = standings.findIndex((s) => s.clubId === userClub.id) + 1;
 
   return {
-    version: 2,
+    version: 3,
     slotIndex,
     managerName: cleanManagerName,
     userClubId: userClub.id,
@@ -191,7 +190,7 @@ export function createNewCareerSave(
     clubShortName: userClub.shortName,
     clubAbbr: userClub.abbr,
     clubPrimaryColor: userClub.primaryColor,
-    currentRound: 6,
+    currentRound: 1,
     dayOffset: 0,
     isMatchDay: false,
     userRank,

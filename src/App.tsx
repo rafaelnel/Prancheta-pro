@@ -129,7 +129,7 @@ export default function App() {
 
   // Calendar & Round Progression
   const [currentRound, setCurrentRound] = useState<number>(
-    initialAutostartSave?.currentRound || 6
+    initialAutostartSave?.currentRound || 1
   );
   const [dayOffset, setDayOffset] = useState<number>(
     initialAutostartSave?.dayOffset || 0
@@ -182,7 +182,7 @@ export default function App() {
   const [matchState, setMatchState] = useState<LiveMatchState>(() =>
     initialAutostartSave?.matchState ||
     createInitialMatchState(
-      6,
+      1,
       currentUserFixture,
       homeClub,
       awayClub,
@@ -210,7 +210,7 @@ export default function App() {
         nextStandings.findIndex((s) => s.clubId === nextUserClubId) + 1;
 
       const payload: CareerSaveData = {
-        version: 2,
+        version: 3,
         slotIndex: targetSlot,
         managerName: override?.managerName ?? managerName,
         userClubId: nextUserClubId,

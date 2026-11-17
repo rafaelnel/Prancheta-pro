@@ -174,22 +174,12 @@ export function buildPlayersFromSeeds(
       injured: isTransitionReserve,
       injuryNote: isTransitionReserve ? 'Transição física (desgaste leve)' : undefined,
       seasonStats: {
-        matches: isStarter ? 5 : isTransitionReserve ? 1 : 1 + Math.floor(rng() * 3),
-        goals:
-          sector === 'ATA'
-            ? isStarter
-              ? 1 + Math.floor(rng() * 4)
-              : Math.floor(rng() * 2)
-            : sector === 'MEI' && isStarter
-            ? Math.floor(rng() * 2)
-            : 0,
-        assists:
-          (sector === 'MEI' || sector === 'ATA') && isStarter
-            ? Math.floor(rng() * 3)
-            : 0,
-        yellowCards: Math.floor(rng() * 2),
+        matches: 0,
+        goals: 0,
+        assists: 0,
+        yellowCards: 0,
         avgRating: Number(
-          (6.85 + Math.max(0, overall - 13) * 0.17 + rng() * 0.25).toFixed(2)
+          (6.80 + Math.max(0, overall - 13) * 0.14 + rng() * 0.15).toFixed(2)
         ),
       },
     };

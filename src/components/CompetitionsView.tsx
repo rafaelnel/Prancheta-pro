@@ -294,8 +294,8 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
 
             <div className="flex items-center gap-1 bg-[#0b0c10] p-1 rounded-full border border-white/[0.07]">
               <button
-                onClick={() => setSelectedRound((r) => Math.max(6, r - 1))}
-                disabled={selectedRound <= 6}
+                onClick={() => setSelectedRound((r) => Math.max(1, r - 1))}
+                disabled={selectedRound <= 1}
                 aria-label="Rodada anterior"
                 className="p-1.5 rounded-full hover:bg-white/10 disabled:opacity-40 text-white transition-colors"
               >

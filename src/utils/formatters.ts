@@ -74,7 +74,7 @@ export function getMoraleColor(morale: MoraleState): string {
 }
 
 export function formatCalendarDate(dayOffset: number): string {
-  const baseDate = new Date(2026, 4, 16); // 16 May 2026
+  const baseDate = new Date(2026, 0, 28); // Qua, 28 Jan 2026 (Abertura do Brasileirão 2026)
   baseDate.setDate(baseDate.getDate() + dayOffset);
   const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   const months = [

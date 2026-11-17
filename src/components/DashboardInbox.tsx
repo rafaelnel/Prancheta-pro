@@ -302,7 +302,9 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                       16:00
                     </div>
                     <div className="text-[11px] font-medium text-zinc-600 mt-0.5">
-                      {userClub.stadium}
+                      {nextFixture.homeClubId === userClub.id
+                        ? userClub.stadium
+                        : opponentClub.stadium}
                     </div>
                   </div>
 

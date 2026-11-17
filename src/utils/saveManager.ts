@@ -27,6 +27,7 @@ function isValidCareerSave(candidate: unknown): candidate is CareerSaveData {
   if (!candidate || typeof candidate !== 'object') return false;
   const obj = candidate as Partial<CareerSaveData>;
   return (
+    obj.version === 3 &&
     typeof obj.slotIndex === 'number' &&
     obj.slotIndex >= 1 &&
     obj.slotIndex <= MAX_CAREER_SLOTS &&

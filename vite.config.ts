@@ -5,15 +5,8 @@ import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
-  const githubRepo = process.env.GITHUB_REPOSITORY?.split('/')[1];
-  const base =
-    process.env.VITE_BASE_PATH ||
-    (process.env.GITHUB_ACTIONS === 'true' && githubRepo
-      ? `/${githubRepo}/`
-      : './');
-
   return {
-    base,
+    base: './',
     plugins: [
       react(),
       tailwindcss(),
@@ -33,6 +26,14 @@ export default defineConfig(() => {
           const distAssets = path.resolve(distDir, 'src/assets');
           if (fs.existsSync(distDir) && fs.existsSync(srcAssets)) {
             fs.cpSync(srcAssets, distAssets, {recursive: true, force: true});
+          }
+          // Create 404.html and .nojekyll automatically inside dist/ for GitHub Pages
+          const indexHtml = path.resolve(distDir, 'index.html');
+          const notFoundHtml = path.resolve(distDir, '404.html');
+          const noJekyll = path.resolve(distDir, '.nojekyll');
+          if (fs.existsSync(indexHtml)) {
+            fs.copyFileSync(indexHtml, notFoundHtml);
+            fs.writeFileSync(noJekyll, '');
           }
         },
       },

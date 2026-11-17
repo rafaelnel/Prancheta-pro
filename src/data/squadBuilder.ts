@@ -1,4 +1,9 @@
 import { FORMATIONS, getRolesForSector, getRoleById } from './tacticsData';
+import { calculatePlayerOverall } from '../engine/playerOverall';
+import {
+  assignPotentialStars,
+  calculateBalancedValuationAndWage,
+} from '../engine/economyAndEvolution';
 import {
   Club,
   NaturalPosition,
@@ -109,9 +114,6 @@ export function buildPlayersFromSeeds(
 ): Player[] {
   const rng = createRng(`real-squad-${club.id}`);
   const formationSlots = FORMATIONS[club.formation] || FORMATIONS['4-2-3-1'];
-  const avgStarterWage = Math.round((club.wageBudget * 0.55) / 11);
-  const avgReserveWage = Math.round((club.wageBudget * 0.21) / 11);
-  const repFactor = club.reputation / 82;
 
   return seeds.map((seed, idx) => {
     const [number, name, age, nationality, position, overall, overrides] = seed;
@@ -125,17 +127,22 @@ export function buildPlayersFromSeeds(
     const isFatiguedStarter = idx === 5;
     const isTransitionReserve = idx === 21;
 
-    const ageFactor = age <= 23 ? 1.35 : age <= 28 ? 1.1 : age >= 34 ? 0.45 : 0.75;
-    const divScale = club.division === 'A' ? 2500000 : 850000;
-    const marketValue = Math.max(
-      1200000,
-      Math.round(((overall - 9) * divScale * repFactor * ageFactor) / 250000) * 250000
+    const attributes = generateAttributesFromSeed(position, overall, rng, overrides);
+    const ovr6099 = calculatePlayerOverall(attributes, position);
+    const playerId = `${club.id}-p${idx + 1}`;
+    const potentialStars = assignPotentialStars(
+      ovr6099,
+      age,
+      club.reputation,
+      playerId
     );
-    const salaryBase = isStarter ? avgStarterWage : avgReserveWage;
-    const salary = Math.max(
-      45000,
-      Math.round((salaryBase * (0.78 + (overall - 13) * 0.08 + rng() * 0.2)) / 5000) * 5000
-    );
+    const { marketValue, salary } = calculateBalancedValuationAndWage({
+      ovr: ovr6099,
+      age,
+      clubReputation: club.reputation,
+      division: club.division,
+      potentialStars,
+    });
 
     const condition = isFatiguedStarter
       ? 76
@@ -146,7 +153,7 @@ export function buildPlayersFromSeeds(
       : 94 + Math.floor(rng() * 5);
 
     return {
-      id: `${club.id}-p${idx + 1}`,
+      id: playerId,
       number,
       name,
       age,
@@ -166,7 +173,8 @@ export function buildPlayersFromSeeds(
           : 'Bom',
       marketValue,
       salary,
-      attributes: generateAttributesFromSeed(position, overall, rng, overrides),
+      potentialStars,
+      attributes,
       isStarter,
       slotIndex: isStarter ? idx : null,
       assignedRole: defaultRole.id,

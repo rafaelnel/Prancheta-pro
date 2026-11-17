@@ -73,9 +73,12 @@ export function getMoraleColor(morale: MoraleState): string {
   }
 }
 
-export function formatCalendarDate(dayOffset: number): string {
-  const baseDate = new Date(2026, 0, 28); // Qua, 28 Jan 2026 (Abertura do Brasileirão 2026)
-  baseDate.setDate(baseDate.getDate() + dayOffset);
+export function formatCalendarDate(
+  dayOffset: number,
+  seasonYear: number = 2026
+): string {
+  const baseUtc = Date.UTC(seasonYear, 0, 28) + dayOffset * 86_400_000;
+  const baseDate = new Date(baseUtc);
   const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
   const months = [
     'Jan',
@@ -91,10 +94,10 @@ export function formatCalendarDate(dayOffset: number): string {
     'Nov',
     'Dez',
   ];
-  const dayName = days[baseDate.getDay()];
-  const dayNum = String(baseDate.getDate()).padStart(2, '0');
-  const monthName = months[baseDate.getMonth()];
-  const year = baseDate.getFullYear();
+  const dayName = days[baseDate.getUTCDay()];
+  const dayNum = String(baseDate.getUTCDate()).padStart(2, '0');
+  const monthName = months[baseDate.getUTCMonth()];
+  const year = baseDate.getUTCFullYear();
   return `${dayName}, ${dayNum} ${monthName} ${year}`;
 }
 

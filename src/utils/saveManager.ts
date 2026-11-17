@@ -5,6 +5,11 @@ import {
   createInitialLibertadores,
 } from '../data/cupFactory';
 import { createInitialFreeAgents } from '../data/transferCatalog';
+import { buildInitialAiSquads } from '../engine/aiMarketEngine';
+import {
+  createInitialFinanceLedger,
+  ensurePlayerDefaults,
+} from '../engine/economyAndEvolution';
 
 export const MAX_CAREER_SLOTS = 4;
 export const CAREER_SLOTS: CareerSlotIndex[] = [1, 2, 3, 4];
@@ -89,20 +94,43 @@ function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
     starPlayers: c.starPlayers.map((s) => ({ ...s })),
   }));
 
+  const hydratedClubs =
+    missingForeign.length > 0 ? [...save.clubs, ...missingForeign] : save.clubs;
+  const userClub =
+    hydratedClubs.find((c) => c.id === save.userClubId) || hydratedClubs[0];
+  const seasonYear = save.currentYear ?? 2026;
+  const hydratedSquad = save.squad.map((p) =>
+    ensurePlayerDefaults(p, userClub.reputation, userClub.division)
+  );
+  const hydratedAiSquads =
+    save.aiSquads && Object.keys(save.aiSquads).length > 0
+      ? save.aiSquads
+      : buildInitialAiSquads(hydratedClubs, save.userClubId);
+
   return {
     ...save,
-    clubs:
-      missingForeign.length > 0 ? [...save.clubs, ...missingForeign] : save.clubs,
+    currentYear: seasonYear,
+    clubs: hydratedClubs,
+    squad: hydratedSquad,
+    aiSquads: hydratedAiSquads,
     seasonStepIndex: save.seasonStepIndex ?? Math.max(0, save.currentRound - 1),
     activeCompetition: save.activeCompetition ?? 'BRASILEIRAO',
     copaDoBrasil:
       save.copaDoBrasil ?? createInitialCopaDoBrasil(save.userClubId),
     libertadores:
       save.libertadores ?? createInitialLibertadores(save.userClubId),
-    freeAgents: save.freeAgents ?? createInitialFreeAgents(),
+    freeAgents: (save.freeAgents ?? createInitialFreeAgents()).map((p) =>
+      ensurePlayerDefaults(p, 72, 'A')
+    ),
     loanedOutPlayers: save.loanedOutPlayers ?? [],
     transferHistory: save.transferHistory ?? [],
     transferredOutClubPlayerIds: save.transferredOutClubPlayerIds ?? [],
+    pendingOffers: save.pendingOffers ?? [],
+    financeLedger:
+      save.financeLedger ??
+      createInitialFinanceLedger(userClub, hydratedSquad, seasonYear),
+    seasonHistory: save.seasonHistory ?? [],
+    seasonEndReport: save.seasonEndReport ?? null,
   };
 }
 

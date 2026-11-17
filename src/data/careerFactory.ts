@@ -12,6 +12,8 @@ import {
 } from './cupFactory';
 import { createInitialFreeAgents } from './transferCatalog';
 import { createInitialMatchState } from '../engine/matchEngine';
+import { buildInitialAiSquads } from '../engine/aiMarketEngine';
+import { createInitialFinanceLedger } from '../engine/economyAndEvolution';
 import {
   CareerSaveData,
   CareerSlotIndex,
@@ -147,6 +149,7 @@ export function createNewCareerSave(
     ...c,
     instructions: { ...c.instructions },
     starPlayers: c.starPlayers.map((s) => ({ ...s })),
+    recentTitles: [],
   }));
 
   const userClub = clubs.find((c) => c.id === clubId) || clubs[0];
@@ -162,6 +165,8 @@ export function createNewCareerSave(
   const libertadores = createInitialLibertadores(userClub.id);
 
   const squad = createSquadForClub(userClub);
+  const aiSquads = buildInitialAiSquads(clubs, userClub.id);
+  const financeLedger = createInitialFinanceLedger(userClub, squad, 2026);
 
   const r1Fixture =
     fixtures.find((f) => f.roundNumber === 1 && f.isUserMatch) || fixtures[0];
@@ -185,7 +190,9 @@ export function createNewCareerSave(
     homeClub,
     awayClub,
     squad,
-    userClub.id
+    userClub.id,
+    [],
+    aiSquads
   );
 
   const userRank = standings.findIndex((s) => s.clubId === userClub.id) + 1;
@@ -200,6 +207,7 @@ export function createNewCareerSave(
     clubShortName: userClub.shortName,
     clubAbbr: userClub.abbr,
     clubPrimaryColor: userClub.primaryColor,
+    currentYear: 2026,
     currentRound: 1,
     seasonStepIndex: 0,
     activeCompetition: 'BRASILEIRAO',
@@ -211,6 +219,7 @@ export function createNewCareerSave(
     savedAt: new Date().toISOString(),
     clubs,
     squad,
+    aiSquads,
     standings,
     fixtures,
     secondaryStandings,
@@ -223,5 +232,9 @@ export function createNewCareerSave(
     loanedOutPlayers: [],
     transferHistory: [],
     transferredOutClubPlayerIds: [],
+    pendingOffers: [],
+    financeLedger,
+    seasonHistory: [],
+    seasonEndReport: null,
   };
 }

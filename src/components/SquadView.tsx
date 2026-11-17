@@ -18,6 +18,7 @@ import {
   getConditionColor,
   getMoraleColor,
 } from '../utils/formatters';
+import { StarRating } from './StarRating';
 
 interface SquadViewProps {
   squad: Player[];
@@ -265,11 +266,13 @@ export const SquadView: React.FC<SquadViewProps> = ({
                           </span>
                         )}
                       </div>
-                      <div className="text-[11px] text-zinc-400">
-                        {player.age} anos · {player.nationality}
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-zinc-400 mt-0.5">
+                        <span>
+                          {player.age} anos · {player.nationality}
+                        </span>
+                        <StarRating player={player} ovr={ovr} size="xs" />
                         {player.contractType === 'EMPRESTADO' && (
                           <span className="text-amber-300 font-medium">
-                            {' '}
                             · Empréstimo ({player.loanOriginClubName || 'Clube'})
                           </span>
                         )}

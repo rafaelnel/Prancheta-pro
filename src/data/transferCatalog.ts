@@ -1,6 +1,10 @@
 import { FORMATIONS, getRolesForSector, getRoleById } from './tacticsData';
 import { generateAttributesFromSeed, RealPlayerSeed } from './squadBuilder';
-import { calculatePlayerOverall } from '../engine/matchEngine';
+import { calculatePlayerOverall } from '../engine/playerOverall';
+import {
+  assignPotentialStars,
+  calculateBalancedValuationAndWage,
+} from '../engine/economyAndEvolution';
 import {
   MarketClubProfile,
   MarketPlayerListing,
@@ -326,24 +330,16 @@ function buildCatalogPlayer(
     overrides
   );
 
-  const ageFactor = age <= 23 ? 1.38 : age <= 28 ? 1.12 : age >= 34 ? 0.45 : 0.78;
-  const scale = isIntl ? 2900000 : 1100000;
-  const marketValue = Math.max(
-    1500000,
-    Math.round(((seedStrength - 9.0) * scale * repFactor * ageFactor) / 250000) *
-      250000
-  );
-
-  const salaryBase = isIntl ? 400000 : 165000;
-  const salary = Math.max(
-    55000,
-    Math.round(
-      (salaryBase *
-        Math.max(0.42, 0.72 + (seedStrength - 14.2) * 0.14) *
-        (0.9 + rng() * 0.22)) /
-        5000
-    ) * 5000
-  );
+  const ovr = calculatePlayerOverall(attributes, position);
+  const clubRep = isIntl ? Math.round(80 * repFactor) : 74;
+  const potentialStars = assignPotentialStars(ovr, age, clubRep, id);
+  const { marketValue, salary } = calculateBalancedValuationAndWage({
+    ovr,
+    age,
+    clubReputation: clubRep,
+    division: 'A',
+    potentialStars,
+  });
 
   return {
     id,
@@ -357,6 +353,7 @@ function buildCatalogPlayer(
     morale: 'Bom',
     marketValue,
     salary,
+    potentialStars,
     attributes,
     isStarter: false,
     slotIndex: null,

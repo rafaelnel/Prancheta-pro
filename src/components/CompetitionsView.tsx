@@ -26,17 +26,20 @@ import {
   LibertadoresKnockoutStage,
   LibertadoresState,
   RoundFixture,
+  SeasonArchiveEntry,
   StandingsRow,
 } from '../types/football';
-import { getContrastTextColor } from '../utils/formatters';
+import { ClubBadge } from './ClubBadge';
 
-type CompTab = 'A' | 'B' | 'COPA_DO_BRASIL' | 'LIBERTADORES';
+type CompTab = 'A' | 'B' | 'COPA_DO_BRASIL' | 'LIBERTADORES' | 'HALL';
 
 interface CompetitionsViewProps {
   standings: StandingsRow[];
   clubs: Club[];
   fixtures: RoundFixture[];
   currentRound: number;
+  seasonYear?: number;
+  seasonHistory?: SeasonArchiveEntry[];
   userClubId?: string;
   userDivision?: 'A' | 'B';
   secondaryStandings?: StandingsRow[];
@@ -51,6 +54,8 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
   clubs,
   fixtures,
   currentRound,
+  seasonYear = 2026,
+  seasonHistory = [],
   userClubId = USER_CLUB_ID,
   userDivision = 'A',
   secondaryStandings,
@@ -131,12 +136,12 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
     ? standings
     : secondaryStandings && secondaryStandings.length > 0
     ? secondaryStandings
-    : getInitialStandingsForDivision(viewedDivision);
+    : getInitialStandingsForDivision(viewedDivision, clubs);
   const activeFixtures = isViewingUserDivision
     ? fixtures
     : secondaryFixtures && secondaryFixtures.length > 0
     ? secondaryFixtures
-    : generateLeagueSchedule('__none__', viewedDivision);
+    : generateLeagueSchedule('__none__', viewedDivision, clubs);
 
   const roundMatches = activeFixtures.filter(
     (f) => f.roundNumber === selectedRound
@@ -173,15 +178,14 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
       >
         <div className="flex items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <div
-              className="w-7 h-7 rounded-lg flex items-center justify-center font-display font-extrabold text-[10px] shrink-0 border border-white/15"
-              style={{
-                backgroundColor: home?.primaryColor || '#27272a',
-                color: getContrastTextColor(home?.primaryColor || '#27272a'),
-              }}
-            >
-              {home?.abbr || 'HOM'}
-            </div>
+            <ClubBadge
+              clubId={home?.id || fix.homeClubId}
+              abbr={home?.abbr || 'HOM'}
+              name={home?.name}
+              primaryColor={home?.primaryColor}
+              size="sm"
+              surface={isUser ? 'light' : 'dark'}
+            />
             <div className="min-w-0">
               <div className="font-bold truncate">
                 {home?.shortName || fix.homeClubId}
@@ -230,15 +234,14 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                 {away?.countryCode || (away?.division ? `Série ${away.division}` : 'BRA')}
               </div>
             </div>
-            <div
-              className="w-7 h-7 rounded-lg flex items-center justify-center font-display font-extrabold text-[10px] shrink-0 border border-white/15"
-              style={{
-                backgroundColor: away?.primaryColor || '#27272a',
-                color: getContrastTextColor(away?.primaryColor || '#27272a'),
-              }}
-            >
-              {away?.abbr || 'AWY'}
-            </div>
+            <ClubBadge
+              clubId={away?.id || fix.awayClubId}
+              abbr={away?.abbr || 'AWY'}
+              name={away?.name}
+              primaryColor={away?.primaryColor}
+              size="sm"
+              surface={isUser ? 'light' : 'dark'}
+            />
           </div>
         </div>
 
@@ -266,22 +269,26 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
     copaDoBrasil?.participantIds.includes(userClubId) ?? false;
 
   const headerTitle =
-    viewedTab === 'COPA_DO_BRASIL'
+    viewedTab === 'HALL'
+      ? 'HALL DE CAMPEÕES'
+      : viewedTab === 'COPA_DO_BRASIL'
       ? 'COPA DO BRASIL'
       : viewedTab === 'LIBERTADORES'
       ? 'LIBERTADORES'
       : `SÉRIE ${viewedDivision}`;
 
   const headerSubtitle =
-    viewedTab === 'COPA_DO_BRASIL'
-      ? 'Copa do Brasil 2026 · 32 Clubes (Série A & B)'
+    viewedTab === 'HALL'
+      ? `Histórico Contínuo da Carreira · ${seasonHistory.length} temporada(s) arquivada(s)`
+      : viewedTab === 'COPA_DO_BRASIL'
+      ? `Copa do Brasil ${seasonYear} · 32 Clubes (Série A & B)`
       : viewedTab === 'LIBERTADORES'
-      ? 'Copa Libertadores 2026 · 32 Clubes · 10 Países CONMEBOL'
-      : 'Brasileirão 2026';
+      ? `Copa Libertadores ${seasonYear} · 32 Clubes · 10 Países CONMEBOL`
+      : `Brasileirão ${seasonYear} · 38 Rodadas (Turno & Returno)`;
 
   return (
     <div className="space-y-5">
-      {/* Header + 4 Competition Tabs */}
+      {/* Header + Competition Tabs */}
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pb-2 border-b border-white/[0.07]">
         <div>
           <span className="block text-xs sm:text-sm font-normal text-zinc-400 tracking-wide">
@@ -306,6 +313,13 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                 {
                   id: 'LIBERTADORES',
                   label: `Libertadores ${userParticipatesLib ? '★' : ''}`,
+                },
+                {
+                  id: 'HALL',
+                  label:
+                    seasonHistory.length > 0
+                      ? `Hall (${seasonHistory.length})`
+                      : 'Hall de Campeões',
                 },
               ] as Array<{ id: CompTab; label: string }>
             ).map((tab) => (
@@ -440,12 +454,12 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                           <td className={`py-2.5 px-3 ${posColor}`}>{pos}º</td>
                           <td className="py-2.5 px-3 font-sans">
                             <div className="flex items-center gap-2">
-                              <span
-                                className="w-2.5 h-2.5 rounded-full shrink-0 border border-white/15"
-                                style={{
-                                  backgroundColor:
-                                    club?.primaryColor || '#b5ff00',
-                                }}
+                              <ClubBadge
+                                clubId={club?.id || row.clubId}
+                                abbr={club?.abbr}
+                                name={club?.name}
+                                primaryColor={club?.primaryColor}
+                                size="xs"
                               />
                               <span className="truncate max-w-[180px] text-white font-medium">
                                 {club?.name || row.clubId}
@@ -530,6 +544,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
 
                 <div className="flex items-center gap-1 bg-[#0b0c10] p-1 rounded-full border border-white/[0.07]">
                   <button
+                    type="button"
                     onClick={() => setSelectedRound((r) => Math.max(1, r - 1))}
                     disabled={selectedRound <= 1}
                     aria-label="Rodada anterior"
@@ -537,16 +552,50 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                   >
                     <ChevronLeft className="w-3.5 h-3.5" />
                   </button>
-                  <span className="text-xs font-mono font-bold px-2.5 text-[#b5ff00]">
-                    R{selectedRound}
+                  <span className="text-xs font-mono font-bold px-2 text-[#b5ff00] tabular-nums">
+                    R{selectedRound}/38
                   </span>
                   <button
-                    onClick={() => setSelectedRound((r) => Math.min(19, r + 1))}
-                    disabled={selectedRound >= 19}
+                    type="button"
+                    onClick={() => setSelectedRound((r) => Math.min(38, r + 1))}
+                    disabled={selectedRound >= 38}
                     aria-label="Próxima rodada"
                     className="p-1.5 rounded-full hover:bg-white/10 disabled:opacity-40 text-white transition-colors"
                   >
                     <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+              <div className="px-4 pt-3 flex items-center justify-between gap-2 text-[11px]">
+                <span className="font-mono text-zinc-400">
+                  {selectedRound <= 19 ? '1º Turno (Ida)' : '2º Turno (Volta)'}
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelectedRound((r) => (r > 19 ? r - 19 : 1))
+                    }
+                    className={`px-2 py-0.5 rounded-full font-mono font-bold transition-colors ${
+                      selectedRound <= 19
+                        ? 'bg-[#b5ff00]/15 text-[#b5ff00]'
+                        : 'bg-[#0b0c10] text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    1º Turno
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSelectedRound((r) => (r <= 19 ? r + 19 : 38))
+                    }
+                    className={`px-2 py-0.5 rounded-full font-mono font-bold transition-colors ${
+                      selectedRound > 19
+                        ? 'bg-[#b5ff00]/15 text-[#b5ff00]'
+                        : 'bg-[#0b0c10] text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    2º Turno
                   </button>
                 </div>
               </div>
@@ -566,8 +615,16 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                       }`}
                     >
                       <div className="grid grid-cols-7 items-center text-xs">
-                        <div className="col-span-3 font-bold truncate">
-                          {home?.shortName}
+                        <div className="col-span-3 flex items-center gap-1.5 min-w-0 font-bold">
+                          <ClubBadge
+                            clubId={home?.id || fix.homeClubId}
+                            abbr={home?.abbr}
+                            name={home?.name}
+                            primaryColor={home?.primaryColor}
+                            size="xs"
+                            surface={fix.isUserMatch ? 'light' : 'dark'}
+                          />
+                          <span className="truncate">{home?.shortName}</span>
                         </div>
                         <div
                           className={`col-span-1 text-center font-mono tabular-nums font-extrabold py-0.5 rounded-full text-[11px] ${
@@ -580,8 +637,16 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                             ? `${fix.homeGoals}:${fix.awayGoals}`
                             : 'VS'}
                         </div>
-                        <div className="col-span-3 font-bold text-right truncate">
-                          {away?.shortName}
+                        <div className="col-span-3 flex items-center justify-end gap-1.5 min-w-0 font-bold text-right">
+                          <span className="truncate">{away?.shortName}</span>
+                          <ClubBadge
+                            clubId={away?.id || fix.awayClubId}
+                            abbr={away?.abbr}
+                            name={away?.name}
+                            primaryColor={away?.primaryColor}
+                            size="xs"
+                            surface={fix.isUserMatch ? 'light' : 'dark'}
+                          />
                         </div>
                       </div>
                       <div
@@ -804,12 +869,12 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                                 </td>
                                 <td className="py-2 px-2 font-sans">
                                   <div className="flex items-center gap-1.5 min-w-0">
-                                    <span
-                                      className="w-2 h-2 rounded-full shrink-0"
-                                      style={{
-                                        backgroundColor:
-                                          c?.primaryColor || '#b5ff00',
-                                      }}
+                                    <ClubBadge
+                                      clubId={c?.id || row.clubId}
+                                      abbr={c?.abbr}
+                                      name={c?.name}
+                                      primaryColor={c?.primaryColor}
+                                      size="xs"
                                     />
                                     <span className="truncate max-w-[125px] text-white font-medium">
                                       {c?.shortName || row.clubId}
@@ -1009,6 +1074,137 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                   da Fase de Grupos (6ª Rodada).
                 </div>
               )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* VIEW: HALL DE CAMPEÕES */}
+      {viewedTab === 'HALL' && (
+        <div className="space-y-4">
+          {seasonHistory.length === 0 ? (
+            <div className="bg-[#14171f] border border-white/[0.08] rounded-[28px] p-8 text-center space-y-2">
+              <Trophy className="w-8 h-8 text-[#b5ff00] mx-auto" />
+              <h3 className="font-display text-xl font-extrabold uppercase text-white">
+                Temporada {seasonYear} em Andamento
+              </h3>
+              <p className="text-xs sm:text-sm text-zinc-400 max-w-xl mx-auto">
+                Os campeões da Série A, Série B, Copa do Brasil, Libertadores e
+                os prêmios individuais de cada temporada concluída serão
+                eternizados aqui após a virada de ano.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {seasonHistory.map((entry) => (
+                <div
+                  key={entry.year}
+                  className="bg-[#14171f] border border-white/[0.08] rounded-[28px] p-5 space-y-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-white/[0.07]">
+                    <div className="flex items-center gap-2.5">
+                      <span className="px-3 py-1 rounded-full bg-[#b5ff00] text-[#090a0f] font-display font-extrabold text-sm">
+                        {entry.year}
+                      </span>
+                      <h3 className="font-display text-xl font-extrabold uppercase text-white">
+                        Campeões & Premiações da Temporada {entry.year}
+                      </h3>
+                    </div>
+                    <span className="text-xs font-mono text-zinc-300">
+                      {entry.userClubName}: {entry.userRank}º na Série{' '}
+                      {entry.userDivision} ({entry.userPoints} pts)
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="bg-[#0b0c10] border border-[#b5ff00]/30 rounded-2xl p-3.5">
+                      <div className="text-[10px] font-mono uppercase text-[#b5ff00]">
+                        Brasileirão Série A
+                      </div>
+                      <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                        {entry.serieAChampionName}
+                      </div>
+                    </div>
+                    <div className="bg-[#0b0c10] border border-white/10 rounded-2xl p-3.5">
+                      <div className="text-[10px] font-mono uppercase text-zinc-400">
+                        Brasileirão Série B
+                      </div>
+                      <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                        {entry.serieBChampionName}
+                      </div>
+                    </div>
+                    <div className="bg-[#0b0c10] border border-amber-400/30 rounded-2xl p-3.5">
+                      <div className="text-[10px] font-mono uppercase text-amber-300">
+                        Copa do Brasil
+                      </div>
+                      <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                        {entry.cdbChampionName || '—'}
+                      </div>
+                    </div>
+                    <div className="bg-[#0b0c10] border border-sky-400/30 rounded-2xl p-3.5">
+                      <div className="text-[10px] font-mono uppercase text-sky-300">
+                        Copa Libertadores
+                      </div>
+                      <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                        {entry.libChampionName || '—'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                    <div className="bg-[#0b0c10]/80 border border-white/[0.06] rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-[10px] font-mono uppercase text-zinc-400">
+                          Artilheiro
+                        </div>
+                        <div className="font-bold text-white">
+                          {entry.topScorerName}
+                        </div>
+                        <div className="text-[11px] text-zinc-400">
+                          {entry.topScorerClubName}
+                        </div>
+                      </div>
+                      <span className="font-mono font-extrabold text-sm text-[#b5ff00] tabular-nums">
+                        {entry.topScorerGoals}G
+                      </span>
+                    </div>
+
+                    <div className="bg-[#0b0c10]/80 border border-white/[0.06] rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-[10px] font-mono uppercase text-zinc-400">
+                          Líder de Assistências
+                        </div>
+                        <div className="font-bold text-white">
+                          {entry.topAssistName}
+                        </div>
+                        <div className="text-[11px] text-zinc-400">
+                          {entry.topAssistClubName}
+                        </div>
+                      </div>
+                      <span className="font-mono font-extrabold text-sm text-[#b5ff00] tabular-nums">
+                        {entry.topAssistCount}A
+                      </span>
+                    </div>
+
+                    <div className="bg-[#0b0c10]/80 border border-white/[0.06] rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-[10px] font-mono uppercase text-zinc-400">
+                          Melhor Jogador (Nota)
+                        </div>
+                        <div className="font-bold text-white">
+                          {entry.bestPlayerName}
+                        </div>
+                        <div className="text-[11px] text-zinc-400">
+                          {entry.bestPlayerClubName}
+                        </div>
+                      </div>
+                      <span className="font-mono font-extrabold text-sm text-[#b5ff00] tabular-nums">
+                        {entry.bestPlayerRating.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>

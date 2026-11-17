@@ -19,6 +19,7 @@ import {
   getConditionColor,
   getMoraleColor,
 } from '../utils/formatters';
+import { StarRating, resolvePlayerStars } from './StarRating';
 
 interface PlayerProfileModalProps {
   player: Player | null;
@@ -191,8 +192,15 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
               >
                 OVR (60–99)
               </div>
-              <div className="font-display text-2xl sm:text-3xl font-extrabold tabular-nums text-[#b5ff00]">
+              <div className="font-display text-2xl sm:text-3xl font-extrabold tabular-nums text-[#b5ff00] leading-none">
                 {overall}
+              </div>
+              <div className="mt-1 flex items-center justify-end gap-1">
+                <span className="text-[10px] text-zinc-500 font-mono">POT</span>
+                <StarRating
+                  stars={resolvePlayerStars(player, overall, 78)}
+                  size="xs"
+                />
               </div>
             </div>
             <button

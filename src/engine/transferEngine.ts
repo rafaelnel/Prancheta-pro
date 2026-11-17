@@ -79,8 +79,10 @@ export function buildAllMarketListings(params: {
   userClubId: string;
   freeAgents: Player[];
   transferredOutClubPlayerIds: string[];
+  aiSquads?: Record<string, Player[]>;
 }): MarketPlayerListing[] {
-  const { clubs, userClubId, freeAgents, transferredOutClubPlayerIds } = params;
+  const { clubs, userClubId, freeAgents, transferredOutClubPlayerIds, aiSquads } =
+    params;
   const excludedSet = new Set(transferredOutClubPlayerIds);
   const listings: MarketPlayerListing[] = [];
 
@@ -88,10 +90,13 @@ export function buildAllMarketListings(params: {
   for (const club of clubs) {
     if (club.id === userClubId) continue;
     const originClub = clubToMarketProfile(club);
-    const clubSquad = getRealSquadForClub(club);
+    const clubSquad =
+      aiSquads && aiSquads[club.id] && aiSquads[club.id].length > 0
+        ? aiSquads[club.id]
+        : getRealSquadForClub(club);
 
     for (const player of clubSquad) {
-      if (excludedSet.has(player.id)) continue;
+      if (!aiSquads?.[club.id] && excludedSet.has(player.id)) continue;
       const ovr = calculatePlayerOverall(player.attributes, player.position);
       const buyFee =
         Math.round((player.marketValue * (player.isStarter ? 1.15 : 0.95)) / 250000) *

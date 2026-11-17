@@ -14,6 +14,7 @@ import {
   Check,
   FolderOpen,
   ArrowLeftRight,
+  FastForward,
 } from 'lucide-react';
 import {
   ALL_WORLD_CLUBS,
@@ -55,9 +56,11 @@ import {
   CareerSaveData,
   CareerSlotIndex,
   Club,
+  ClubFinanceLedger,
   CopaDoBrasilState,
   FormationType,
   InboxMessage,
+  IncomingTransferOffer,
   LibertadoresState,
   LiveMatchState,
   MarketPlayerListing,
@@ -65,6 +68,8 @@ import {
   NavigationTab,
   Player,
   RoundFixture,
+  SeasonArchiveEntry,
+  SeasonEndReport,
   StandingsRow,
   TacticalDuty,
   TeamInstructions,
@@ -75,8 +80,8 @@ import {
 import {
   formatCalendarDate,
   formatCompactBRL,
-  getContrastTextColor,
 } from './utils/formatters';
+import { ClubBadge } from './components/ClubBadge';
 import {
   deleteCareerSlot,
   getLatestCareerSave,
@@ -91,9 +96,36 @@ import { TacticalBoard } from './components/TacticalBoard';
 import { MatchEngineView } from './components/MatchEngineView';
 import { MarketFeedback, MarketView } from './components/MarketView';
 import { AnnualCalendarView } from './components/AnnualCalendarView';
+import { AutoSimModal } from './components/AutoSimModal';
 import { CompetitionsView } from './components/CompetitionsView';
 import { FinancesView } from './components/FinancesView';
 import { PlayerProfileModal } from './components/PlayerProfileModal';
+import { SeasonEndModal } from './components/SeasonEndModal';
+import {
+  AutoSimCareerSnapshot,
+  AutoSimMatchLogEntry,
+  countStepsUntilDayOffset,
+  dayOffsetToDate,
+  isSeasonCompleted as checkSeasonCompleted,
+  simulateNextAutoStep,
+} from './engine/autoTacticsAndSim';
+import {
+  calculateMatchGateRevenue,
+  createInitialFinanceLedger,
+} from './engine/economyAndEvolution';
+import {
+  IncomingOfferAction,
+  buildInitialAiSquads,
+  createOfferInboxMessage,
+  maybeGenerateIncomingOfferForUser,
+  resolveIncomingOfferAction,
+  simulateAiTransferWindowTick,
+} from './engine/aiMarketEngine';
+import {
+  attributeAiRoundPlayerStats,
+  buildSeasonEndSummary,
+  executeNewSeasonRollover,
+} from './engine/seasonLifecycle';
 
 function shouldAutostart(): boolean {
   if (typeof window === 'undefined') return false;
@@ -176,6 +208,45 @@ export default function App() {
       () => initialAutostartSave?.transferredOutClubPlayerIds || []
     );
   const [marketFeedback, setMarketFeedback] = useState<MarketFeedback>(null);
+
+  // Continuous Multi-Season Career, Living AI Market & Economy Ledger State
+  const [currentYear, setCurrentYear] = useState<number>(
+    initialAutostartSave?.currentYear ?? 2026
+  );
+  const [aiSquads, setAiSquads] = useState<Record<string, Player[]>>(
+    () =>
+      initialAutostartSave?.aiSquads ||
+      buildInitialAiSquads(
+        initialAutostartSave?.clubs || ALL_WORLD_CLUBS,
+        initialAutostartSave?.userClubId || USER_CLUB_ID
+      )
+  );
+  const [pendingOffers, setPendingOffers] = useState<IncomingTransferOffer[]>(
+    () => initialAutostartSave?.pendingOffers || []
+  );
+  const [financeLedger, setFinanceLedger] = useState<ClubFinanceLedger>(() => {
+    if (initialAutostartSave?.financeLedger) {
+      return initialAutostartSave.financeLedger;
+    }
+    const initClubs = initialAutostartSave?.clubs || ALL_WORLD_CLUBS;
+    const initCid = initialAutostartSave?.userClubId || USER_CLUB_ID;
+    const initClub = initClubs.find((c) => c.id === initCid) || initClubs[0];
+    const initSquad = initialAutostartSave?.squad || INITIAL_USER_SQUAD;
+    return createInitialFinanceLedger(
+      initClub,
+      initSquad,
+      initialAutostartSave?.currentYear ?? 2026
+    );
+  });
+  const [seasonHistory, setSeasonHistory] = useState<SeasonArchiveEntry[]>(
+    () => initialAutostartSave?.seasonHistory || []
+  );
+  const [seasonEndReport, setSeasonEndReport] = useState<SeasonEndReport | null>(
+    () => initialAutostartSave?.seasonEndReport || null
+  );
+  const [isSeasonEndModalOpen, setIsSeasonEndModalOpen] = useState<boolean>(
+    () => Boolean(initialAutostartSave?.seasonEndReport)
+  );
 
   // Calendar & Multi-Competition Progression
   const [seasonStepIndex, setSeasonStepIndex] = useState<number>(
@@ -264,7 +335,9 @@ export default function App() {
       homeClub,
       awayClub,
       INITIAL_USER_SQUAD,
-      USER_CLUB_ID
+      USER_CLUB_ID,
+      [],
+      aiSquads
     )
   );
 
@@ -272,6 +345,82 @@ export default function App() {
     () => standings.findIndex((s) => s.clubId === userClubId) + 1,
     [standings, userClubId]
   );
+
+  const isSeasonFinished = useMemo(
+    () =>
+      checkSeasonCompleted({
+        clubs,
+        userClubId,
+        squad,
+        aiSquads,
+        standings,
+        fixtures,
+        secondaryStandings,
+        secondaryFixtures,
+        copaDoBrasil,
+        libertadores,
+        messages,
+        matchState,
+        seasonYear: currentYear,
+        seasonStepIndex,
+        currentRound,
+        dayOffset,
+        isMatchDay,
+        transferredOutClubPlayerIds,
+        pendingOffers,
+        transferHistory,
+        financeLedger,
+      }),
+    [
+      clubs,
+      userClubId,
+      squad,
+      aiSquads,
+      standings,
+      fixtures,
+      secondaryStandings,
+      secondaryFixtures,
+      copaDoBrasil,
+      libertadores,
+      messages,
+      matchState,
+      currentYear,
+      seasonStepIndex,
+      currentRound,
+      dayOffset,
+      isMatchDay,
+      transferredOutClubPlayerIds,
+      pendingOffers,
+      transferHistory,
+      financeLedger,
+    ]
+  );
+
+  // Auto-Simulation State & Ref
+  const autoSimSnapshotRef = useRef<AutoSimCareerSnapshot | null>(null);
+  const [autoSimUi, setAutoSimUi] = useState<{
+    isOpen: boolean;
+    isRunning: boolean;
+    isDone: boolean;
+    wasStoppedEarly: boolean;
+    targetLabel: string;
+    startDayOffset: number;
+    currentDayOffset: number;
+    targetDayOffset: number;
+    plannedUserMatches: number;
+    logs: AutoSimMatchLogEntry[];
+  }>({
+    isOpen: false,
+    isRunning: false,
+    isDone: false,
+    wasStoppedEarly: false,
+    targetLabel: '',
+    startDayOffset: 0,
+    currentDayOffset: 0,
+    targetDayOffset: 0,
+    plannedUserMatches: 0,
+    logs: [],
+  });
 
   const persistCareer = useCallback(
     (override?: Partial<CareerSaveData>) => {
@@ -296,6 +445,7 @@ export default function App() {
         clubShortName: nextClub.shortName,
         clubAbbr: nextClub.abbr,
         clubPrimaryColor: nextClub.primaryColor,
+        currentYear: override?.currentYear ?? currentYear,
         currentRound: override?.currentRound ?? currentRound,
         seasonStepIndex: override?.seasonStepIndex ?? seasonStepIndex,
         activeCompetition:
@@ -308,6 +458,7 @@ export default function App() {
         savedAt: new Date().toISOString(),
         clubs: nextClubs,
         squad: override?.squad ?? squad,
+        aiSquads: override?.aiSquads ?? aiSquads,
         standings: nextStandings,
         fixtures: override?.fixtures ?? fixtures,
         secondaryStandings:
@@ -322,6 +473,13 @@ export default function App() {
         transferHistory: override?.transferHistory ?? transferHistory,
         transferredOutClubPlayerIds:
           override?.transferredOutClubPlayerIds ?? transferredOutClubPlayerIds,
+        pendingOffers: override?.pendingOffers ?? pendingOffers,
+        financeLedger: override?.financeLedger ?? financeLedger,
+        seasonHistory: override?.seasonHistory ?? seasonHistory,
+        seasonEndReport:
+          override?.seasonEndReport !== undefined
+            ? override.seasonEndReport
+            : seasonEndReport,
       };
 
       saveCareerToSlot(payload);
@@ -335,12 +493,14 @@ export default function App() {
       userClubId,
       userClub,
       managerName,
+      currentYear,
       currentRound,
       seasonStepIndex,
       currentCalendarStep.competition,
       dayOffset,
       isMatchDay,
       squad,
+      aiSquads,
       fixtures,
       secondaryStandings,
       secondaryFixtures,
@@ -352,35 +512,55 @@ export default function App() {
       loanedOutPlayers,
       transferHistory,
       transferredOutClubPlayerIds,
+      pendingOffers,
+      financeLedger,
+      seasonHistory,
+      seasonEndReport,
     ]
   );
 
   const applyCareerSaveToState = (save: CareerSaveData) => {
     const otherDivision: 'A' | 'B' = save.division === 'B' ? 'A' : 'B';
+    const year = save.currentYear ?? 2026;
+    const restoredAiSquads =
+      save.aiSquads || buildInitialAiSquads(save.clubs, save.userClubId);
+    const saveClub =
+      save.clubs.find((c) => c.id === save.userClubId) || save.clubs[0];
     setActiveSlot(save.slotIndex);
     setManagerName(save.managerName);
     setUserClubId(save.userClubId);
+    setCurrentYear(year);
     setClubs(save.clubs);
     setSquad(save.squad);
+    setAiSquads(restoredAiSquads);
     setStandings(save.standings);
     setFixtures(save.fixtures);
     setSecondaryStandings(
-      save.secondaryStandings || getInitialStandingsForDivision(otherDivision)
+      save.secondaryStandings ||
+        getInitialStandingsForDivision(otherDivision, save.clubs)
     );
     setSecondaryFixtures(
-      save.secondaryFixtures || generateLeagueSchedule('__none__', otherDivision)
+      save.secondaryFixtures ||
+        generateLeagueSchedule('__none__', otherDivision, save.clubs)
     );
     setCopaDoBrasil(
-      save.copaDoBrasil || createInitialCopaDoBrasil(save.userClubId)
+      save.copaDoBrasil || createInitialCopaDoBrasil(save.userClubId, save.clubs)
     );
     setLibertadores(
-      save.libertadores || createInitialLibertadores(save.userClubId)
+      save.libertadores || createInitialLibertadores(save.userClubId, undefined, year)
     );
     setMessages(save.messages);
     setFreeAgents(save.freeAgents || createInitialFreeAgents());
     setLoanedOutPlayers(save.loanedOutPlayers || []);
     setTransferHistory(save.transferHistory || []);
     setTransferredOutClubPlayerIds(save.transferredOutClubPlayerIds || []);
+    setPendingOffers(save.pendingOffers || []);
+    setFinanceLedger(
+      save.financeLedger || createInitialFinanceLedger(saveClub, save.squad, year)
+    );
+    setSeasonHistory(save.seasonHistory || []);
+    setSeasonEndReport(save.seasonEndReport || null);
+    setIsSeasonEndModalOpen(Boolean(save.seasonEndReport));
     setMarketFeedback(null);
     setCurrentRound(save.currentRound);
     setSeasonStepIndex(save.seasonStepIndex ?? 0);
@@ -490,9 +670,18 @@ export default function App() {
         ? matchState.winnerClubId === userClubId
         : userWon90;
 
-      const gateRevenue = matchState.isUserHome
-        ? Math.round((userClub.capacity * 0.85 * 90) / 100000) * 100000
-        : 950000;
+      const userRankNow = Math.max(
+        1,
+        standings.findIndex((s) => s.clubId === userClubId) + 1
+      );
+      const { gateRevenue, attendance } = calculateMatchGateRevenue({
+        club: userClub,
+        rank: userRankNow,
+        totalTeams: standings.length || 20,
+        competition: comp,
+        stageLabel: currentCalendarStep.copaStage || currentCalendarStep.libStage,
+        isHome: matchState.isUserHome,
+      });
 
       let updatedFixtures = fixtures;
       let newStandings = standings;
@@ -500,6 +689,7 @@ export default function App() {
       let newSecondaryStandings = secondaryStandings;
       let updatedCopaDoBrasil = copaDoBrasil;
       let updatedLibertadores = libertadores;
+      let updatedAiSquads = aiSquads;
       let prizeMoney = 0;
 
       const userMatchPayload = {
@@ -521,6 +711,11 @@ export default function App() {
           clubs,
           userClubId
         );
+        updatedAiSquads = attributeAiRoundPlayerStats(
+          updatedAiSquads,
+          updatedCopaDoBrasil.fixturesByStage[currentCalendarStep.copaStage] || [],
+          userClubId
+        );
         prizeMoney = getCupPrizeMoney(
           'COPA_DO_BRASIL',
           currentCalendarStep.copaStage,
@@ -539,6 +734,16 @@ export default function App() {
             clubs,
             userClubId
           );
+          const libGrpFixes = updatedLibertadores.groups.flatMap((g) =>
+            g.fixtures.filter(
+              (f) => f.roundNumber === currentCalendarStep.libGroupRound
+            )
+          );
+          updatedAiSquads = attributeAiRoundPlayerStats(
+            updatedAiSquads,
+            libGrpFixes,
+            userClubId
+          );
           prizeMoney = getCupPrizeMoney(
             'LIBERTADORES',
             'Grupo',
@@ -554,6 +759,11 @@ export default function App() {
             currentCalendarStep.libStage,
             userMatchPayload,
             clubs,
+            userClubId
+          );
+          updatedAiSquads = attributeAiRoundPlayerStats(
+            updatedAiSquads,
+            updatedLibertadores.knockoutFixtures[currentCalendarStep.libStage] || [],
             userClubId
           );
           prizeMoney = getCupPrizeMoney(
@@ -577,6 +787,11 @@ export default function App() {
           standings,
           roundCompletedFixtures
         );
+        updatedAiSquads = attributeAiRoundPlayerStats(
+          updatedAiSquads,
+          roundCompletedFixtures,
+          userClubId
+        );
 
         updatedSecondaryFixtures = simulateRoundFixtures(
           secondaryFixtures,
@@ -597,6 +812,11 @@ export default function App() {
           secondaryStandings,
           secondaryRoundCompleted
         );
+        updatedAiSquads = attributeAiRoundPlayerStats(
+          updatedAiSquads,
+          secondaryRoundCompleted,
+          userClubId
+        );
       }
 
       const confidenceDelta = userAdvanced
@@ -606,7 +826,7 @@ export default function App() {
         : -4;
       const totalRevenue = gateRevenue + prizeMoney;
 
-      const updatedClubs = clubs.map((c) =>
+      let updatedClubs = clubs.map((c) =>
         c.id === userClubId
           ? {
               ...c,
@@ -619,24 +839,98 @@ export default function App() {
           : c
       );
 
-      // Update player condition & season stats from match tokens
+      // Update player condition & season stats (goals, assists, avgRating) from match
       const userTokens = matchState.isUserHome
         ? matchState.homeTokens
         : matchState.awayTokens;
       const tokenMap = new Map(userTokens.map((t) => [t.id, t]));
+      const goalCounts = new Map<string, number>();
+      for (const evt of matchState.events) {
+        if (evt.type === 'GOL' && evt.playerId) {
+          goalCounts.set(evt.playerId, (goalCounts.get(evt.playerId) || 0) + 1);
+        }
+      }
+      const userGoalsForAssistPool = goalCounts.size;
+      let remainingAssists = Math.max(0, Math.round(userGoalsForAssistPool * 0.75));
 
       const updatedSquad = squad.map((p) => {
         const tok = tokenMap.get(p.id);
         if (!tok) return p;
+        const gScored = goalCounts.get(p.id) || 0;
+        let aCredited = 0;
+        if (remainingAssists > 0 && p.position !== 'GOL' && tok.rating >= 6.8 && gScored === 0) {
+          aCredited = 1;
+          remainingAssists -= 1;
+        }
+        const prevM = p.seasonStats.matches;
+        const nextM = prevM + 1;
+        const nextAvg = Number(
+          ((p.seasonStats.avgRating * prevM + (tok.rating || 6.7)) / nextM).toFixed(2)
+        );
         return {
           ...p,
           condition: Math.max(55, Math.round(tok.condition)),
           seasonStats: {
             ...p.seasonStats,
-            matches: p.seasonStats.matches + 1,
+            matches: nextM,
+            goals: p.seasonStats.goals + gScored,
+            assists: p.seasonStats.assists + aCredited,
+            avgRating: nextAvg,
           },
         };
       });
+
+      const updatedFinanceLedger: ClubFinanceLedger = {
+        ...financeLedger,
+        seasonGateRevenue: financeLedger.seasonGateRevenue + gateRevenue,
+        seasonPrizeRevenue: financeLedger.seasonPrizeRevenue + prizeMoney,
+        lastMatchGateRevenue: gateRevenue,
+        lastMatchAttendance: attendance,
+      };
+
+      // Living AI Transfer Market & Incoming User Offer Ticks
+      let updatedTransferHistory = transferHistory;
+      let updatedPendingOffers = pendingOffers;
+      let extraMessages: InboxMessage[] = [];
+
+      if (seasonStepIndex % 3 === 1) {
+        const aiTick = simulateAiTransferWindowTick({
+          clubs: updatedClubs,
+          aiSquads: updatedAiSquads,
+          userClubId,
+          dayOffset,
+          seasonYear: currentYear,
+          maxDeals: 2,
+        });
+        updatedClubs = aiTick.updatedClubs;
+        updatedAiSquads = aiTick.updatedAiSquads;
+        if (aiTick.newRecords.length > 0) {
+          updatedTransferHistory = [
+            ...aiTick.newRecords,
+            ...updatedTransferHistory,
+          ].slice(0, 120);
+        }
+      }
+
+      if (seasonStepIndex % 4 === 2 && updatedPendingOffers.filter((o) => o.status === 'PENDING').length < 3) {
+        const freshOffer = maybeGenerateIncomingOfferForUser({
+          clubs: updatedClubs,
+          userClubId,
+          userSquad: updatedSquad,
+          pendingOffers: updatedPendingOffers,
+          dayOffset,
+          seasonYear: currentYear,
+        });
+        if (freshOffer) {
+          updatedPendingOffers = [freshOffer, ...updatedPendingOffers].slice(0, 15);
+          extraMessages = [
+            createOfferInboxMessage(
+              freshOffer,
+              updatedClubs.find((c) => c.id === userClubId) || userClub
+            ),
+          ];
+        }
+      }
 
       const userPos =
         newStandings.findIndex((s) => s.clubId === userClubId) + 1;
@@ -659,7 +953,7 @@ export default function App() {
 
       const postMatchMsg: InboxMessage = {
         id: `msg-post-${comp}-${Date.now()}`,
-        date: `${formatCalendarDate(dayOffset)} · 22:15`,
+        date: `${formatCalendarDate(dayOffset, currentYear)} · 22:15`,
         sender: 'Comissão Técnica',
         senderRole: 'Auxiliar Técnico',
         subject: `Relatório (${compDisplay}): ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName}`,
@@ -672,7 +966,9 @@ export default function App() {
         read: false,
         body: [
           `${resultLabel} pela ${compDisplay}. Placar: ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName}${penDetail} (xG: ${matchState.homeXG.toFixed(2)} vs ${matchState.awayXG.toFixed(2)}).`,
-          `Receita da partida (bilheteria + premiação): ${formatCompactBRL(totalRevenue)}.`,
+          matchState.isUserHome
+            ? `Bilheteria em ${userClub.stadium} (${attendance.toLocaleString('pt-BR')} pagantes): ${formatCompactBRL(gateRevenue)}${prizeMoney > 0 ? ` + Premiação: ${formatCompactBRL(prizeMoney)}` : ''}.`
+            : `Jogo como visitante (bilheteria destinada ao mandante)${prizeMoney > 0 ? ` · Premiação esportiva: ${formatCompactBRL(prizeMoney)}` : ''}.`,
         ],
         bulletPoints: [
           `Placar: ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName}${penDetail}`,
@@ -687,29 +983,40 @@ export default function App() {
         actionTargetTab: 'competitions',
       };
 
-      const updatedMessages = [postMatchMsg, ...messages];
+      const updatedMessages = [postMatchMsg, ...extraMessages, ...messages].slice(
+        0,
+        80
+      );
       const processedMatchState = { ...matchState, roundProcessed: true };
 
       setClubs(updatedClubs);
       setSquad(updatedSquad);
+      setAiSquads(updatedAiSquads);
       setFixtures(updatedFixtures);
       setStandings(newStandings);
       setSecondaryFixtures(updatedSecondaryFixtures);
       setSecondaryStandings(newSecondaryStandings);
       setCopaDoBrasil(updatedCopaDoBrasil);
       setLibertadores(updatedLibertadores);
+      setFinanceLedger(updatedFinanceLedger);
+      setTransferHistory(updatedTransferHistory);
+      setPendingOffers(updatedPendingOffers);
       setMessages(updatedMessages);
       setMatchState(processedMatchState);
 
       persistCareer({
         clubs: updatedClubs,
         squad: updatedSquad,
+        aiSquads: updatedAiSquads,
         fixtures: updatedFixtures,
         standings: newStandings,
         secondaryFixtures: updatedSecondaryFixtures,
         secondaryStandings: newSecondaryStandings,
         copaDoBrasil: updatedCopaDoBrasil,
         libertadores: updatedLibertadores,
+        financeLedger: updatedFinanceLedger,
+        transferHistory: updatedTransferHistory,
+        pendingOffers: updatedPendingOffers,
         messages: updatedMessages,
         matchState: processedMatchState,
       });
@@ -723,15 +1030,19 @@ export default function App() {
     secondaryStandings,
     copaDoBrasil,
     libertadores,
+    aiSquads,
+    financeLedger,
+    transferHistory,
+    pendingOffers,
     currentCalendarStep,
+    seasonStepIndex,
+    currentYear,
     squad,
     messages,
     dayOffset,
     homeClub.shortName,
     awayClub.shortName,
-    userClub.name,
-    userClub.division,
-    userClub.capacity,
+    userClub,
     userClubId,
     persistCareer,
   ]);
@@ -815,7 +1126,8 @@ export default function App() {
           awayClub,
           updated,
           matchState.isUserHome,
-          transferredOutClubPlayerIds
+          transferredOutClubPlayerIds,
+          aiSquads
         );
         setMatchState((m) => ({ ...m, homeTokens, awayTokens }));
       }
@@ -951,7 +1263,8 @@ export default function App() {
           nextAway,
           updated,
           matchState.isUserHome,
-          transferredOutClubPlayerIds
+          transferredOutClubPlayerIds,
+          aiSquads
         );
         setMatchState((m) => ({ ...m, homeTokens, awayTokens }));
       }
@@ -1078,10 +1391,405 @@ export default function App() {
     });
   };
 
+  const handleEnterMatchMoment = () => {
+    setIsMatchDay(true);
+    setActiveTab('match');
+  };
+
+  const handleQuickSimulateFromOutside = () => {
+    setIsMatchDay(true);
+    setActiveTab('match');
+    handleInstantFinishMatch();
+  };
+
+  const applyAutoSimSnapshotToState = useCallback((snap: AutoSimCareerSnapshot) => {
+    setClubs(snap.clubs);
+    setSquad(snap.squad);
+    if (snap.aiSquads) setAiSquads(snap.aiSquads);
+    setStandings(snap.standings);
+    setFixtures(snap.fixtures);
+    setSecondaryStandings(snap.secondaryStandings);
+    setSecondaryFixtures(snap.secondaryFixtures);
+    setCopaDoBrasil(snap.copaDoBrasil);
+    setLibertadores(snap.libertadores);
+    setMessages(snap.messages);
+    setMatchState(snap.matchState);
+    if (snap.seasonYear) setCurrentYear(snap.seasonYear);
+    setSeasonStepIndex(snap.seasonStepIndex);
+    setCurrentRound(snap.currentRound);
+    setDayOffset(snap.dayOffset);
+    setIsMatchDay(snap.isMatchDay);
+    if (snap.pendingOffers) setPendingOffers(snap.pendingOffers);
+    if (snap.transferHistory) setTransferHistory(snap.transferHistory);
+    if (snap.financeLedger) setFinanceLedger(snap.financeLedger);
+  }, []);
+
+  const finalizeAutoSimSummary = useCallback(
+    (
+      finalSnap: AutoSimCareerSnapshot,
+      finalLogs: AutoSimMatchLogEntry[],
+      targetLabel: string,
+      wasStoppedEarly: boolean
+    ) => {
+      const yr = finalSnap.seasonYear ?? currentYear;
+      const userLogs = finalLogs.filter((l) => l.outcome !== 'BYE');
+      const wins = userLogs.filter((l) => l.outcome === 'V').length;
+      const draws = userLogs.filter((l) => l.outcome === 'E').length;
+      const losses = userLogs.filter((l) => l.outcome === 'D').length;
+      const rank =
+        finalSnap.standings.findIndex((s) => s.clubId === finalSnap.userClubId) + 1;
+      const club =
+        finalSnap.clubs.find((c) => c.id === finalSnap.userClubId) || userClub;
+
+      const summaryMsg: InboxMessage = {
+        id: `msg-autosim-summary-${Date.now()}`,
+        date: formatCalendarDate(finalSnap.dayOffset, yr),
+        sender: 'Comissão Técnica (IA)',
+        senderRole: 'Relatório de Simulação Automática',
+        subject: `${
+          wasStoppedEarly ? 'Simulação Interrompida' : 'Simulação Concluída'
+        } (${targetLabel}): ${wins}V-${draws}E-${losses}D`,
+        category: 'Tática',
+        priority: wins >= losses ? 'positive' : 'warning',
+        read: false,
+        body: [
+          `Período simulado partida por partida até ${formatCalendarDate(
+            finalSnap.dayOffset,
+            yr
+          )} com formações e táticas otimizadas automaticamente a cada jogo.`,
+          `Desempenho no período: ${userLogs.length} partida(s) (${wins}V, ${draws}E, ${losses}D). Posição atual: ${rank}º lugar · Saldo em caixa: ${formatCompactBRL(
+            club.cashBalance
+          )}.`,
+        ],
+        actionLabel: 'Ver Competições',
+        actionTargetTab: 'competitions',
+      };
+
+      const withSummary: AutoSimCareerSnapshot = {
+        ...finalSnap,
+        messages: [summaryMsg, ...finalSnap.messages].slice(0, 80),
+      };
+
+      const finishedAfterAuto = checkSeasonCompleted(withSummary);
+      const generatedReport = finishedAfterAuto
+        ? buildSeasonEndSummary({
+            seasonYear: yr,
+            clubs: withSummary.clubs,
+            userClubId: withSummary.userClubId,
+            userSquad: withSummary.squad,
+            aiSquads: withSummary.aiSquads || aiSquads,
+            standings: withSummary.standings,
+            secondaryStandings: withSummary.secondaryStandings,
+            copaDoBrasil: withSummary.copaDoBrasil,
+            libertadores: withSummary.libertadores,
+          })
+        : null;
+
+      applyAutoSimSnapshotToState(withSummary);
+      if (generatedReport) {
+        setSeasonEndReport(generatedReport);
+      }
+
+      const stepComp =
+        SEASON_CALENDAR[withSummary.seasonStepIndex]?.competition || 'BRASILEIRAO';
+      persistCareer({
+        clubs: withSummary.clubs,
+        squad: withSummary.squad,
+        aiSquads: withSummary.aiSquads,
+        standings: withSummary.standings,
+        fixtures: withSummary.fixtures,
+        secondaryStandings: withSummary.secondaryStandings,
+        secondaryFixtures: withSummary.secondaryFixtures,
+        copaDoBrasil: withSummary.copaDoBrasil,
+        libertadores: withSummary.libertadores,
+        messages: withSummary.messages,
+        matchState: withSummary.matchState,
+        currentYear: yr,
+        seasonStepIndex: withSummary.seasonStepIndex,
+        activeCompetition: stepComp,
+        currentRound: withSummary.currentRound,
+        dayOffset: withSummary.dayOffset,
+        isMatchDay: withSummary.isMatchDay,
+        pendingOffers: withSummary.pendingOffers,
+        transferHistory: withSummary.transferHistory,
+        financeLedger: withSummary.financeLedger,
+        seasonEndReport: generatedReport,
+      });
+    },
+    [applyAutoSimSnapshotToState, persistCareer, userClub, currentYear, aiSquads]
+  );
+
+  const handleStartAutoSimulation = (
+    targetDayOffset: number,
+    targetLabel: string
+  ) => {
+    if (isSeasonFinished) {
+      if (seasonEndReport) setIsSeasonEndModalOpen(true);
+      return;
+    }
+
+    const initialSnapshot: AutoSimCareerSnapshot = {
+      clubs,
+      userClubId,
+      squad,
+      aiSquads,
+      standings,
+      fixtures,
+      secondaryStandings,
+      secondaryFixtures,
+      copaDoBrasil,
+      libertadores,
+      messages,
+      matchState,
+      seasonYear: currentYear,
+      seasonStepIndex,
+      currentRound,
+      dayOffset,
+      isMatchDay,
+      transferredOutClubPlayerIds,
+      pendingOffers,
+      transferHistory,
+      financeLedger,
+    };
+
+    const { userMatchSteps } = countStepsUntilDayOffset(
+      initialSnapshot,
+      targetDayOffset
+    );
+
+    autoSimSnapshotRef.current = initialSnapshot;
+    setAutoSimUi({
+      isOpen: true,
+      isRunning: true,
+      isDone: false,
+      wasStoppedEarly: false,
+      targetLabel,
+      startDayOffset: dayOffset,
+      currentDayOffset: dayOffset,
+      targetDayOffset,
+      plannedUserMatches: userMatchSteps,
+      logs: [],
+    });
+  };
+
+  const handlePauseAutoSimulation = () => {
+    if (!autoSimUi.isRunning) return;
+    const snap = autoSimSnapshotRef.current;
+    if (snap) {
+      finalizeAutoSimSummary(snap, autoSimUi.logs, autoSimUi.targetLabel, true);
+    }
+    setAutoSimUi((prev) => ({
+      ...prev,
+      isRunning: false,
+      isDone: false,
+      wasStoppedEarly: true,
+    }));
+  };
+
+  const handleFinishAutoSimulationInstant = () => {
+    if (!autoSimSnapshotRef.current) return;
+    let working = autoSimSnapshotRef.current;
+    const collectedLogs = [...autoSimUi.logs];
+    let guard = 0;
+    let done = false;
+
+    while (!done && guard < 120) {
+      guard++;
+      const stepRes = simulateNextAutoStep(working, autoSimUi.targetDayOffset);
+      working = stepRes.snapshot;
+      if (stepRes.logEntry) {
+        collectedLogs.push(stepRes.logEntry);
+      }
+      done = stepRes.done;
+    }
+
+    autoSimSnapshotRef.current = working;
+    finalizeAutoSimSummary(
+      working,
+      collectedLogs,
+      autoSimUi.targetLabel,
+      false
+    );
+    setAutoSimUi((prev) => ({
+      ...prev,
+      isRunning: false,
+      isDone: true,
+      wasStoppedEarly: false,
+      currentDayOffset: working.dayOffset,
+      logs: collectedLogs,
+    }));
+  };
+
+  useEffect(() => {
+    if (!autoSimUi.isOpen || !autoSimUi.isRunning) return;
+
+    const timer = window.setInterval(() => {
+      const currentSnap = autoSimSnapshotRef.current;
+      if (!currentSnap) return;
+
+      const stepRes = simulateNextAutoStep(currentSnap, autoSimUi.targetDayOffset);
+      autoSimSnapshotRef.current = stepRes.snapshot;
+      applyAutoSimSnapshotToState(stepRes.snapshot);
+
+      setAutoSimUi((prev) => {
+        const nextLogs = stepRes.logEntry
+          ? [...prev.logs, stepRes.logEntry]
+          : prev.logs;
+
+        if (stepRes.done) {
+          finalizeAutoSimSummary(
+            stepRes.snapshot,
+            nextLogs,
+            prev.targetLabel,
+            false
+          );
+          return {
+            ...prev,
+            isRunning: false,
+            isDone: true,
+            wasStoppedEarly: false,
+            currentDayOffset: stepRes.snapshot.dayOffset,
+            logs: nextLogs,
+          };
+        }
+
+        return {
+          ...prev,
+          currentDayOffset: stepRes.snapshot.dayOffset,
+          logs: nextLogs,
+        };
+      });
+    }, 150);
+
+    return () => window.clearInterval(timer);
+  }, [
+    autoSimUi.isOpen,
+    autoSimUi.isRunning,
+    autoSimUi.targetDayOffset,
+    applyAutoSimSnapshotToState,
+    finalizeAutoSimSummary,
+  ]);
+
+  const handleOpenSeasonEndModal = useCallback(() => {
+    const report =
+      seasonEndReport ||
+      buildSeasonEndSummary({
+        seasonYear: currentYear,
+        clubs,
+        userClubId,
+        userSquad: squad,
+        aiSquads,
+        standings,
+        secondaryStandings,
+        copaDoBrasil,
+        libertadores,
+      });
+    setSeasonEndReport(report);
+    setIsSeasonEndModalOpen(true);
+    persistCareer({ seasonEndReport: report });
+  }, [
+    seasonEndReport,
+    currentYear,
+    clubs,
+    userClubId,
+    squad,
+    aiSquads,
+    standings,
+    secondaryStandings,
+    copaDoBrasil,
+    libertadores,
+    persistCareer,
+  ]);
+
+  const handleStartNextSeason = () => {
+    const rollover = executeNewSeasonRollover({
+      currentYear,
+      clubs,
+      userClubId,
+      userSquad: squad,
+      aiSquads,
+      freeAgents,
+      loanedOutPlayers,
+      standings,
+      secondaryStandings,
+      copaDoBrasil,
+      libertadores,
+      seasonHistory,
+      managerName,
+    });
+
+    const nextHistory = [
+      rollover.archiveEntry,
+      ...seasonHistory.filter((h) => h.year !== rollover.archiveEntry.year),
+    ];
+
+    setCurrentYear(rollover.nextYear);
+    setClubs(rollover.updatedClubs);
+    setSquad(rollover.updatedUserSquad);
+    setAiSquads(rollover.updatedAiSquads);
+    setFreeAgents(rollover.updatedFreeAgents);
+    setLoanedOutPlayers(rollover.updatedLoanedOut);
+    setStandings(rollover.nextStandings);
+    setFixtures(rollover.nextFixtures);
+    setSecondaryStandings(rollover.nextSecondaryStandings);
+    setSecondaryFixtures(rollover.nextSecondaryFixtures);
+    setCopaDoBrasil(rollover.nextCopaDoBrasil);
+    setLibertadores(rollover.nextLibertadores);
+    setFinanceLedger(rollover.nextFinanceLedger);
+    setMatchState(rollover.nextMatchState);
+    setMessages(rollover.nextMessages);
+    setSeasonHistory(nextHistory);
+    setTransferredOutClubPlayerIds([]);
+    setPendingOffers([]);
+    setSeasonStepIndex(0);
+    setCurrentRound(1);
+    setDayOffset(0);
+    setIsMatchDay(false);
+    setSeasonEndReport(null);
+    setIsSeasonEndModalOpen(false);
+    setMarketFeedback(null);
+    setActiveTab('inbox');
+
+    persistCareer({
+      currentYear: rollover.nextYear,
+      division: rollover.nextDivision,
+      clubs: rollover.updatedClubs,
+      squad: rollover.updatedUserSquad,
+      aiSquads: rollover.updatedAiSquads,
+      freeAgents: rollover.updatedFreeAgents,
+      loanedOutPlayers: rollover.updatedLoanedOut,
+      standings: rollover.nextStandings,
+      fixtures: rollover.nextFixtures,
+      secondaryStandings: rollover.nextSecondaryStandings,
+      secondaryFixtures: rollover.nextSecondaryFixtures,
+      copaDoBrasil: rollover.nextCopaDoBrasil,
+      libertadores: rollover.nextLibertadores,
+      financeLedger: rollover.nextFinanceLedger,
+      matchState: rollover.nextMatchState,
+      messages: rollover.nextMessages,
+      seasonHistory: nextHistory,
+      transferredOutClubPlayerIds: [],
+      pendingOffers: [],
+      seasonStepIndex: 0,
+      activeCompetition: 'BRASILEIRAO',
+      currentRound: 1,
+      dayOffset: 0,
+      isMatchDay: false,
+      seasonEndReport: null,
+    });
+  };
+
   const handleAdvanceToNextRound = () => {
+    if (isSeasonFinished) {
+      setIsMatchDay(false);
+      handleOpenSeasonEndModal();
+      return;
+    }
+
     let nextIdx = Math.min(SEASON_CALENDAR.length - 1, seasonStepIndex + 1);
     let nextCdb = copaDoBrasil;
     let nextLib = libertadores;
+    let nextAiSquads = aiSquads;
     let nextLeagueRound = currentRound;
 
     // Auto-simulate any cup rounds where user does not participate or was eliminated
@@ -1114,6 +1822,11 @@ export default function App() {
           clubs,
           userClubId
         );
+        nextAiSquads = attributeAiRoundPlayerStats(
+          nextAiSquads,
+          nextCdb.fixturesByStage[candidateStep.copaStage] || [],
+          userClubId
+        );
       } else if (candidateStep.competition === 'LIBERTADORES') {
         if (
           candidateStep.libStage === 'Grupos' &&
@@ -1126,6 +1839,16 @@ export default function App() {
             clubs,
             userClubId
           );
+          const libFixes = nextLib.groups.flatMap((g) =>
+            g.fixtures.filter(
+              (f) => f.roundNumber === candidateStep.libGroupRound
+            )
+          );
+          nextAiSquads = attributeAiRoundPlayerStats(
+            nextAiSquads,
+            libFixes,
+            userClubId
+          );
         } else if (
           candidateStep.libStage &&
           candidateStep.libStage !== 'Grupos'
@@ -1135,6 +1858,11 @@ export default function App() {
             candidateStep.libStage,
             null,
             clubs,
+            userClubId
+          );
+          nextAiSquads = attributeAiRoundPlayerStats(
+            nextAiSquads,
+            nextLib.knockoutFixtures[candidateStep.libStage] || [],
             userClubId
           );
         }
@@ -1175,6 +1903,26 @@ export default function App() {
       dayOffset + 1,
       (targetStep.dayOffset ?? dayOffset + 4) - 1
     );
+
+    // Check monthly sponsorship payout if month advanced
+    const prevMonth = dayOffsetToDate(dayOffset, currentYear).getMonth();
+    const newMonth = dayOffsetToDate(nextDayOffset, currentYear).getMonth();
+    let updatedClubs = clubs;
+    let updatedLedger = financeLedger;
+    if (newMonth > prevMonth) {
+      const installment = financeLedger.sponsorshipContract.monthlyInstallment;
+      updatedClubs = clubs.map((c) =>
+        c.id === userClubId
+          ? { ...c, cashBalance: c.cashBalance + installment }
+          : c
+      );
+      updatedLedger = {
+        ...financeLedger,
+        seasonSponsorshipRevenue:
+          financeLedger.seasonSponsorshipRevenue + installment,
+      };
+    }
+
     const nextMatch = createInitialMatchState(
       nextLeagueRound,
       nextFixture,
@@ -1182,10 +1930,14 @@ export default function App() {
       nextAway,
       recoveredSquad,
       userClubId,
-      transferredOutClubPlayerIds
+      transferredOutClubPlayerIds,
+      nextAiSquads
     );
 
+    setClubs(updatedClubs);
+    setFinanceLedger(updatedLedger);
     setSquad(recoveredSquad);
+    setAiSquads(nextAiSquads);
     setCopaDoBrasil(nextCdb);
     setLibertadores(nextLib);
     setSeasonStepIndex(nextIdx);
@@ -1196,7 +1948,10 @@ export default function App() {
     setActiveTab('competitions');
 
     persistCareer({
+      clubs: updatedClubs,
+      financeLedger: updatedLedger,
       squad: recoveredSquad,
+      aiSquads: nextAiSquads,
       copaDoBrasil: nextCdb,
       libertadores: nextLib,
       seasonStepIndex: nextIdx,
@@ -1245,7 +2000,7 @@ export default function App() {
       loanWageShare,
     });
 
-    const dateLabel = formatCalendarDate(dayOffset);
+    const dateLabel = formatCalendarDate(dayOffset, currentYear);
     const counterpartyName = listing.originClub?.shortName || 'Passe Livre';
     const recordType: TransferRecord['type'] =
       dealMode === 'FREE'
@@ -1279,9 +2034,32 @@ export default function App() {
       return;
     }
 
-    const updatedClubs = clubs.map((c) =>
-      c.id === userClubId ? result.updatedClub : c
-    );
+    const updatedClubs = clubs.map((c) => {
+      if (c.id === userClubId) return result.updatedClub;
+      if (
+        dealMode !== 'FREE' &&
+        listing.originClub &&
+        c.id === listing.originClub.id
+      ) {
+        return { ...c, cashBalance: c.cashBalance + evaluation.effectiveFee };
+      }
+      return c;
+    });
+
+    // Remove signed player from origin AI club squad if present
+    const nextAiSquads = { ...aiSquads };
+    if (listing.originClub && nextAiSquads[listing.originClub.id]) {
+      nextAiSquads[listing.originClub.id] = nextAiSquads[
+        listing.originClub.id
+      ].filter((p) => p.id !== listing.player.id);
+    }
+
+    const nextFinanceLedger: ClubFinanceLedger = {
+      ...financeLedger,
+      seasonTransferSpend:
+        financeLedger.seasonTransferSpend + evaluation.effectiveFee,
+    };
+
     const acceptedRec: TransferRecord = {
       id: `tr-acc-${Date.now()}`,
       date: dateLabel,
@@ -1291,11 +2069,13 @@ export default function App() {
       position: result.signedPlayer.position,
       ovr: listing.ovr,
       counterpartyClubName: counterpartyName,
+      fromClubName: counterpartyName,
+      toClubName: userClub.shortName,
       feeAmount: evaluation.effectiveFee,
       monthlySalaryImpact: evaluation.effectiveSalary,
       note:
         dealMode === 'LOAN'
-          ? `Empréstimo 2026 (${Math.round(loanWageShare * 100)}% salário).`
+          ? `Empréstimo ${currentYear} (${Math.round(loanWageShare * 100)}% salário).`
           : dealMode === 'FREE'
           ? 'Contrato sem custo de transferência.'
           : 'Compra definitiva concluída.',
@@ -1332,7 +2112,8 @@ export default function App() {
         awayClub,
         result.updatedSquad,
         matchState.isUserHome,
-        result.updatedTransferredOutIds
+        result.updatedTransferredOutIds,
+        nextAiSquads
       );
       nextMatchState = { ...matchState, homeTokens, awayTokens };
       setMatchState(nextMatchState);
@@ -1340,6 +2121,8 @@ export default function App() {
 
     setClubs(updatedClubs);
     setSquad(result.updatedSquad);
+    setAiSquads(nextAiSquads);
+    setFinanceLedger(nextFinanceLedger);
     setFreeAgents(result.updatedFreeAgents);
     setTransferredOutClubPlayerIds(result.updatedTransferredOutIds);
     setTransferHistory(nextHistory);
@@ -1353,6 +2136,8 @@ export default function App() {
     persistCareer({
       clubs: updatedClubs,
       squad: result.updatedSquad,
+      aiSquads: nextAiSquads,
+      financeLedger: nextFinanceLedger,
       freeAgents: result.updatedFreeAgents,
       transferredOutClubPlayerIds: result.updatedTransferredOutIds,
       transferHistory: nextHistory,
@@ -1373,7 +2158,7 @@ export default function App() {
       player,
       action,
       destinationClubName:
-        action === 'EMPRESTIMO_OUT' ? 'Clube Parceiro 2026' : undefined,
+        action === 'EMPRESTIMO_OUT' ? `Clube Parceiro ${currentYear}` : undefined,
     });
 
     if (!result.success) {
@@ -1388,8 +2173,14 @@ export default function App() {
     const updatedClubs = clubs.map((c) =>
       c.id === userClubId ? result.updatedClub : c
     );
+    const nextFinanceLedger: ClubFinanceLedger = {
+      ...financeLedger,
+      seasonTransferIncome:
+        financeLedger.seasonTransferIncome + result.feeReceived,
+    };
+
     const ovr = calculatePlayerOverall(player.attributes, player.position);
-    const dateLabel = formatCalendarDate(dayOffset);
+    const dateLabel = formatCalendarDate(dayOffset, currentYear);
     const record: TransferRecord = {
       id: `tr-out-${Date.now()}`,
       date: dateLabel,
@@ -1402,7 +2193,7 @@ export default function App() {
         action === 'DEVOLVER_EMPRESTIMO'
           ? player.loanOriginClubName || 'Clube de Origem'
           : action === 'EMPRESTIMO_OUT'
-          ? 'Clube Parceiro 2026'
+          ? `Clube Parceiro ${currentYear}`
           : 'Mercado Nacional/Ext.',
       feeAmount: result.feeReceived,
       monthlySalaryImpact: -result.monthlyWageRelief,
@@ -1422,13 +2213,15 @@ export default function App() {
         awayClub,
         result.updatedSquad,
         matchState.isUserHome,
-        transferredOutClubPlayerIds
+        transferredOutClubPlayerIds,
+        aiSquads
       );
       nextMatchState = { ...matchState, homeTokens, awayTokens };
       setMatchState(nextMatchState);
     }
 
     setClubs(updatedClubs);
+    setFinanceLedger(nextFinanceLedger);
     setSquad(result.updatedSquad);
     setLoanedOutPlayers(result.updatedLoanedOutPlayers);
     setTransferHistory(nextHistory);
@@ -1447,9 +2240,102 @@ export default function App() {
 
     persistCareer({
       clubs: updatedClubs,
+      financeLedger: nextFinanceLedger,
       squad: result.updatedSquad,
       loanedOutPlayers: result.updatedLoanedOutPlayers,
       transferHistory: nextHistory,
+      matchState: nextMatchState,
+    });
+  };
+
+  const handleResolveIncomingOffer = (
+    offerId: string,
+    action: IncomingOfferAction
+  ) => {
+    const targetOffer = pendingOffers.find((o) => o.id === offerId);
+    if (!targetOffer || targetOffer.status !== 'PENDING') return;
+
+    const res = resolveIncomingOfferAction({
+      offer: targetOffer,
+      action,
+      userClub,
+      userSquad: squad,
+      aiSquads,
+      loanedOutPlayers,
+      clubs,
+      dayOffset,
+      seasonYear: currentYear,
+    });
+
+    const updatedPendingOffers = pendingOffers.map((o) =>
+      o.id === offerId ? res.updatedOffer : o
+    );
+    const nextHistory = res.transferRecord
+      ? [res.transferRecord, ...transferHistory]
+      : transferHistory;
+    const nextLedger: ClubFinanceLedger =
+      res.outcome === 'ACCEPTED'
+        ? {
+            ...financeLedger,
+            seasonTransferIncome:
+              financeLedger.seasonTransferIncome + res.finalFee,
+          }
+        : financeLedger;
+
+    let nextMatchState = matchState;
+    if (res.outcome === 'ACCEPTED' && matchState.phase === 'PRE_MATCH') {
+      const { homeTokens, awayTokens } = buildPitchTokens(
+        homeClub,
+        awayClub,
+        res.updatedUserSquad,
+        matchState.isUserHome,
+        transferredOutClubPlayerIds,
+        res.updatedAiSquads
+      );
+      nextMatchState = { ...matchState, homeTokens, awayTokens };
+      setMatchState(nextMatchState);
+    }
+
+    setClubs(res.updatedClubs);
+    setSquad(res.updatedUserSquad);
+    setAiSquads(res.updatedAiSquads);
+    setLoanedOutPlayers(res.updatedLoanedOutPlayers);
+    setPendingOffers(updatedPendingOffers);
+    setTransferHistory(nextHistory);
+    setFinanceLedger(nextLedger);
+
+    if (res.outcome === 'ACCEPTED') {
+      setMarketFeedback({
+        type: 'success',
+        title: `Negócio fechado com ${targetOffer.fromClubName}!`,
+        detail: `${targetOffer.playerName} transferido por ${formatCompactBRL(
+          res.finalFee
+        )}.${res.promotedStarterName ? ` ${res.promotedStarterName} assumiu a titularidade.` : ''}`,
+      });
+    } else if (res.outcome === 'COUNTER_REJECTED') {
+      setMarketFeedback({
+        type: 'rejected',
+        title: `${targetOffer.fromClubName} encerrou as conversas`,
+        detail: `O clube comprador não aceitou a contraproposta de ${formatCompactBRL(
+          res.finalFee
+        )}.`,
+      });
+    } else {
+      setMarketFeedback({
+        type: 'rejected',
+        title: `Proposta de ${targetOffer.fromClubName} recusada`,
+        detail: `${targetOffer.playerName} permanece no elenco do ${userClub.shortName}.`,
+      });
+    }
+
+    persistCareer({
+      clubs: res.updatedClubs,
+      squad: res.updatedUserSquad,
+      aiSquads: res.updatedAiSquads,
+      loanedOutPlayers: res.updatedLoanedOutPlayers,
+      pendingOffers: updatedPendingOffers,
+      transferHistory: nextHistory,
+      financeLedger: nextLedger,
       matchState: nextMatchState,
     });
   };
@@ -1463,6 +2349,11 @@ export default function App() {
       } else {
         handlePauseMatch();
       }
+      return;
+    }
+
+    if (isSeasonFinished) {
+      handleOpenSeasonEndModal();
       return;
     }
 
@@ -1541,6 +2432,10 @@ export default function App() {
 
   const unreadInboxCount = messages.filter((m) => !m.read).length;
 
+  const activeOffersCount = pendingOffers.filter(
+    (o) => o.status === 'PENDING'
+  ).length;
+
   const primaryActionLabel =
     activeTab === 'match'
       ? matchState.phase === 'FULL_TIME'
@@ -1550,6 +2445,8 @@ export default function App() {
         : matchState.phase === 'HALF_TIME'
         ? 'Iniciar 2º Tempo'
         : "Apito Inicial (0')"
+      : isSeasonFinished
+      ? `Encerrar ${currentYear} → ${currentYear + 1}`
       : isMatchDay
       ? `Ir para o Jogo`
       : 'Continuar Calendário';
@@ -1563,6 +2460,8 @@ export default function App() {
         : matchState.phase === 'HALF_TIME'
         ? '2º Tempo'
         : 'Iniciar'
+      : isSeasonFinished
+      ? `Final ${currentYear}`
       : isMatchDay
       ? 'Ir p/ Jogo'
       : 'Continuar';
@@ -1590,29 +2489,23 @@ export default function App() {
       badge: userClub.formation,
     },
     {
-      id: 'match' as const,
-      label: 'Motor de Partida 2D',
-      mobileLabel: 'Jogo 2D',
-      icon: PlayCircle,
-      badge:
-        matchState.phase === 'FIRST_HALF' ||
-        matchState.phase === 'SECOND_HALF'
-          ? `${matchState.minute}'`
-          : `R${currentRound}`,
-    },
-    {
       id: 'market' as const,
       label: 'Mercado',
       mobileLabel: 'Merc.',
       icon: ArrowLeftRight,
-      badge: transferHistory.length > 0 ? String(transferHistory.length) : null,
+      badge:
+        activeOffersCount > 0
+          ? `${activeOffersCount}!`
+          : transferHistory.length > 0
+          ? String(transferHistory.length)
+          : null,
     },
     {
       id: 'calendar' as const,
       label: 'Calendário Anual',
       mobileLabel: 'Agenda',
       icon: Calendar,
-      badge: '2026',
+      badge: String(currentYear),
     },
     {
       id: 'competitions' as const,
@@ -1629,6 +2522,76 @@ export default function App() {
       badge: null,
     },
   ];
+
+  // Exclusive Match Moment Full-Screen View (Separate from out-of-match management settings)
+  if (activeTab === 'match') {
+    return (
+      <div className="min-h-screen bg-[#0b0c10] text-zinc-100 flex flex-col">
+        <header className="sticky top-0 z-30 h-14 lg:h-16 bg-[#0b0c10]/95 border-b border-white/[0.08] px-4 sm:px-6 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <ClubBadge
+              clubId={userClub.id}
+              abbr={userClub.abbr}
+              name={userClub.name}
+              primaryColor={userClub.primaryColor}
+              size="header"
+            />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-full bg-[#b5ff00] text-[#090a0f] text-[10px] font-mono font-extrabold uppercase tracking-wider">
+                  Dia de Jogo
+                </span>
+                <h1 className="font-display text-base sm:text-xl font-extrabold uppercase tracking-tight text-white truncate">
+                  {homeClub.shortName} vs {awayClub.shortName}
+                </h1>
+              </div>
+              <div className="text-[11px] text-zinc-400 font-mono truncate">
+                {formatCalendarDate(dayOffset, currentYear)} · {homeClub.stadium}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={handlePrimaryHeaderAction}
+              className="px-4 py-2 rounded-full text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1.5 whitespace-nowrap shadow-md"
+            >
+              <Play className="w-3.5 h-3.5 fill-current shrink-0" />
+              <span className="hidden sm:inline">{primaryActionLabel}</span>
+              <span className="sm:hidden">{mobilePrimaryActionLabel}</span>
+            </button>
+          </div>
+        </header>
+
+        <main className="flex-1 max-w-7xl w-full mx-auto p-3.5 sm:p-5 lg:p-6 overflow-y-auto overflow-x-hidden">
+          <MatchEngineView
+            match={matchState}
+            homeClub={homeClub}
+            awayClub={awayClub}
+            squad={squad}
+            roundFixtures={activeRoundFixturesForMatchView}
+            clubs={clubs}
+            userMentality={userClub.instructions.mentality}
+            onStartOrResume={handleStartOrResumeMatch}
+            onPause={handlePauseMatch}
+            onSetSpeed={(speed) =>
+              setMatchState((prev) => ({ ...prev, speed }))
+            }
+            onChangeLiveMentality={handleChangeLiveMentality}
+            onMakeSubstitution={handleMakeLiveSubstitution}
+            onInstantFinishMatch={handleInstantFinishMatch}
+            onProceedAfterFullTime={handleAdvanceToNextRound}
+            onExitPreMatch={
+              matchState.phase === 'PRE_MATCH'
+                ? () => setActiveTab('inbox')
+                : undefined
+            }
+          />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#0b0c10] text-zinc-100 flex flex-col lg:flex-row">
@@ -1691,11 +2654,13 @@ export default function App() {
 
         {/* Sidebar Bottom Next Match Card + Career Save / Menu Controls */}
         <div className="p-3.5 space-y-2.5">
-          <div className="p-4 rounded-2xl border border-white/[0.07] bg-[#0b0c10] space-y-2">
+          <div className="p-4 rounded-2xl border border-[#b5ff00]/25 bg-[#0b0c10] space-y-2.5">
             <div className="flex items-center justify-between text-[11px] text-zinc-400">
-              <span>Próximo Jogo</span>
+              <span>{isSeasonFinished ? `Temporada ${currentYear}` : 'Momento de Partida'}</span>
               <span className="font-mono font-bold text-[#b5ff00] truncate max-w-[130px]">
-                {currentCalendarStep.competition === 'COPA_DO_BRASIL'
+                {isSeasonFinished
+                  ? 'Concluída'
+                  : currentCalendarStep.competition === 'COPA_DO_BRASIL'
                   ? `CdB · ${currentCalendarStep.copaStage}`
                   : currentCalendarStep.competition === 'LIBERTADORES'
                   ? `Lib · ${currentCalendarStep.libStage === 'Grupos' ? `G${currentCalendarStep.libGroupRound}` : currentCalendarStep.libStage}`
@@ -1703,11 +2668,44 @@ export default function App() {
               </span>
             </div>
             <div className="font-display text-base font-extrabold uppercase tracking-tight text-white truncate">
-              {homeClub.shortName} vs {awayClub.shortName}
+              {isSeasonFinished
+                ? `${userRank}º na Série ${userClub.division}`
+                : `${homeClub.shortName} vs ${awayClub.shortName}`}
             </div>
             <div className="text-[11px] text-zinc-400 truncate">
-              {homeClub.stadium}
+              {isSeasonFinished
+                ? 'Todas as competições encerradas'
+                : homeClub.stadium}
             </div>
+            {isSeasonFinished ? (
+              <button
+                type="button"
+                onClick={handleOpenSeasonEndModal}
+                className="w-full py-2 px-2.5 rounded-xl text-[11px] font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center justify-center gap-1"
+              >
+                <Trophy className="w-3 h-3 shrink-0" />
+                <span>Resumo {currentYear} / Novo Ano</span>
+              </button>
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={handleEnterMatchMoment}
+                  className="py-2 px-2.5 rounded-xl text-[11px] font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center justify-center gap-1"
+                >
+                  <Play className="w-3 h-3 fill-current shrink-0" />
+                  <span>Ver Jogo</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleQuickSimulateFromOutside}
+                  className="py-2 px-2.5 rounded-xl text-[11px] font-extrabold bg-white hover:bg-zinc-200 text-[#090a0f] transition-colors flex items-center justify-center gap-1"
+                >
+                  <FastForward className="w-3 h-3 shrink-0" />
+                  <span>Simular</span>
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-2">
@@ -1746,15 +2744,13 @@ export default function App() {
         <header className="sticky top-0 z-30 h-12 lg:h-16 bg-[#0b0c10]/95 border-b border-white/[0.07] px-3 sm:px-5 lg:px-6 flex items-center justify-between gap-2 sm:gap-4 shrink-0">
           {/* Left: Club Name & League Status */}
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div
-              className="w-7 h-7 lg:w-9 lg:h-9 rounded-full flex items-center justify-center font-display font-extrabold text-xs lg:text-sm shrink-0 shadow border border-white/20"
-              style={{
-                backgroundColor: userClub.primaryColor,
-                color: getContrastTextColor(userClub.primaryColor),
-              }}
-            >
-              {userClub.abbr}
-            </div>
+            <ClubBadge
+              clubId={userClub.id}
+              abbr={userClub.abbr}
+              name={userClub.name}
+              primaryColor={userClub.primaryColor}
+              size="header"
+            />
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 sm:gap-2">
                 <h1 className="font-display text-sm sm:text-base lg:text-xl font-extrabold uppercase tracking-tight text-white truncate">
@@ -1766,7 +2762,7 @@ export default function App() {
               </div>
               {/* Mobile compact status line */}
               <div className="text-[10px] text-zinc-400 font-mono tabular-nums truncate md:hidden">
-                {formatCalendarDate(dayOffset).split(',')[1]?.trim()} ·{' '}
+                {formatCalendarDate(dayOffset, currentYear).split(',')[1]?.trim()} ·{' '}
                 <span className="text-[#b5ff00] font-bold">
                   {formatCompactBRL(userClub.cashBalance)}
                 </span>{' '}
@@ -1786,7 +2782,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => setActiveTab('calendar')}
-              title="Abrir Calendário Anual 2026"
+              title={`Abrir Calendário Anual ${currentYear}`}
               className="hidden md:flex items-center gap-2 text-xs text-left hover:bg-white/[0.05] px-2.5 py-1.5 rounded-xl transition-colors"
             >
               <Calendar className="w-4 h-4 text-[#b5ff00]" />
@@ -1795,7 +2791,7 @@ export default function App() {
                   Calendário Oficial
                 </div>
                 <div className="font-mono tabular-nums font-semibold text-white mt-0.5">
-                  {formatCalendarDate(dayOffset)}
+                  {formatCalendarDate(dayOffset, currentYear)}
                 </div>
               </div>
             </button>
@@ -1900,10 +2896,10 @@ export default function App() {
               activeCompetition={currentCalendarStep.competition}
               competitionLabel={currentCalendarStep.label}
               isMatchDay={isMatchDay}
-              onGoToMatch={() => {
-                setIsMatchDay(true);
-                setActiveTab('match');
-              }}
+              onGoToMatch={handleEnterMatchMoment}
+              onQuickSimulateMatch={handleQuickSimulateFromOutside}
+              pendingOffers={pendingOffers}
+              onResolveIncomingOffer={handleResolveIncomingOffer}
             />
           )}
 
@@ -1929,27 +2925,6 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'match' && (
-            <MatchEngineView
-              match={matchState}
-              homeClub={homeClub}
-              awayClub={awayClub}
-              squad={squad}
-              roundFixtures={activeRoundFixturesForMatchView}
-              clubs={clubs}
-              userMentality={userClub.instructions.mentality}
-              onStartOrResume={handleStartOrResumeMatch}
-              onPause={handlePauseMatch}
-              onSetSpeed={(speed) =>
-                setMatchState((prev) => ({ ...prev, speed }))
-              }
-              onChangeLiveMentality={handleChangeLiveMentality}
-              onMakeSubstitution={handleMakeLiveSubstitution}
-              onInstantFinishMatch={handleInstantFinishMatch}
-              onProceedAfterFullTime={handleAdvanceToNextRound}
-            />
-          )}
-
           {activeTab === 'market' && (
             <MarketView
               userClub={userClub}
@@ -1959,6 +2934,10 @@ export default function App() {
               loanedOutPlayers={loanedOutPlayers}
               transferHistory={transferHistory}
               transferredOutClubPlayerIds={transferredOutClubPlayerIds}
+              seasonYear={currentYear}
+              aiSquads={aiSquads}
+              pendingOffers={pendingOffers}
+              onResolveIncomingOffer={handleResolveIncomingOffer}
               lastFeedback={marketFeedback}
               onClearFeedback={() => setMarketFeedback(null)}
               onInspectPlayer={(p) => {
@@ -1979,12 +2958,15 @@ export default function App() {
               libertadores={libertadores}
               seasonStepIndex={seasonStepIndex}
               dayOffset={dayOffset}
+              seasonYear={currentYear}
               isMatchDay={isMatchDay}
+              isSeasonCompleted={isSeasonFinished}
               onGoToMatch={() => {
                 setIsMatchDay(true);
                 setActiveTab('match');
               }}
               onOpenCompetitions={() => setActiveTab('competitions')}
+              onStartAutoSimulation={handleStartAutoSimulation}
             />
           )}
 
@@ -1994,6 +2976,8 @@ export default function App() {
               clubs={clubs}
               fixtures={fixtures}
               currentRound={currentRound}
+              seasonYear={currentYear}
+              seasonHistory={seasonHistory}
               userClubId={userClubId}
               userDivision={userClub.division === 'B' ? 'B' : 'A'}
               secondaryStandings={secondaryStandings}
@@ -2009,6 +2993,8 @@ export default function App() {
               club={userClub}
               squad={squad}
               loanedOutPlayers={loanedOutPlayers}
+              financeLedger={financeLedger}
+              seasonYear={currentYear}
             />
           )}
         </main>
@@ -2017,7 +3003,7 @@ export default function App() {
       {/* Mobile Bottom Capsule Navigation Bar (< lg) */}
       <nav
         aria-label="Navegação mobile"
-        className="lg:hidden fixed bottom-2 left-1.5 right-1.5 z-40 h-14 bg-[#14171f]/95 border border-white/10 rounded-full grid grid-cols-8 items-center px-1 shadow-2xl select-none"
+        className="lg:hidden fixed bottom-2 left-1.5 right-1.5 z-40 h-14 bg-[#14171f]/95 border border-white/10 rounded-full grid grid-cols-7 items-center px-1 shadow-2xl select-none"
       >
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -2057,6 +3043,50 @@ export default function App() {
           setInspectedExternalPlayer(null);
         }}
         onUpdateRoleDuty={handleUpdateRoleDuty}
+      />
+
+      {/* Match-by-Match Calendar Auto-Simulation Modal */}
+      <AutoSimModal
+        isOpen={autoSimUi.isOpen}
+        isRunning={autoSimUi.isRunning}
+        isDone={autoSimUi.isDone}
+        wasStoppedEarly={autoSimUi.wasStoppedEarly}
+        targetLabel={autoSimUi.targetLabel}
+        startDayOffset={autoSimUi.startDayOffset}
+        currentDayOffset={autoSimUi.currentDayOffset}
+        targetDayOffset={autoSimUi.targetDayOffset}
+        plannedUserMatches={autoSimUi.plannedUserMatches}
+        logs={autoSimUi.logs}
+        userClub={userClub}
+        clubs={clubs}
+        userRank={userRank}
+        seasonYear={currentYear}
+        onPauseOrStop={handlePauseAutoSimulation}
+        onFinishInstant={handleFinishAutoSimulationInstant}
+        onClose={() => {
+          setAutoSimUi((prev) => ({ ...prev, isOpen: false }));
+          if (seasonEndReport) {
+            setIsSeasonEndModalOpen(true);
+          }
+        }}
+        onOpenCompetitions={() => {
+          setAutoSimUi((prev) => ({ ...prev, isOpen: false }));
+          if (seasonEndReport) {
+            setIsSeasonEndModalOpen(true);
+          } else {
+            setActiveTab('competitions');
+          }
+        }}
+      />
+
+      {/* End of Season Summary, Champions, Awards & Continuous Year Rollover Modal */}
+      <SeasonEndModal
+        isOpen={isSeasonEndModalOpen}
+        report={seasonEndReport}
+        userClub={userClub}
+        clubs={clubs}
+        onClose={() => setIsSeasonEndModalOpen(false)}
+        onStartNextSeason={handleStartNextSeason}
       />
     </div>
   );

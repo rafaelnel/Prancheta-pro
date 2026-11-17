@@ -14,23 +14,27 @@ import {
   Target,
   AlertTriangle,
   RefreshCw,
+  FastForward,
 } from 'lucide-react';
 import {
   Club,
   CompetitionType,
   InboxMessage,
+  IncomingTransferOffer,
   LibertadoresState,
   NavigationTab,
   Player,
   RoundFixture,
   StandingsRow,
 } from '../types/football';
+import { IncomingOfferAction } from '../engine/aiMarketEngine';
+import { formatCompactBRL } from '../utils/formatters';
 import { calculateTeamTacticalRatings } from '../engine/matchEngine';
 import {
   generateOpponentScoutingSummary,
   resolveOpponentStandingsContext,
 } from '../engine/opponentScout';
-import { getContrastTextColor } from '../utils/formatters';
+import { ClubBadge } from './ClubBadge';
 
 interface DashboardInboxProps {
   messages: InboxMessage[];
@@ -51,6 +55,12 @@ interface DashboardInboxProps {
   competitionLabel?: string;
   isMatchDay: boolean;
   onGoToMatch: () => void;
+  onQuickSimulateMatch?: () => void;
+  pendingOffers?: IncomingTransferOffer[];
+  onResolveIncomingOffer?: (
+    offerId: string,
+    action: IncomingOfferAction
+  ) => void;
 }
 
 export const DashboardInbox: React.FC<DashboardInboxProps> = ({
@@ -72,6 +82,9 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   competitionLabel,
   isMatchDay,
   onGoToMatch,
+  onQuickSimulateMatch,
+  pendingOffers = [],
+  onResolveIncomingOffer,
 }) => {
   const [selectedMsgId, setSelectedMsgId] = React.useState<string>(
     messages[0]?.id || ''
@@ -278,7 +291,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
             className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-[#090a0f] hover:bg-[#b5ff00] transition-colors flex items-center gap-1.5 whitespace-nowrap"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
-            <span>4. Jogo ao Vivo ({currentRound}ªR)</span>
+            <span>4. Momento de Partida ({currentRound}ªR)</span>
           </button>
         </div>
       </div>
@@ -302,9 +315,14 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                   <div className="grid grid-cols-3 items-center text-center">
                     {/* User Club */}
                     <div className="flex flex-col items-center">
-                      <div className="w-14 h-14 rounded-2xl bg-[#0b0c10] text-[#b5ff00] flex items-center justify-center font-display font-extrabold text-xl shadow-lg border-2 border-[#0b0c10]/20">
-                        {userClub.abbr}
-                      </div>
+                      <ClubBadge
+                        clubId={userClub.id}
+                        abbr={userClub.abbr}
+                        name={userClub.name}
+                        primaryColor={userClub.primaryColor}
+                        size="lg"
+                        surface="light"
+                      />
                       <div className="font-display font-extrabold text-base uppercase tracking-tight leading-tight mt-2 text-[#090a0f]">
                         {userClub.shortName}
                       </div>
@@ -330,15 +348,14 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
 
                     {/* Opponent Club */}
                     <div className="flex flex-col items-center">
-                      <div
-                        className="w-14 h-14 rounded-2xl flex items-center justify-center font-display font-extrabold text-xl shadow-lg border-2 border-white/30"
-                        style={{
-                          backgroundColor: opponentClub.primaryColor,
-                          color: getContrastTextColor(opponentClub.primaryColor),
-                        }}
-                      >
-                        {opponentClub.abbr}
-                      </div>
+                      <ClubBadge
+                        clubId={opponentClub.id}
+                        abbr={opponentClub.abbr}
+                        name={opponentClub.name}
+                        primaryColor={opponentClub.primaryColor}
+                        size="lg"
+                        surface="light"
+                      />
                       <div className="font-display font-extrabold text-base uppercase tracking-tight leading-tight mt-2 text-[#090a0f]">
                         {opponentClub.shortName}
                       </div>
@@ -474,19 +491,40 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="grid grid-cols-2 gap-2.5 pt-1">
-                    <button
-                      onClick={() => onNavigate('tactics')}
-                      className="py-3 px-4 rounded-2xl text-xs font-bold bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-100 border border-white/10 transition-colors whitespace-nowrap"
-                    >
-                      Ajustar Prancheta
-                    </button>
-                    <button
-                      onClick={onGoToMatch}
-                      className="py-3 px-4 rounded-2xl text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors whitespace-nowrap shadow-md"
-                    >
-                      Ir para o Jogo ({currentRound}ªR)
-                    </button>
+                  <div className="space-y-2 pt-1">
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <button
+                        onClick={onGoToMatch}
+                        className="py-3 px-4 rounded-2xl text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shadow-md"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        <span>Assistir Jogo 2D</span>
+                      </button>
+                      {onQuickSimulateMatch ? (
+                        <button
+                          onClick={onQuickSimulateMatch}
+                          className="py-3 px-4 rounded-2xl text-xs font-extrabold bg-white hover:bg-zinc-200 text-[#090a0f] transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shadow-md"
+                        >
+                          <FastForward className="w-3.5 h-3.5" />
+                          <span>Simular Rápido</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => onNavigate('tactics')}
+                          className="py-3 px-4 rounded-2xl text-xs font-bold bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-100 border border-white/10 transition-colors whitespace-nowrap"
+                        >
+                          Ajustar Prancheta
+                        </button>
+                      )}
+                    </div>
+                    {onQuickSimulateMatch && (
+                      <button
+                        onClick={() => onNavigate('tactics')}
+                        className="w-full py-2.5 px-4 rounded-2xl text-xs font-bold bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-200 border border-white/10 transition-colors whitespace-nowrap"
+                      >
+                        Ajustar Prancheta & Escalacão antes da Partida
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -495,18 +533,14 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
               {otherRoundFixtures[0] && (
                 <div className="rounded-[24px] bg-gradient-to-b from-zinc-200 to-zinc-300 text-[#090a0f] p-4 shadow-lg flex items-center justify-between">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center font-display font-extrabold text-sm shrink-0"
-                      style={{
-                        backgroundColor:
-                          otherRoundFixtures[0].home.primaryColor,
-                        color: getContrastTextColor(
-                          otherRoundFixtures[0].home.primaryColor
-                        ),
-                      }}
-                    >
-                      {otherRoundFixtures[0].home.abbr}
-                    </div>
+                    <ClubBadge
+                      clubId={otherRoundFixtures[0].home.id}
+                      abbr={otherRoundFixtures[0].home.abbr}
+                      name={otherRoundFixtures[0].home.name}
+                      primaryColor={otherRoundFixtures[0].home.primaryColor}
+                      size="md"
+                      surface="light"
+                    />
                     <div className="min-w-0">
                       <div className="font-display font-extrabold text-sm uppercase truncate">
                         {otherRoundFixtures[0].home.shortName}
@@ -530,18 +564,14 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                         {otherRoundFixtures[0].time}
                       </div>
                     </div>
-                    <div
-                      className="w-10 h-10 rounded-xl flex items-center justify-center font-display font-extrabold text-sm shrink-0"
-                      style={{
-                        backgroundColor:
-                          otherRoundFixtures[0].away.primaryColor,
-                        color: getContrastTextColor(
-                          otherRoundFixtures[0].away.primaryColor
-                        ),
-                      }}
-                    >
-                      {otherRoundFixtures[0].away.abbr}
-                    </div>
+                    <ClubBadge
+                      clubId={otherRoundFixtures[0].away.id}
+                      abbr={otherRoundFixtures[0].away.abbr}
+                      name={otherRoundFixtures[0].away.name}
+                      primaryColor={otherRoundFixtures[0].away.primaryColor}
+                      size="md"
+                      surface="light"
+                    />
                   </div>
                 </div>
               )}
@@ -599,8 +629,19 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                         <td className="py-2.5 px-3 text-zinc-400">
                           {index + 1}
                         </td>
-                        <td className="py-2.5 px-2 font-sans truncate max-w-[140px]">
-                          {club?.shortName || row.clubId}
+                        <td className="py-2.5 px-2 font-sans max-w-[160px]">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <ClubBadge
+                              clubId={club?.id || row.clubId}
+                              abbr={club?.abbr}
+                              name={club?.name}
+                              primaryColor={club?.primaryColor}
+                              size="xs"
+                            />
+                            <span className="truncate">
+                              {club?.shortName || row.clubId}
+                            </span>
+                          </div>
                         </td>
                         <td className="py-2.5 px-2 text-right font-bold text-white">
                           {row.points}
@@ -968,47 +1009,116 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
 
               {/* Contextual Action Footer inside Inbox Message */}
               {selectedMessage && (
-                <div className="pt-4 mt-5 border-t border-white/[0.07] flex flex-wrap items-center justify-between gap-2">
-                  {relatedFatiguedPlayer && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={() => onInspectPlayer(relatedFatiguedPlayer)}
-                        className="px-3.5 py-2 rounded-full text-xs font-semibold bg-white/[0.08] hover:bg-white/[0.14] text-white transition-colors whitespace-nowrap"
-                      >
-                        Ver Ficha de {relatedFatiguedPlayer.name.split(' ')[0]}
-                      </button>
-                      {relatedFatiguedPlayer.isStarter ? (
-                        <button
-                          onClick={onQuickSwapFatiguedPlayer}
-                          className="px-3.5 py-2 rounded-full text-xs font-bold bg-amber-400 hover:bg-amber-300 text-[#090a0f] transition-colors flex items-center gap-1.5 whitespace-nowrap"
-                        >
-                          <UserCheck className="w-3.5 h-3.5" />
-                          Poupar {relatedFatiguedPlayer.name.split(' ')[0]}{' '}
-                          {healthySubstituteCandidate
-                            ? `(Escalar ${healthySubstituteCandidate.name})`
-                            : ''}
-                        </button>
-                      ) : (
-                        <span className="text-xs text-[#b5ff00] font-medium flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          {relatedFatiguedPlayer.name} já foi poupado do time titular
-                        </span>
-                      )}
-                    </div>
-                  )}
+                <div className="pt-4 mt-5 border-t border-white/[0.07] space-y-3">
+                  {selectedMessage.relatedOfferId &&
+                    onResolveIncomingOffer &&
+                    (() => {
+                      const matchedOffer = pendingOffers.find(
+                        (o) => o.id === selectedMessage.relatedOfferId
+                      );
+                      if (!matchedOffer) return null;
+                      if (matchedOffer.status !== 'PENDING') {
+                        return (
+                          <div className="rounded-xl bg-[#0b0c10] border border-white/10 px-3 py-2 text-xs text-zinc-300 font-mono">
+                            Proposta {matchedOffer.status === 'ACCEPTED' ? 'aceita' : 'recusada'} ({formatCompactBRL(matchedOffer.offeredFee)}).
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="rounded-2xl bg-[#0b0c10] border border-[#b5ff00]/35 p-3 space-y-2.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold text-white">
+                              Responder {matchedOffer.fromClubName} ·{' '}
+                              {matchedOffer.dealType === 'LOAN' ? 'Empréstimo' : 'Compra'}
+                            </span>
+                            <span className="font-mono font-extrabold text-[#b5ff00]">
+                              {formatCompactBRL(matchedOffer.offeredFee)}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onResolveIncomingOffer(matchedOffer.id, 'ACCEPT')
+                              }
+                              className="px-3.5 py-1.5 rounded-full text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors"
+                            >
+                              Aceitar ({formatCompactBRL(matchedOffer.offeredFee)})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onResolveIncomingOffer(matchedOffer.id, 'COUNTER_15')
+                              }
+                              className="px-3 py-1.5 rounded-full text-xs font-bold bg-white/[0.08] hover:bg-white/[0.15] text-white transition-colors"
+                            >
+                              Negociar +15%
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onResolveIncomingOffer(matchedOffer.id, 'COUNTER_30')
+                              }
+                              className="px-3 py-1.5 rounded-full text-xs font-bold bg-white/[0.08] hover:bg-white/[0.15] text-amber-300 transition-colors"
+                            >
+                              Negociar +30%
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onResolveIncomingOffer(matchedOffer.id, 'REJECT')
+                              }
+                              className="px-3 py-1.5 rounded-full text-xs font-bold bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 transition-colors"
+                            >
+                              Recusar
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
-                  {selectedMessage.actionLabel &&
-                    selectedMessage.actionTargetTab && (
-                      <button
-                        onClick={() =>
-                          onNavigate(selectedMessage.actionTargetTab!)
-                        }
-                        className="ml-auto px-4 py-2 rounded-full text-xs font-bold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1.5 whitespace-nowrap"
-                      >
-                        <span>{selectedMessage.actionLabel}</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    {relatedFatiguedPlayer && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => onInspectPlayer(relatedFatiguedPlayer)}
+                          className="px-3.5 py-2 rounded-full text-xs font-semibold bg-white/[0.08] hover:bg-white/[0.14] text-white transition-colors whitespace-nowrap"
+                        >
+                          Ver Ficha de {relatedFatiguedPlayer.name.split(' ')[0]}
+                        </button>
+                        {relatedFatiguedPlayer.isStarter ? (
+                          <button
+                            onClick={onQuickSwapFatiguedPlayer}
+                            className="px-3.5 py-2 rounded-full text-xs font-bold bg-amber-400 hover:bg-amber-300 text-[#090a0f] transition-colors flex items-center gap-1.5 whitespace-nowrap"
+                          >
+                            <UserCheck className="w-3.5 h-3.5" />
+                            Poupar {relatedFatiguedPlayer.name.split(' ')[0]}{' '}
+                            {healthySubstituteCandidate
+                              ? `(Escalar ${healthySubstituteCandidate.name})`
+                              : ''}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-[#b5ff00] font-medium flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            {relatedFatiguedPlayer.name} já foi poupado do time titular
+                          </span>
+                        )}
+                      </div>
                     )}
+
+                    {selectedMessage.actionLabel &&
+                      selectedMessage.actionTargetTab && (
+                        <button
+                          onClick={() =>
+                            onNavigate(selectedMessage.actionTargetTab!)
+                          }
+                          className="ml-auto px-4 py-2 rounded-full text-xs font-bold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1.5 whitespace-nowrap"
+                        >
+                          <span>{selectedMessage.actionLabel}</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                  </div>
                 </div>
               )}
             </div>

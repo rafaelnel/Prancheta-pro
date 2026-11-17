@@ -4,108 +4,116 @@ import {
   TrendingUp,
   ShieldCheck,
   Building2,
+  Ticket,
+  Handshake,
+  ArrowLeftRight,
+  Award,
 } from 'lucide-react';
-import { Club, Player } from '../types/football';
+import { Club, ClubFinanceLedger, Player } from '../types/football';
 import {
   getEffectivePayroll,
   getPlayerPaidSalary,
 } from '../engine/transferEngine';
+import { createInitialFinanceLedger } from '../engine/economyAndEvolution';
 import { formatBRL, formatCompactBRL } from '../utils/formatters';
 
 interface FinancesViewProps {
   club: Club;
   squad: Player[];
   loanedOutPlayers?: Player[];
+  financeLedger?: ClubFinanceLedger;
+  seasonYear?: number;
 }
 
 export const FinancesView: React.FC<FinancesViewProps> = ({
   club,
   squad,
   loanedOutPlayers = [],
+  financeLedger,
+  seasonYear = 2026,
 }) => {
+  const ledger =
+    financeLedger || createInitialFinanceLedger(club, squad, seasonYear);
   const totalMonthlyPayroll = getEffectivePayroll(squad, loanedOutPlayers);
   const totalSquadValuation = squad.reduce((acc, p) => acc + p.marketValue, 0);
   const wageUsagePct = Math.round(
-    (totalMonthlyPayroll / club.wageBudget) * 100
+    (totalMonthlyPayroll / Math.max(1, club.wageBudget)) * 100
   );
 
   const sortedBySalary = [...squad].sort(
     (a, b) => getPlayerPaidSalary(b) - getPlayerPaidSalary(a)
   );
 
-  const revenueItems = [
+  const sponsor = ledger.sponsorshipContract;
+
+  const threeRevenuePillars = [
     {
-      label: 'Cota de Transmissão (TV & Streaming)',
-      amount: 4200000,
-      note: 'Repasse mensal fixo Série A',
+      id: 'gate',
+      label: '1. Renda de Estádio (Bilheteria)',
+      amount: ledger.seasonGateRevenue,
+      note:
+        ledger.lastMatchGateRevenue > 0
+          ? `Último jogo em casa (${club.stadium}): ${ledger.lastMatchAttendance.toLocaleString(
+              'pt-BR'
+            )} pagantes (${formatCompactBRL(ledger.lastMatchGateRevenue)})`
+          : `Mandos de campo em ${club.stadium} conforme reputação e fase na tabela`,
+      Icon: Ticket,
     },
     {
-      label: 'Bilheteria e Sócio-Torcedor (Arena Parque Industrial)',
-      amount: 3800000,
-      note: 'Média de 41.200 pagantes/jogo',
+      id: 'transfers',
+      label: '2. Transações de Jogadores (Vendas & Empréstimos)',
+      amount: ledger.seasonTransferIncome,
+      note:
+        ledger.seasonTransferSpend > 0
+          ? `Investido em compras/taxas na temporada: -${formatCompactBRL(
+              ledger.seasonTransferSpend
+            )}`
+          : 'Receitas acumuladas de vendas definitivas e empréstimos cedidos',
+      Icon: ArrowLeftRight,
     },
     {
-      label: 'Patrocínio Master & Fornecedor Esportivo',
-      amount: 2650000,
-      note: 'Contrato vigente até Dez/2027',
-    },
-    {
-      label: 'Licenciamento & Hospitalidade Corporativa',
-      amount: 890000,
-      note: 'Camarotes e lojas oficiais',
+      id: 'sponsorship',
+      label: `3. Patrocínios Automáticos (${sponsor.sponsorName})`,
+      amount: ledger.seasonSponsorshipRevenue,
+      note: `${sponsor.tierLabel} · ${formatCompactBRL(
+        sponsor.annualValue
+      )}/ano (${formatCompactBRL(sponsor.monthlyInstallment)}/mês) · ${
+        sponsor.basisNote
+      }`,
+      Icon: Handshake,
     },
   ];
 
-  const expenseItems = [
-    {
-      label: `Folha Salarial do Elenco (${squad.length} Atletas${
-        loanedOutPlayers.length > 0
-          ? ` + ${loanedOutPlayers.length} em empréstimo`
-          : ''
-      })`,
-      amount: totalMonthlyPayroll,
-      note: `${wageUsagePct}% do orçamento aprovado`,
-    },
-    {
-      label: 'Comissão Técnica, Olheiros e Departamento Médico',
-      amount: 1150000,
-      note: 'Equipe multidisciplinar',
-    },
-    {
-      label: 'Manutenção da Arena e Centro de Treinamento',
-      amount: 920000,
-      note: 'Gramado híbrido e logística',
-    },
-    {
-      label: 'Categorias de Base (Sub-20 / Sub-17)',
-      amount: 640000,
-      note: 'Formação de atletas',
-    },
-  ];
-
-  const totalMonthlyRevenue = revenueItems.reduce(
-    (acc, i) => acc + i.amount,
-    0
-  );
-  const totalMonthlyExpense = expenseItems.reduce(
-    (acc, i) => acc + i.amount,
-    0
-  );
-  const monthlyNetResult = totalMonthlyRevenue - totalMonthlyExpense;
+  const totalThreePillarsRevenue =
+    ledger.seasonGateRevenue +
+    ledger.seasonTransferIncome +
+    ledger.seasonSponsorshipRevenue;
+  const totalSeasonInflow =
+    totalThreePillarsRevenue + ledger.seasonPrizeRevenue;
+  const totalSeasonOutflow =
+    ledger.seasonTransferSpend + ledger.seasonOperationalExpense;
 
   return (
     <div className="space-y-5">
       {/* Editorial Section Header */}
-      <div className="pb-2 border-b border-white/[0.07]">
-        <span className="block text-xs sm:text-sm font-normal text-zinc-400 tracking-wide">
-          Explorar balanço patrimonial
-        </span>
-        <h2 className="font-display text-3xl sm:text-5xl font-extrabold uppercase tracking-tight text-white leading-[0.95] mt-0.5">
-          FINANÇAS
-        </h2>
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 pb-2 border-b border-white/[0.07]">
+        <div>
+          <span className="block text-xs sm:text-sm font-normal text-zinc-400 tracking-wide">
+            Orçamento, Patrocínio Dinâmico & Trava Anti-Inflação · Temporada{' '}
+            {ledger.seasonYear}
+          </span>
+          <h2 className="font-display text-3xl sm:text-5xl font-extrabold uppercase tracking-tight text-white leading-[0.95] mt-0.5">
+            FINANÇAS
+          </h2>
+        </div>
+
+        <div className="text-xs font-mono text-zinc-400">
+          Patrocinador Master:{' '}
+          <strong className="text-[#b5ff00]">{sponsor.sponsorName}</strong>
+        </div>
       </div>
 
-      {/* Top KPI Cards (Lime / White / Dark Surface Discipline) */}
+      {/* Top KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <div className="bg-[#b5ff00] text-[#090a0f] rounded-[24px] p-5 shadow-lg">
           <div className="flex items-center justify-between text-xs font-bold uppercase font-mono opacity-80">
@@ -141,18 +149,15 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
 
         <div className="bg-[#14171f] border border-white/[0.07] rounded-[24px] p-5">
           <div className="flex items-center justify-between text-xs text-zinc-400">
-            <span>Resultado Operacional / Mês</span>
+            <span>Patrocínio Anual Vigente</span>
             <TrendingUp className="w-4 h-4 text-[#b5ff00]" />
           </div>
-          <div
-            className={`font-display text-4xl font-extrabold tabular-nums mt-1.5 leading-none ${
-              monthlyNetResult >= 0 ? 'text-[#b5ff00]' : 'text-rose-400'
-            }`}
-          >
-            +{formatCompactBRL(monthlyNetResult)}
+          <div className="font-display text-4xl font-extrabold tabular-nums text-[#b5ff00] mt-1.5 leading-none">
+            {formatCompactBRL(sponsor.annualValue)}
           </div>
-          <div className="text-[11px] text-zinc-400 mt-1.5">
-            Superávit operacional recorrente
+          <div className="text-[11px] text-zinc-400 mt-1.5 truncate">
+            {sponsor.tierLabel} · {formatCompactBRL(sponsor.monthlyInstallment)}
+            /mês
           </div>
         </div>
 
@@ -165,62 +170,128 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
             {formatCompactBRL(totalSquadValuation)}
           </div>
           <div className="text-[11px] text-zinc-400 mt-1.5">
-            Confiança da Diretoria: {club.boardConfidence}%
+            Confiança da Diretoria: {club.boardConfidence}% · Rep.{' '}
+            {club.reputation}/99
           </div>
         </div>
       </div>
 
-      {/* Main Split: Monthly Cashflow Breakdown + Squad Payroll Ledger */}
+      {/* Main Split: 3 Clear Revenue Pillars & Anti-Inflation Guardrails + Squad Payroll Ledger */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-        {/* Cashflow Breakdown (6 cols) */}
+        {/* 3 Revenue Pillars Breakdown (6 cols) */}
         <div className="xl:col-span-6 bg-[#14171f] border border-white/[0.07] rounded-[28px] p-5 space-y-5">
           <div>
             <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white pb-2.5 border-b border-white/[0.07] flex items-center justify-between">
-              <span>Receitas Mensais Recorrentes</span>
+              <span>3 Pilares de Receita ({ledger.seasonYear})</span>
               <span className="font-mono text-sm tabular-nums text-[#b5ff00]">
-                +{formatBRL(totalMonthlyRevenue)}
+                +{formatCompactBRL(totalSeasonInflow)}
               </span>
             </h3>
             <div className="divide-y divide-white/[0.05] mt-2">
-              {revenueItems.map((item, i) => (
-                <div
-                  key={i}
-                  className="py-3 flex items-center justify-between text-xs"
-                >
-                  <div>
-                    <div className="font-semibold text-white">{item.label}</div>
-                    <div className="text-[11px] text-zinc-400">{item.note}</div>
+              {threeRevenuePillars.map((pillar) => {
+                const Icon = pillar.Icon;
+                return (
+                  <div
+                    key={pillar.id}
+                    className="py-3.5 flex items-start justify-between gap-3 text-xs"
+                  >
+                    <div className="flex items-start gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-[#b5ff00]/15 border border-[#b5ff00]/30 flex items-center justify-center shrink-0 mt-0.5">
+                        <Icon className="w-4 h-4 text-[#b5ff00]" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-white">
+                          {pillar.label}
+                        </div>
+                        <div className="text-[11px] text-zinc-400 mt-0.5 leading-relaxed">
+                          {pillar.note}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="font-mono tabular-nums font-bold text-[#b5ff00] shrink-0">
+                      +{formatCompactBRL(pillar.amount)}
+                    </span>
                   </div>
-                  <span className="font-mono tabular-nums font-bold text-[#b5ff00]">
-                    +{formatCompactBRL(item.amount)}
+                );
+              })}
+
+              {ledger.seasonPrizeRevenue > 0 && (
+                <div className="py-3.5 flex items-start justify-between gap-3 text-xs">
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-amber-400/15 border border-amber-400/30 flex items-center justify-center shrink-0 mt-0.5">
+                      <Award className="w-4 h-4 text-amber-300" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-white">
+                        Premiações por Fase (Copas & Liga)
+                      </div>
+                      <div className="text-[11px] text-zinc-400 mt-0.5">
+                        Bônus acumulados por avanços na temporada
+                      </div>
+                    </div>
+                  </div>
+                  <span className="font-mono tabular-nums font-bold text-amber-300 shrink-0">
+                    +{formatCompactBRL(ledger.seasonPrizeRevenue)}
                   </span>
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
           <div>
             <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white pb-2.5 border-b border-white/[0.07] flex items-center justify-between">
-              <span>Despesas Operacionais Mensais</span>
+              <span>Saídas & Controle Anti-Inflação</span>
               <span className="font-mono text-sm tabular-nums text-rose-400">
-                -{formatBRL(totalMonthlyExpense)}
+                -{formatCompactBRL(totalSeasonOutflow)}
               </span>
             </h3>
-            <div className="divide-y divide-white/[0.05] mt-2">
-              {expenseItems.map((item, i) => (
-                <div
-                  key={i}
-                  className="py-3 flex items-center justify-between text-xs"
-                >
-                  <div>
-                    <div className="font-semibold text-white">{item.label}</div>
-                    <div className="text-[11px] text-zinc-400">{item.note}</div>
+            <div className="divide-y divide-white/[0.05] mt-2 text-xs">
+              <div className="py-3 flex items-center justify-between gap-2">
+                <div>
+                  <div className="font-semibold text-white">
+                    Folha Salarial Mensal Comprometida
                   </div>
-                  <span className="font-mono tabular-nums font-bold text-rose-400">
-                    -{formatCompactBRL(item.amount)}
-                  </span>
+                  <div className="text-[11px] text-zinc-400">
+                    {squad.length} atletas ativos
+                    {loanedOutPlayers.length > 0
+                      ? ` + ${loanedOutPlayers.length} cedido(s) por empréstimo`
+                      : ''}{' '}
+                    ({wageUsagePct}% do teto)
+                  </div>
                 </div>
-              ))}
+                <span className="font-mono tabular-nums font-bold text-white">
+                  {formatCompactBRL(totalMonthlyPayroll)}/mês
+                </span>
+              </div>
+
+              <div className="py-3 flex items-center justify-between gap-2">
+                <div>
+                  <div className="font-semibold text-white">
+                    Investimento em Contratações ({ledger.seasonYear})
+                  </div>
+                  <div className="text-[11px] text-zinc-400">
+                    Compras definitivas e taxas de empréstimo pagas
+                  </div>
+                </div>
+                <span className="font-mono tabular-nums font-bold text-rose-400">
+                  -{formatCompactBRL(ledger.seasonTransferSpend)}
+                </span>
+              </div>
+
+              <div className="py-3 flex items-center justify-between gap-2">
+                <div>
+                  <div className="font-semibold text-white">
+                    Manutenção Estrutural & Trava Anti-Inflação
+                  </div>
+                  <div className="text-[11px] text-zinc-400">
+                    Estádio, comissão técnica e ajuste econômico de virada de
+                    ano
+                  </div>
+                </div>
+                <span className="font-mono tabular-nums font-bold text-rose-400">
+                  -{formatCompactBRL(ledger.seasonOperationalExpense)}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -236,7 +307,7 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
             </span>
           </div>
 
-          <div className="overflow-y-auto max-h-[420px]">
+          <div className="overflow-y-auto max-h-[460px]">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-white/[0.07] bg-[#0b0c10]/60 text-[11px] text-zinc-400">

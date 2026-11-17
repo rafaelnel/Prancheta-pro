@@ -73,6 +73,8 @@ export interface TacticalRoleDefinition {
   secondaryAttributes: AttributeKey[];
 }
 
+export type PotentialStars = 1 | 2 | 3 | 4 | 5;
+
 export interface PlayerSeasonStats {
   matches: number;
   goals: number;
@@ -93,6 +95,7 @@ export interface Player {
   morale: MoraleState;
   marketValue: number; // in BRL
   salary: number; // monthly in BRL
+  potentialStars?: PotentialStars;
   attributes: PlayerAttributes;
   isStarter: boolean;
   slotIndex: number | null; // 0..10 for starters, null for bench
@@ -184,6 +187,7 @@ export interface Club {
   formation: FormationType;
   instructions: TeamInstructions;
   starPlayers: OpponentStarPlayer[];
+  recentTitles?: string[];
 }
 
 export interface StandingsRow {
@@ -286,6 +290,7 @@ export interface InboxMessage {
   actionLabel?: string;
   actionTargetTab?: NavigationTab;
   relatedPlayerId?: string;
+  relatedOfferId?: string;
 }
 
 export type MarketLeagueScope =
@@ -363,6 +368,10 @@ export interface TransferRecord {
   feeAmount: number;
   monthlySalaryImpact: number;
   note: string;
+  isAiTransfer?: boolean;
+  fromClubName?: string;
+  toClubName?: string;
+  dealType?: 'COMPRA' | 'EMPRESTIMO';
 }
 
 export type MatchEventType =
@@ -463,6 +472,129 @@ export interface LiveMatchState {
   roundProcessed: boolean;
 }
 
+export interface SponsorshipContract {
+  sponsorName: string;
+  tierLabel: string;
+  annualValue: number;
+  monthlyInstallment: number;
+  basisNote: string;
+  seasonYear: number;
+}
+
+export interface ClubFinanceLedger {
+  seasonYear: number;
+  seasonGateRevenue: number;
+  seasonTransferIncome: number;
+  seasonTransferSpend: number;
+  seasonPrizeRevenue: number;
+  seasonSponsorshipRevenue: number;
+  seasonOperationalExpense: number;
+  lastMatchGateRevenue: number;
+  lastMatchAttendance: number;
+  sponsorshipContract: SponsorshipContract;
+}
+
+export interface IncomingTransferOffer {
+  id: string;
+  createdAtDate: string;
+  fromClubId: string;
+  fromClubName: string;
+  fromClubAbbr: string;
+  fromClubPrimaryColor: string;
+  fromClubReputation: number;
+  playerId: string;
+  playerName: string;
+  playerPosition: NaturalPosition;
+  playerOvr: number;
+  playerAge: number;
+  playerPotentialStars: PotentialStars;
+  dealType: 'BUY' | 'LOAN';
+  offeredFee: number;
+  wageShareCovered: number; // 0..1 (for loan)
+  expiresDayOffset: number;
+  negotiationStep: 0 | 1 | 2; // 0=initial, 1=+15%, 2=+30%
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'EXPIRED';
+  rationale: string;
+}
+
+export interface SeasonAwardPlayer {
+  playerId: string;
+  playerName: string;
+  clubId: string;
+  clubName: string;
+  position: NaturalPosition;
+  ovr: number;
+  value: number;
+}
+
+export interface SeasonAwardsSummary {
+  topScorer: SeasonAwardPlayer | null;
+  topAssist: SeasonAwardPlayer | null;
+  bestPlayer: SeasonAwardPlayer | null;
+}
+
+export interface PlayerEvolutionReportItem {
+  playerId: string;
+  playerName: string;
+  position: NaturalPosition;
+  oldAge: number;
+  newAge: number;
+  oldOvr: number;
+  newOvr: number;
+  deltaOvr: number;
+  potentialStars: PotentialStars;
+  reasonNote: string;
+}
+
+export interface SeasonEndReport {
+  seasonYear: number;
+  serieAChampionId: string;
+  serieAChampionName: string;
+  serieBChampionId: string;
+  serieBChampionName: string;
+  cdbChampionId: string | null;
+  cdbChampionName: string | null;
+  libChampionId: string | null;
+  libChampionName: string | null;
+  userFinalDivision: 'A' | 'B';
+  userFinalRank: number;
+  userFinalPoints: number;
+  userSeasonPrize: number;
+  userPromoted: boolean;
+  userRelegated: boolean;
+  userQualifiedLibertadores: boolean;
+  relegatedClubIds: string[];
+  promotedClubIds: string[];
+  libertadoresQualifiedBrIds: string[];
+  awards: SeasonAwardsSummary;
+  userEvolutionHighlights: PlayerEvolutionReportItem[];
+}
+
+export interface SeasonArchiveEntry {
+  year: number;
+  serieAChampionId: string;
+  serieAChampionName: string;
+  serieBChampionId: string;
+  serieBChampionName: string;
+  cdbChampionId: string | null;
+  cdbChampionName: string | null;
+  libChampionId: string | null;
+  libChampionName: string | null;
+  topScorerName: string;
+  topScorerClubName: string;
+  topScorerGoals: number;
+  topAssistName: string;
+  topAssistClubName: string;
+  topAssistCount: number;
+  bestPlayerName: string;
+  bestPlayerClubName: string;
+  bestPlayerRating: number;
+  userClubName: string;
+  userDivision: 'A' | 'B';
+  userRank: number;
+  userPoints: number;
+}
+
 export type CareerSlotIndex = 1 | 2 | 3 | 4;
 
 export interface CareerSaveData {
@@ -475,6 +607,7 @@ export interface CareerSaveData {
   clubShortName: string;
   clubAbbr: string;
   clubPrimaryColor: string;
+  currentYear?: number;
   currentRound: number;
   seasonStepIndex?: number;
   activeCompetition?: CompetitionType;
@@ -486,6 +619,7 @@ export interface CareerSaveData {
   savedAt: string;
   clubs: Club[];
   squad: Player[];
+  aiSquads?: Record<string, Player[]>;
   standings: StandingsRow[];
   fixtures: RoundFixture[];
   secondaryStandings?: StandingsRow[];
@@ -498,5 +632,9 @@ export interface CareerSaveData {
   loanedOutPlayers?: Player[];
   transferHistory?: TransferRecord[];
   transferredOutClubPlayerIds?: string[];
+  pendingOffers?: IncomingTransferOffer[];
+  financeLedger?: ClubFinanceLedger;
+  seasonHistory?: SeasonArchiveEntry[];
+  seasonEndReport?: SeasonEndReport | null;
 }
 

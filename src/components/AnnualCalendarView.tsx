@@ -11,8 +11,19 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
+  FastForward,
+  Sparkles,
+  CalendarClock,
 } from 'lucide-react';
 import { SEASON_CALENDAR } from '../data/cupFactory';
+import {
+  addMonthsToDayOffset,
+  dayOffsetToDate,
+  dayOffsetToIsoDate,
+  getMaxSeasonDayOffset,
+  isoDateToDayOffset,
+} from '../engine/autoTacticsAndSim';
+import { formatCalendarDate } from '../utils/formatters';
 import {
   Club,
   CompetitionType,
@@ -21,7 +32,7 @@ import {
   RoundFixture,
   SeasonCalendarStep,
 } from '../types/football';
-import { getContrastTextColor } from '../utils/formatters';
+import { ClubBadge } from './ClubBadge';
 
 interface AnnualCalendarViewProps {
   userClub: Club;
@@ -31,9 +42,12 @@ interface AnnualCalendarViewProps {
   libertadores: LibertadoresState;
   seasonStepIndex: number;
   dayOffset: number;
+  seasonYear?: number;
   isMatchDay: boolean;
+  isSeasonCompleted: boolean;
   onGoToMatch: () => void;
   onOpenCompetitions: () => void;
+  onStartAutoSimulation: (targetDayOffset: number, targetLabel: string) => void;
 }
 
 const MONTH_NAMES = [
@@ -68,12 +82,6 @@ const MONTH_SHORT = [
 
 const WEEKDAYS_SHORT = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
-function getDateFromOffset(offset: number): Date {
-  const d = new Date(2026, 0, 28);
-  d.setDate(d.getDate() + offset);
-  return d;
-}
-
 type CalendarFilterComp = 'ALL' | CompetitionType;
 
 interface CalendarEntry {
@@ -107,17 +115,45 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
   libertadores,
   seasonStepIndex,
   dayOffset,
+  seasonYear = 2026,
   isMatchDay,
+  isSeasonCompleted,
   onGoToMatch,
   onOpenCompetitions,
+  onStartAutoSimulation,
 }) => {
-  const currentDate = useMemo(() => getDateFromOffset(dayOffset), [dayOffset]);
+  const maxSeasonDayOffset = useMemo(
+    () => getMaxSeasonDayOffset(seasonYear),
+    [seasonYear]
+  );
+  const currentDate = useMemo(
+    () => dayOffsetToDate(dayOffset, seasonYear),
+    [dayOffset, seasonYear]
+  );
   const currentMonthIndex =
-    currentDate.getFullYear() === 2026 ? currentDate.getMonth() : 0;
+    currentDate.getFullYear() === seasonYear ? currentDate.getMonth() : 0;
 
   const [selectedMonth, setSelectedMonth] = useState<number>(currentMonthIndex);
   const [scopeMode, setScopeMode] = useState<'MONTH' | 'ALL_YEAR'>('MONTH');
   const [compFilter, setCompFilter] = useState<CalendarFilterComp>('ALL');
+  const [customTargetDayOffset, setCustomTargetDayOffset] = useState<number>(() =>
+    addMonthsToDayOffset(dayOffset, 1, seasonYear)
+  );
+
+  // Keep chosen date >= current dayOffset if calendar advances
+  const effectiveCustomTarget = Math.min(
+    maxSeasonDayOffset,
+    Math.max(dayOffset, customTargetDayOffset)
+  );
+
+  const oneMonthTarget = useMemo(
+    () => addMonthsToDayOffset(dayOffset, 1, seasonYear),
+    [dayOffset, seasonYear]
+  );
+  const sixMonthsTarget = useMemo(
+    () => addMonthsToDayOffset(dayOffset, 6, seasonYear),
+    [dayOffset, seasonYear]
+  );
 
   const clubMap = useMemo(() => new Map(clubs.map((c) => [c.id, c])), [clubs]);
 
@@ -126,8 +162,8 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
 
   const entries: CalendarEntry[] = useMemo(() => {
     return SEASON_CALENDAR.map((step) => {
-      const offset = step.dayOffset ?? step.index * 9;
-      const date = getDateFromOffset(offset);
+      const offset = step.dayOffset ?? step.index * 6;
+      const date = dayOffsetToDate(offset, seasonYear);
       const monthIndex = date.getMonth();
       const dayOfMonth = date.getDate();
       const weekdayShort = WEEKDAYS_SHORT[date.getDay()];
@@ -250,6 +286,7 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
     participatesInCdb,
     participatesInLib,
     seasonStepIndex,
+    seasonYear,
     userClub.id,
     userClub.stadium,
   ]);
@@ -273,9 +310,23 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
       playedCount: played.length,
       wins,
       remaining,
-      nextEntry,
+      nextEntry: isSeasonCompleted ? null : nextEntry,
     };
-  }, [entries]);
+  }, [entries, isSeasonCompleted]);
+
+  const countUpcomingMatchesUntil = (targetOffset: number) =>
+    entries.filter((e) => {
+      const stepOffset = e.step.dayOffset ?? e.step.index * 9;
+      return (
+        stepOffset <= targetOffset &&
+        (e.status === 'NEXT' || e.status === 'SCHEDULED' || e.status === 'TBD')
+      );
+    }).length;
+
+  const oneMonthMatches = countUpcomingMatchesUntil(oneMonthTarget);
+  const sixMonthsMatches = countUpcomingMatchesUntil(sixMonthsTarget);
+  const fullSeasonMatches = countUpcomingMatchesUntil(maxSeasonDayOffset);
+  const customTargetMatches = countUpcomingMatchesUntil(effectiveCustomTarget);
 
   const monthSummaries = useMemo(() => {
     return MONTH_NAMES.map((name, idx) => {
@@ -325,27 +376,44 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
     });
   }, [entries, compFilter, scopeMode, selectedMonth]);
 
-  // Build 7-column calendar cells for selectedMonth in 2026
+  // Build 7-column calendar cells for selectedMonth in seasonYear
   const calendarMonthCells = useMemo(() => {
-    const firstDay = new Date(2026, selectedMonth, 1);
+    const firstDay = new Date(seasonYear, selectedMonth, 1);
     const startWeekday = firstDay.getDay(); // 0..6
-    const daysInMonth = new Date(2026, selectedMonth + 1, 0).getDate();
+    const daysInMonth = new Date(seasonYear, selectedMonth + 1, 0).getDate();
 
     const cells: Array<{
       day: number | null;
+      cellOffset: number | null;
       isToday: boolean;
+      isPast: boolean;
+      isSelectedTarget: boolean;
       entry: CalendarEntry | null;
     }> = [];
 
     for (let i = 0; i < startWeekday; i++) {
-      cells.push({ day: null, isToday: false, entry: null });
+      cells.push({
+        day: null,
+        cellOffset: null,
+        isToday: false,
+        isPast: true,
+        isSelectedTarget: false,
+        entry: null,
+      });
     }
 
     for (let day = 1; day <= daysInMonth; day++) {
+      const cellOffset = isoDateToDayOffset(
+        `${seasonYear}-${String(selectedMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+        seasonYear
+      );
       const isToday =
-        currentDate.getFullYear() === 2026 &&
+        currentDate.getFullYear() === seasonYear &&
         currentDate.getMonth() === selectedMonth &&
         currentDate.getDate() === day;
+      const isPast = cellOffset !== null ? cellOffset < dayOffset : true;
+      const isSelectedTarget =
+        cellOffset !== null && cellOffset === effectiveCustomTarget && !isSeasonCompleted;
       const matchingEntry =
         entries.find(
           (e) =>
@@ -353,11 +421,27 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
             e.dayOfMonth === day &&
             (compFilter === 'ALL' || e.step.competition === compFilter)
         ) || null;
-      cells.push({ day, isToday, entry: matchingEntry });
+      cells.push({
+        day,
+        cellOffset,
+        isToday,
+        isPast,
+        isSelectedTarget,
+        entry: matchingEntry,
+      });
     }
 
     return cells;
-  }, [selectedMonth, currentDate, entries, compFilter]);
+  }, [
+    seasonYear,
+    selectedMonth,
+    currentDate,
+    entries,
+    compFilter,
+    dayOffset,
+    effectiveCustomTarget,
+    isSeasonCompleted,
+  ]);
 
   const getCompBadge = (comp: CompetitionType) => {
     if (comp === 'COPA_DO_BRASIL') {
@@ -393,18 +477,18 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
         <div>
           <span className="text-xs text-zinc-400 block mb-0.5">
-            Temporada 2026 · Brasileirão, Copa do Brasil e Libertadores
+            Temporada {seasonYear} · Brasileirão (38 rodadas), Copa do Brasil e Libertadores
           </span>
           <h2 className="font-display text-3xl sm:text-4xl font-extrabold uppercase tracking-tight text-white leading-none">
-            CALENDÁRIO ANUAL 2026
+            CALENDÁRIO ANUAL {seasonYear}
           </h2>
         </div>
 
         <div className="flex flex-wrap items-center gap-1.5 bg-[#14171f] border border-white/[0.08] rounded-2xl sm:rounded-full p-1.5 sm:p-1">
           {(
             [
-              { id: 'ALL', label: 'Todos (34)' },
-              { id: 'BRASILEIRAO', label: 'Brasileirão (19)' },
+              { id: 'ALL', label: `Todos (${SEASON_CALENDAR.length})` },
+              { id: 'BRASILEIRAO', label: 'Brasileirão (38)' },
               { id: 'COPA_DO_BRASIL', label: 'Copa do Brasil (5)' },
               { id: 'LIBERTADORES', label: 'Libertadores (10)' },
             ] as const
@@ -477,23 +561,182 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
                 : summaryStats.nextEntry?.step.label || 'Temporada Concluída'}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={isMatchDay ? onGoToMatch : onOpenCompetitions}
-            className="shrink-0 px-3.5 py-1.5 rounded-full bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] text-[11px] font-extrabold transition-colors"
-          >
-            {isMatchDay ? 'Jogar' : 'Tabelas'}
-          </button>
+          {!isSeasonCompleted && (
+            <button
+              type="button"
+              onClick={isMatchDay ? onGoToMatch : onOpenCompetitions}
+              className="shrink-0 px-3.5 py-1.5 rounded-full bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] text-[11px] font-extrabold transition-colors"
+            >
+              {isMatchDay ? 'Jogar' : 'Tabelas'}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* 12-Month Annual Overview Grid (Jan -> Dez 2026) */}
+      {/* Automatic Calendar Simulation Controls (IA Tática + Partida por Partida) */}
+      <div className="bg-[#14171f] border border-[#b5ff00]/25 rounded-[24px] p-4 sm:p-5 space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-[#b5ff00]" />
+              <h3 className="font-display text-lg sm:text-xl font-extrabold uppercase tracking-tight text-white">
+                Simulação Automática · Comissão Técnica IA
+              </h3>
+            </div>
+            <p className="text-xs text-zinc-400">
+              {isSeasonCompleted
+                ? `Todos os compromissos da temporada ${seasonYear} foram concluídos. Confira os campeões, prêmios individuais e avance para ${seasonYear + 1}.`
+                : 'O jogo escolhe automaticamente a melhor formação, escalação e tática para cada adversário e simula partida por partida até a data combinada.'}
+            </p>
+          </div>
+
+          <div className="text-xs font-mono text-zinc-400 shrink-0 bg-[#0b0c10] border border-white/[0.07] px-3 py-1.5 rounded-full">
+            Data Atual:{' '}
+            <span className="text-[#b5ff00] font-bold">
+              {formatCalendarDate(dayOffset, seasonYear)}
+            </span>
+          </div>
+        </div>
+
+        {!isSeasonCompleted && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-stretch">
+            {/* Quick Presets: 1 Month / 6 Months / Full Season */}
+            <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <button
+                type="button"
+                onClick={() =>
+                  onStartAutoSimulation(oneMonthTarget, '1 Mês')
+                }
+                className="text-left p-3.5 rounded-2xl bg-[#0b0c10] hover:bg-white/[0.04] border border-white/10 hover:border-[#b5ff00]/60 transition-all flex flex-col justify-between gap-1.5 group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-display text-base font-extrabold uppercase text-white group-hover:text-[#b5ff00] transition-colors">
+                    Simular 1 Mês
+                  </span>
+                  <FastForward className="w-4 h-4 text-[#b5ff00]" />
+                </div>
+                <div className="text-[11px] font-mono text-zinc-400">
+                  Até {formatCalendarDate(oneMonthTarget, seasonYear).replace(/^[A-Za-zÀ-ÿ]+,\s*/, '')}
+                </div>
+                <div className="text-[10px] font-mono text-[#b5ff00]/90 font-bold">
+                  ~{oneMonthMatches} jogo(s) no período
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onStartAutoSimulation(sixMonthsTarget, '6 Meses')
+                }
+                className="text-left p-3.5 rounded-2xl bg-[#0b0c10] hover:bg-white/[0.04] border border-white/10 hover:border-[#b5ff00]/60 transition-all flex flex-col justify-between gap-1.5 group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-display text-base font-extrabold uppercase text-white group-hover:text-[#b5ff00] transition-colors">
+                    Simular 6 Meses
+                  </span>
+                  <FastForward className="w-4 h-4 text-[#b5ff00]" />
+                </div>
+                <div className="text-[11px] font-mono text-zinc-400">
+                  Até {formatCalendarDate(sixMonthsTarget, seasonYear).replace(/^[A-Za-zÀ-ÿ]+,\s*/, '')}
+                </div>
+                <div className="text-[10px] font-mono text-[#b5ff00]/90 font-bold">
+                  ~{sixMonthsMatches} jogo(s) no período
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  onStartAutoSimulation(
+                    maxSeasonDayOffset,
+                    `Temporada Inteira ${seasonYear}`
+                  )
+                }
+                className="text-left p-3.5 rounded-2xl bg-[#0b0c10] hover:bg-white/[0.04] border border-[#b5ff00]/30 hover:border-[#b5ff00] transition-all flex flex-col justify-between gap-1.5 group"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-display text-base font-extrabold uppercase text-[#b5ff00]">
+                    Temporada Inteira
+                  </span>
+                  <Trophy className="w-4 h-4 text-[#b5ff00]" />
+                </div>
+                <div className="text-[11px] font-mono text-zinc-400">
+                  Até 31 Dez {seasonYear} (Final)
+                </div>
+                <div className="text-[10px] font-mono text-white font-bold">
+                  {fullSeasonMatches} compromisso(s) restante(s)
+                </div>
+              </button>
+            </div>
+
+            {/* Custom Date Picker ("Até data de escolha no calendário") */}
+            <div className="lg:col-span-5 p-3.5 rounded-2xl bg-[#0b0c10] border border-white/10 flex flex-col justify-between gap-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <CalendarClock className="w-4 h-4 text-[#b5ff00]" />
+                  <span>Até Data Escolhida no Calendário</span>
+                </span>
+                <span className="text-[10px] font-mono text-zinc-400">
+                  ~{customTargetMatches} jogo(s)
+                </span>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <input
+                  type="date"
+                  aria-label="Escolher data limite da simulação"
+                  min={dayOffsetToIsoDate(dayOffset, seasonYear)}
+                  max={dayOffsetToIsoDate(maxSeasonDayOffset, seasonYear)}
+                  value={dayOffsetToIsoDate(effectiveCustomTarget, seasonYear)}
+                  onChange={(e) => {
+                    const parsed = isoDateToDayOffset(e.target.value, seasonYear);
+                    if (parsed !== null) {
+                      const clamped = Math.min(
+                        maxSeasonDayOffset,
+                        Math.max(dayOffset, parsed)
+                      );
+                      setCustomTargetDayOffset(clamped);
+                      const targetD = dayOffsetToDate(clamped, seasonYear);
+                      setSelectedMonth(targetD.getMonth());
+                      setScopeMode('MONTH');
+                    }
+                  }}
+                  className="flex-1 bg-[#14171f] border border-white/15 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-[#b5ff00]"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    onStartAutoSimulation(
+                      effectiveCustomTarget,
+                      formatCalendarDate(effectiveCustomTarget, seasonYear)
+                    )
+                  }
+                  className="px-4 py-2 rounded-xl bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] text-xs font-extrabold whitespace-nowrap flex items-center justify-center gap-1.5 shadow transition-colors"
+                >
+                  <FastForward className="w-3.5 h-3.5" />
+                  <span>
+                    Simular até{' '}
+                    {formatCalendarDate(effectiveCustomTarget, seasonYear)
+                      .replace(/^[A-Za-zÀ-ÿ]+,\s*/, '')
+                      .replace(new RegExp(`\\s*${seasonYear}$`), '')}
+                  </span>
+                </button>
+              </div>
+              <div className="text-[10px] text-zinc-500">
+                Dica: clique em qualquer dia futuro na grade mensal abaixo ou em uma partida para definir a data.
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 12-Month Annual Overview Grid */}
       <div className="bg-[#14171f] border border-white/[0.08] rounded-[24px] p-4 sm:p-5 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Calendar className="w-4 h-4 text-[#b5ff00]" />
             <h3 className="font-display text-base font-extrabold uppercase tracking-tight text-white">
-              VISÃO DOS 12 MESES DE 2026
+              VISÃO DOS 12 MESES DE {seasonYear}
             </h3>
           </div>
           <div className="flex items-center gap-3 text-[11px] text-zinc-400">
@@ -636,10 +879,10 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
           <div className="flex items-center justify-between">
             <div>
               <span className="text-[11px] font-mono text-zinc-400 uppercase">
-                Grade Mensal · 2026
+                Grade Mensal · {seasonYear}
               </span>
               <h3 className="font-display text-2xl font-extrabold uppercase tracking-tight text-white">
-                {MONTH_NAMES[selectedMonth]} 2026
+                {MONTH_NAMES[selectedMonth]} {seasonYear}
               </h3>
             </div>
 
@@ -687,21 +930,39 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
               const entry = cell.entry;
               const badge = entry ? getCompBadge(entry.step.competition) : null;
               const isNextMatch = entry?.status === 'NEXT';
+              const canSelectAsTarget =
+                !isSeasonCompleted && cell.cellOffset !== null && !cell.isPast;
 
               return (
-                <div
+                <button
                   key={`day-${cell.day}`}
-                  className={`h-14 sm:h-16 rounded-xl p-1 sm:p-1.5 border flex flex-col justify-between transition-all ${
+                  type="button"
+                  disabled={!canSelectAsTarget}
+                  onClick={() => {
+                    if (canSelectAsTarget && cell.cellOffset !== null) {
+                      setCustomTargetDayOffset(cell.cellOffset);
+                    }
+                  }}
+                  title={
+                    canSelectAsTarget && cell.cellOffset !== null
+                      ? `Selecionar ${formatCalendarDate(cell.cellOffset, seasonYear)} como data limite da simulação`
+                      : undefined
+                  }
+                  className={`h-14 sm:h-16 rounded-xl p-1 sm:p-1.5 border flex flex-col justify-between text-left transition-all ${
                     isNextMatch
                       ? 'bg-[#b5ff00] text-[#090a0f] border-[#b5ff00] shadow-md'
+                      : cell.isSelectedTarget
+                      ? 'bg-[#b5ff00]/15 text-white border-[#b5ff00] ring-1 ring-[#b5ff00]'
                       : entry
-                      ? 'bg-[#0b0c10] text-white border-white/15'
+                      ? 'bg-[#0b0c10] text-white border-white/15 hover:border-white/35'
                       : cell.isToday
                       ? 'bg-[#0b0c10] text-white border-[#b5ff00]/60'
-                      : 'bg-[#0b0c10]/50 text-zinc-500 border-white/[0.04]'
+                      : canSelectAsTarget
+                      ? 'bg-[#0b0c10]/60 text-zinc-400 border-white/[0.06] hover:border-[#b5ff00]/40 hover:text-zinc-200'
+                      : 'bg-[#0b0c10]/40 text-zinc-600 border-white/[0.03] cursor-default'
                   }`}
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between w-full">
                     <span
                       className={`text-[11px] font-mono tabular-nums font-bold leading-none ${
                         cell.isToday && !isNextMatch ? 'text-[#b5ff00]' : ''
@@ -709,18 +970,27 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
                     >
                       {cell.day}
                     </span>
-                    {cell.isToday && (
+                    {cell.isSelectedTarget && !isNextMatch ? (
                       <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          isNextMatch ? 'bg-[#090a0f]' : 'bg-[#b5ff00]'
-                        }`}
-                        title="Data Atual"
-                      />
+                        className="text-[8px] font-mono font-extrabold uppercase px-1 rounded bg-[#b5ff00] text-[#090a0f]"
+                        title="Data limite selecionada"
+                      >
+                        Meta
+                      </span>
+                    ) : (
+                      cell.isToday && (
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            isNextMatch ? 'bg-[#090a0f]' : 'bg-[#b5ff00]'
+                          }`}
+                          title="Data Atual"
+                        />
+                      )
                     )}
                   </div>
 
                   {entry && badge && (
-                    <div className="min-w-0">
+                    <div className="min-w-0 w-full">
                       <div className="flex items-center gap-1">
                         <span
                           className={`w-1.5 h-1.5 rounded-full shrink-0 ${
@@ -744,7 +1014,7 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
                       </div>
                     </div>
                   )}
-                </div>
+                </button>
               );
             })}
           </div>
@@ -756,8 +1026,8 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
             <div>
               <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white">
                 {scopeMode === 'ALL_YEAR'
-                  ? 'CRONOGRAMA COMPLETO · 2026'
-                  : `AGENDA DE ${MONTH_NAMES[selectedMonth].toUpperCase()} 2026`}
+                  ? `CRONOGRAMA COMPLETO · ${seasonYear}`
+                  : `AGENDA DE ${MONTH_NAMES[selectedMonth].toUpperCase()} ${seasonYear}`}
               </h3>
               <span className="text-xs text-zinc-400">
                 {visibleEntries.length === 1
@@ -787,7 +1057,7 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                Ano Inteiro (34)
+                Ano Inteiro ({SEASON_CALENDAR.length})
               </button>
             </div>
           </div>
@@ -855,17 +1125,14 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
 
                         {entry.opponentClub ? (
                           <div className="flex items-center gap-2 min-w-0">
-                            <span
-                              className="w-6 h-6 rounded-lg flex items-center justify-center font-display font-extrabold text-[10px] shrink-0 border border-white/15"
-                              style={{
-                                backgroundColor: entry.opponentClub.primaryColor,
-                                color: getContrastTextColor(
-                                  entry.opponentClub.primaryColor
-                                ),
-                              }}
-                            >
-                              {entry.opponentClub.abbr}
-                            </span>
+                            <ClubBadge
+                              clubId={entry.opponentClub.id}
+                              abbr={entry.opponentClub.abbr}
+                              name={entry.opponentClub.name}
+                              primaryColor={entry.opponentClub.primaryColor}
+                              size="sm"
+                              surface={isNext ? 'light' : 'dark'}
+                            />
                             <div className="min-w-0">
                               <div className="font-display text-base font-extrabold uppercase tracking-tight truncate">
                                 {entry.isUserHome ? 'Casa · ' : 'Fora · '}
@@ -938,16 +1205,56 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
                       )}
 
                       {entry.status === 'SCHEDULED' && (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#14171f] border border-white/[0.08] text-[11px] font-mono text-zinc-300">
-                          <CheckCircle2 className="w-3 h-3 text-[#b5ff00]" />
-                          Confirmado
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#14171f] border border-white/[0.08] text-[11px] font-mono text-zinc-300">
+                            <CheckCircle2 className="w-3 h-3 text-[#b5ff00]" />
+                            Confirmado
+                          </span>
+                          {!isSeasonCompleted && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const targetOff =
+                                  entry.step.dayOffset ?? entry.step.index * 9;
+                                onStartAutoSimulation(
+                                  targetOff,
+                                  `Até ${dateTag} (${entry.opponentClub?.shortName || badge.short})`
+                                );
+                              }}
+                              title={`Simular partida por partida até ${dateTag}`}
+                              className="px-2.5 py-1 rounded-full bg-[#b5ff00]/15 hover:bg-[#b5ff00] text-[#b5ff00] hover:text-[#090a0f] border border-[#b5ff00]/30 text-[10px] font-extrabold transition-colors flex items-center gap-1"
+                            >
+                              <FastForward className="w-3 h-3" />
+                              <span className="hidden sm:inline">Simular até aqui</span>
+                            </button>
+                          )}
+                        </div>
                       )}
 
                       {entry.status === 'TBD' && (
-                        <span className="px-2.5 py-1 rounded-full bg-[#14171f] border border-white/[0.08] text-[11px] font-mono text-zinc-400">
-                          A definir
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-2.5 py-1 rounded-full bg-[#14171f] border border-white/[0.08] text-[11px] font-mono text-zinc-400">
+                            A definir
+                          </span>
+                          {!isSeasonCompleted && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const targetOff =
+                                  entry.step.dayOffset ?? entry.step.index * 9;
+                                onStartAutoSimulation(
+                                  targetOff,
+                                  `Até ${dateTag}`
+                                );
+                              }}
+                              title={`Simular até ${dateTag}`}
+                              className="px-2.5 py-1 rounded-full bg-white/[0.05] hover:bg-[#b5ff00] text-zinc-300 hover:text-[#090a0f] border border-white/10 text-[10px] font-bold transition-colors flex items-center gap-1"
+                            >
+                              <FastForward className="w-3 h-3" />
+                              <span className="hidden sm:inline">Simular até aqui</span>
+                            </button>
+                          )}
+                        </div>
                       )}
 
                       {(entry.status === 'ELIMINATED' ||

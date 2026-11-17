@@ -23,6 +23,7 @@ import {
   updateStandingsWithRound,
 } from './matchEngine';
 import type { PlayerAttributes } from '../types/football';
+import type { AutoSimCareerSnapshot } from './autoTacticsAndSim';
 
 test('Database contains 40 official 2026 clubs (20 Série A + 20 Série B) and 880 real players with 18 attributes (1-20)', () => {
   assert.equal(SERIE_A_CLUBS.length, 20);
@@ -478,24 +479,33 @@ test('2D Match Engine supports Libertadores foreign opponent and resolves knocko
   );
 });
 
-test('SEASON_CALENDAR spans all 12 months of 2026 chronologically across Brasileirão, Copa do Brasil, and Libertadores', async () => {
+test('SEASON_CALENDAR spans 53 non-overlapping dates (38 Brasileirão + 5 Copa do Brasil + 10 Libertadores) across all 12 months of 2026', async () => {
   const { SEASON_CALENDAR } = await import('../data/cupFactory');
-  assert.equal(SEASON_CALENDAR.length, 34);
+  assert.equal(SEASON_CALENDAR.length, 53);
+
+  const brSteps = SEASON_CALENDAR.filter((s) => s.competition === 'BRASILEIRAO');
+  const cdbSteps = SEASON_CALENDAR.filter((s) => s.competition === 'COPA_DO_BRASIL');
+  const libSteps = SEASON_CALENDAR.filter((s) => s.competition === 'LIBERTADORES');
+  assert.equal(brSteps.length, 38);
+  assert.equal(cdbSteps.length, 5);
+  assert.equal(libSteps.length, 10);
 
   const monthsSeen = new Set<number>();
+  const dayOffsetsSeen = new Set<number>();
   let prevOffset = -1;
   for (const step of SEASON_CALENDAR) {
     assert.ok(
       typeof step.dayOffset === 'number' && step.dayOffset > prevOffset,
-      `Expected monotonic dayOffset for ${step.label}`
+      `Expected strictly increasing non-overlapping dayOffset for ${step.label}`
     );
     prevOffset = step.dayOffset;
-    const d = new Date(2026, 0, 28);
-    d.setDate(d.getDate() + step.dayOffset);
-    assert.equal(d.getFullYear(), 2026);
-    monthsSeen.add(d.getMonth());
+    dayOffsetsSeen.add(step.dayOffset);
+    const d = new Date(Date.UTC(2026, 0, 28 + step.dayOffset));
+    assert.equal(d.getUTCFullYear(), 2026);
+    monthsSeen.add(d.getUTCMonth());
   }
 
+  assert.equal(dayOffsetsSeen.size, 53);
   assert.equal(monthsSeen.size, 12, 'Expected fixtures across all 12 months (Jan-Dec 2026)');
 });
 
@@ -788,6 +798,488 @@ test('Transfer Catalog & Difficulty Engine evaluate Club x Club and Player x Squ
   assert.equal(blockedMin.canLoanOut, false);
 });
 
+import { generateSubstitutionSuggestions } from './substitutionAdvisor';
 
+test('Substitution Advisor generates multiple coherent position/sector suggestions for reloading and prioritizes fatigued/booked players', () => {
+  const home = INITIAL_CLUBS[0];
+  const away = INITIAL_CLUBS[1];
+  const squad = getRealSquadForClub(home).map((p) => ({ ...p }));
+  const fatiguedMid = squad.find((p) => p.isStarter && p.sector === 'MEI')!;
+  fatiguedMid.condition = 64;
+
+  const match = createInitialMatchState(
+    1,
+    {
+      id: 'sub-test-fix',
+      roundNumber: 1,
+      homeClubId: home.id,
+      awayClubId: away.id,
+      homeGoals: 0,
+      awayGoals: 1,
+      played: false,
+      isUserMatch: true,
+    },
+    home,
+    away,
+    squad,
+    home.id
+  );
+
+  // Set live token condition to 64% on the fatigued midfielder
+  match.homeTokens = match.homeTokens.map((t) =>
+    t.id === fatiguedMid.id ? { ...t, condition: 64 } : t
+  );
+
+  const suggestions = generateSubstitutionSuggestions(squad, match);
+  assert.ok(suggestions.length >= 4, 'Expected at least 4 coherent suggestions to cycle/reload');
+
+  // Verify no goalkeeper is suggested for an outfield slot or vice-versa
+  for (const sug of suggestions) {
+    assert.notEqual(sug.starterOut.position, 'GOL');
+    assert.notEqual(sug.reserveIn.position, 'GOL');
+    assert.equal(sug.starterOut.isStarter, true);
+    assert.equal(sug.reserveIn.isStarter, false);
+    assert.ok(sug.reason.length > 20);
+  }
+
+  // Top suggestion should address the 64% fatigued midfielder
+  assert.equal(suggestions[0].starterOut.id, fatiguedMid.id);
+  assert.equal(suggestions[0].categoryLabel, 'Renovação Física');
+});
+
+test('Auto Tactics & Calendar Simulator chooses optimal formation/tactics and simulates match-by-match for 1 month, 6 months, custom date, and full season', async () => {
+  const { createNewCareerSave } = await import('../data/careerFactory');
+  const {
+    MAX_SEASON_DAY_OFFSET,
+    addMonthsToDayOffset,
+    dayOffsetToIsoDate,
+    isSeasonCompleted,
+    isoDateToDayOffset,
+    selectOptimalTacticsForMatch,
+    simulateNextAutoStep,
+  } = await import('./autoTacticsAndSim');
+
+  const career = createNewCareerSave(1, 'flamengo', 'Técnico IA');
+  const userClub = career.clubs.find((c) => c.id === 'flamengo')!;
+  const strongOpp = career.clubs.find((c) => c.id === 'palmeiras')!;
+
+  // 1. Optimal tactics selection picks 11 valid starters (including 1 GOL) and adapts mentality to opponent/venue
+  const optimalAwayStrong = selectOptimalTacticsForMatch({
+    squad: career.squad,
+    userClub,
+    opponentClub: { ...strongOpp, overallAttack: 94, overallMidfield: 94, overallDefense: 94 },
+    isUserHome: false,
+    isKnockout: true,
+  });
+  assert.equal(optimalAwayStrong.updatedSquad.filter((p) => p.isStarter).length, 11);
+  assert.equal(
+    optimalAwayStrong.updatedSquad.filter((p) => p.isStarter && p.position === 'GOL').length,
+    1
+  );
+  assert.equal(optimalAwayStrong.instructions.mentality, 'Cautelosa');
+
+  // Date helpers: 1 month & 6 months from dayOffset 0 (2026-01-28)
+  assert.equal(dayOffsetToIsoDate(0), '2026-01-28');
+  assert.equal(isoDateToDayOffset('2026-01-28'), 0);
+  const oneMonthOffset = addMonthsToDayOffset(0, 1);
+  assert.equal(dayOffsetToIsoDate(oneMonthOffset), '2026-02-28');
+  const sixMonthOffset = addMonthsToDayOffset(0, 6);
+  assert.equal(dayOffsetToIsoDate(sixMonthOffset), '2026-07-28');
+
+  let seed = 777;
+  const rng = () => {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+
+  let snap: AutoSimCareerSnapshot = {
+    clubs: career.clubs,
+    userClubId: career.userClubId,
+    squad: career.squad,
+    standings: career.standings,
+    fixtures: career.fixtures,
+    secondaryStandings: career.secondaryStandings!,
+    secondaryFixtures: career.secondaryFixtures!,
+    copaDoBrasil: career.copaDoBrasil!,
+    libertadores: career.libertadores!,
+    messages: career.messages,
+    matchState: career.matchState,
+    seasonStepIndex: career.seasonStepIndex ?? 0,
+    currentRound: career.currentRound,
+    dayOffset: career.dayOffset,
+    isMatchDay: career.isMatchDay,
+    transferredOutClubPlayerIds: [],
+  };
+
+  // 2. Simulate 1 Month match-by-match
+  let guard = 0;
+  let done1m = false;
+  const logs1m = [];
+  while (!done1m && guard < 30) {
+    guard++;
+    const stepRes = simulateNextAutoStep(snap, oneMonthOffset, rng);
+    snap = stepRes.snapshot;
+    if (stepRes.logEntry) logs1m.push(stepRes.logEntry);
+    done1m = stepRes.done;
+  }
+  assert.equal(done1m, true);
+  assert.equal(snap.dayOffset, oneMonthOffset);
+  assert.ok(logs1m.length >= 4, 'Expected multiple matches simulated during first month');
+
+  // 3. Continue simulating up to 6 Months from Season Start (2026-07-28)
+  let done6m = false;
+  guard = 0;
+  while (!done6m && guard < 80) {
+    guard++;
+    const stepRes = simulateNextAutoStep(snap, sixMonthOffset, rng);
+    snap = stepRes.snapshot;
+    done6m = stepRes.done;
+  }
+  assert.equal(done6m, true);
+  assert.equal(snap.dayOffset, sixMonthOffset);
+  assert.equal(isSeasonCompleted(snap), false);
+
+  // 4. Finish Full Season up to MAX_SEASON_DAY_OFFSET
+  let doneFull = false;
+  guard = 0;
+  while (!doneFull && guard < 80) {
+    guard++;
+    const stepRes = simulateNextAutoStep(snap, MAX_SEASON_DAY_OFFSET, rng);
+    snap = stepRes.snapshot;
+    doneFull = stepRes.done;
+  }
+  assert.equal(doneFull, true);
+  assert.equal(isSeasonCompleted(snap), true);
+  assert.ok(
+    snap.standings.every((row) => row.played === 38),
+    'All 20 clubs in Série A must finish with 38 matches played after full season auto-simulation'
+  );
+  assert.ok(
+    snap.secondaryStandings.every((row) => row.played === 38),
+    'All 20 clubs in Série B must finish with 38 matches played after full season auto-simulation'
+  );
+});
+
+test('38-round league schedule mirrors 1º turno (1-19) and 2º turno (20-38) with inverted home/away', () => {
+  const schedule = generateLeagueSchedule(USER_CLUB_ID, 'A');
+  assert.equal(schedule.length, 380); // 38 rounds * 10 matches
+
+  const firstHalf = schedule.filter((f) => f.roundNumber <= 19);
+  const secondHalf = schedule.filter((f) => f.roundNumber >= 20);
+  assert.equal(firstHalf.length, 190);
+  assert.equal(secondHalf.length, 190);
+
+  for (const f1 of firstHalf) {
+    const mirror = secondHalf.find(
+      (f2) =>
+        f2.roundNumber === f1.roundNumber + 19 &&
+        f2.homeClubId === f1.awayClubId &&
+        f2.awayClubId === f1.homeClubId
+    );
+    assert.ok(
+      mirror,
+      `Expected inverted return fixture in round ${f1.roundNumber + 19} for ${f1.homeClubId} vs ${f1.awayClubId}`
+    );
+  }
+});
+
+test('Evolution, Aging, Potential Stars, and Anti-Inflation Valuation work accurately', async () => {
+  const { createNewCareerSave } = await import('../data/careerFactory');
+  const {
+    assignPotentialStars,
+    calculateBalancedValuationAndWage,
+    getPotentialCeilingOvr,
+    processSeasonEvolutionAndAging,
+  } = await import('./economyAndEvolution');
+
+  const career = createNewCareerSave(1, 'flamengo', 'Técnico');
+
+  // Star potential assignment & hard anti-inflation valuation caps
+  for (const p of career.squad) {
+    assert.ok(
+      p.potentialStars && p.potentialStars >= 1 && p.potentialStars <= 5,
+      `Expected 1..5 potential stars for ${p.name}`
+    );
+  }
+  const capped = calculateBalancedValuationAndWage({
+    ovr: 78,
+    age: 21,
+    clubReputation: 88,
+    division: 'A',
+    potentialStars: 5,
+  });
+  assert.ok(capped.marketValue <= 62_000_000, 'Expected OVR < 80 cap <= R$ 62M');
+  assert.ok(capped.salary <= 1_150_000, 'Expected OVR < 80 salary cap <= R$ 1.15M');
+
+  const veteranVal = calculateBalancedValuationAndWage({
+    ovr: 78,
+    age: 35,
+    clubReputation: 88,
+    division: 'A',
+    potentialStars: 4,
+  });
+  assert.ok(veteranVal.marketValue < capped.marketValue, 'Veterans should cost less than young stars');
+
+  // Construct controlled young star & 35yo veteran to test evolution vs physical decline
+  const basePlayer = career.squad.find((p) => p.position === 'ATA')!;
+  const youngStar = {
+    ...basePlayer,
+    id: 'test-young-star',
+    name: 'Jovem Craque',
+    age: 19,
+    potentialStars: 5 as const,
+    attributes: { ...basePlayer.attributes, finalizacao: 13, velocidade: 14, aceleracao: 14, compostura: 12 },
+    seasonStats: { matches: 30, goals: 22, assists: 8, yellowCards: 2, avgRating: 7.95 },
+  };
+  const veteranPlayer = {
+    ...basePlayer,
+    id: 'test-veteran',
+    name: 'Veterano 35',
+    age: 35,
+    potentialStars: assignPotentialStars(80, 35, 84, 'test-veteran'),
+    attributes: { ...basePlayer.attributes, velocidade: 15, aceleracao: 15, resistencia: 15 },
+    seasonStats: { matches: 14, goals: 3, assists: 1, yellowCards: 3, avgRating: 6.5 },
+  };
+
+  const youngOvrBefore = calculatePlayerOverall(youngStar.attributes, youngStar.position);
+  const vetOvrBefore = calculatePlayerOverall(veteranPlayer.attributes, veteranPlayer.position);
+
+  const evo = processSeasonEvolutionAndAging({
+    clubs: career.clubs,
+    userClubId: career.userClubId,
+    userSquad: [youngStar, veteranPlayer, ...career.squad.slice(2)],
+    aiSquads: career.aiSquads || {},
+    freeAgents: career.freeAgents || [],
+    loanedOutPlayers: [],
+    rng: () => 0.25,
+  });
+
+  const evolvedYoung = evo.updatedUserSquad.find((p) => p.id === 'test-young-star')!;
+  const evolvedVet = evo.updatedUserSquad.find((p) => p.id === 'test-veteran')!;
+
+  const youngOvrAfter = calculatePlayerOverall(evolvedYoung.attributes, evolvedYoung.position);
+  const vetOvrAfter = calculatePlayerOverall(evolvedVet.attributes, evolvedVet.position);
+
+  assert.equal(evolvedYoung.age, 20);
+  assert.ok(youngOvrAfter > youngOvrBefore, 'Standout 19yo should improve OVR');
+  assert.ok(youngOvrAfter <= getPotentialCeilingOvr(5), 'Must respect star potential ceiling');
+  assert.equal(evolvedYoung.seasonStats.matches, 0, 'Season stats must reset after rollover');
+
+  assert.equal(evolvedVet.age, 36);
+  assert.ok(
+    evolvedVet.attributes.velocidade < veteranPlayer.attributes.velocidade ||
+      evolvedVet.attributes.aceleracao < veteranPlayer.attributes.aceleracao,
+    '35+ veteran decline must target physical attributes'
+  );
+  assert.ok(vetOvrAfter <= vetOvrBefore);
+});
+
+test('Living Market runs autonomous AI-to-AI transfers and interactive user offers (Accept / Counter +15% / Reject)', async () => {
+  const { createNewCareerSave } = await import('../data/careerFactory');
+  const {
+    maybeGenerateIncomingOfferForUser,
+    resolveIncomingOfferAction,
+    simulateAiTransferWindowTick,
+  } = await import('./aiMarketEngine');
+
+  const career = createNewCareerSave(1, 'flamengo', 'Técnico');
+  let seed = 321;
+  const rng = () => {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+
+  // 1. Autonomous AI-to-AI market transfers
+  const aiTick = simulateAiTransferWindowTick({
+    clubs: career.clubs,
+    aiSquads: career.aiSquads!,
+    userClubId: career.userClubId,
+    dayOffset: 42,
+    seasonYear: 2026,
+    maxDeals: 3,
+    rng,
+  });
+  assert.ok(aiTick.newRecords.length >= 1, 'Expected at least 1 autonomous AI transfer');
+  assert.equal(aiTick.newRecords[0].isAiTransfer, true);
+
+  // 2. Incoming AI offer for a user player & counter-offer acceptance
+  const userClub = aiTick.updatedClubs.find((c) => c.id === career.userClubId)!;
+  const offer = maybeGenerateIncomingOfferForUser({
+    clubs: aiTick.updatedClubs,
+    userClub,
+    userSquad: career.squad,
+    pendingOffers: [],
+    dayOffset: 42,
+    seasonYear: 2026,
+    rng: () => 0.1,
+  });
+  assert.ok(offer, 'Expected AI club to generate an official offer for a user player');
+
+  const counterAccepted = resolveIncomingOfferAction({
+    offer,
+    action: 'COUNTER_15',
+    userClub,
+    userSquad: career.squad,
+    aiSquads: aiTick.updatedAiSquads,
+    loanedOutPlayers: [],
+    clubs: aiTick.updatedClubs,
+    dayOffset: 43,
+    seasonYear: 2026,
+    rng: () => 0.05, // guarantees counter accepted
+  });
+
+  assert.equal(counterAccepted.outcome, 'ACCEPTED');
+  assert.ok(counterAccepted.finalFee > offer.offeredFee);
+  assert.equal(counterAccepted.updatedUserSquad.length, career.squad.length - 1);
+  assert.equal(counterAccepted.updatedUserSquad.filter((p) => p.isStarter).length, 11);
+});
+
+test('Balanced Economy enforces home-only gate revenue, dynamic sponsorship growth, and season-end anti-inflation maintenance', async () => {
+  const { createNewCareerSave } = await import('../data/careerFactory');
+  const {
+    applyAntiInflationSeasonMaintenance,
+    calculateDynamicSponsorship,
+    calculateMatchGateRevenue,
+  } = await import('./economyAndEvolution');
+
+  const career = createNewCareerSave(1, 'ponte-preta', 'Técnico');
+  const club = career.clubs.find((c) => c.id === 'ponte-preta')!;
+
+  const awayGate = calculateMatchGateRevenue({
+    club,
+    rank: 2,
+    competition: 'BRASILEIRAO',
+    isHome: false,
+  });
+  assert.equal(awayGate.gateRevenue, 0);
+
+  const homeGate = calculateMatchGateRevenue({
+    club,
+    rank: 2,
+    competition: 'COPA_DO_BRASIL',
+    stageLabel: 'Semifinal',
+    isHome: true,
+  });
+  assert.ok(homeGate.gateRevenue > 0 && homeGate.attendance > 0);
+
+  const smallSponsor = calculateDynamicSponsorship(club, 71, 2026);
+  const grownClub = {
+    ...club,
+    division: 'A' as const,
+    reputation: 84,
+    recentTitles: ['Série B 2026', 'Copa do Brasil 2027'],
+  };
+  const bigSponsor = calculateDynamicSponsorship(grownClub, 79, 2027);
+  assert.ok(
+    bigSponsor.annualValue > smallSponsor.annualValue,
+    'Club promotion + titles + higher OVR must unlock larger automatic sponsorships'
+  );
+
+  const bloatedClub = { ...grownClub, cashBalance: 900_000_000 };
+  const maintained = applyAntiInflationSeasonMaintenance(bloatedClub, career.squad);
+  assert.ok(maintained.annualMaintenanceCost > 0);
+  assert.ok(
+    maintained.updatedClub.cashBalance < bloatedClub.cashBalance,
+    'Anti-inflation maintenance must curb runaway cash hoarding'
+  );
+});
+
+test('Full Continuous Season Rollover transitions 2026 -> 2027, executes 4 up / 4 down pro/rel, and regenerates 38-round season', async () => {
+  const { createNewCareerSave } = await import('../data/careerFactory');
+  const { SEASON_CALENDAR } = await import('../data/cupFactory');
+  const { MAX_SEASON_DAY_OFFSET, simulateNextAutoStep } = await import('./autoTacticsAndSim');
+  const { executeNewSeasonRollover } = await import('./seasonLifecycle');
+
+  const career = createNewCareerSave(1, 'flamengo', 'Técnico Contínuo');
+  let seed = 909;
+  const rng = () => {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+
+  let snap: AutoSimCareerSnapshot = {
+    clubs: career.clubs,
+    userClubId: career.userClubId,
+    squad: career.squad,
+    aiSquads: career.aiSquads,
+    standings: career.standings,
+    fixtures: career.fixtures,
+    secondaryStandings: career.secondaryStandings!,
+    secondaryFixtures: career.secondaryFixtures!,
+    copaDoBrasil: career.copaDoBrasil!,
+    libertadores: career.libertadores!,
+    messages: career.messages,
+    matchState: career.matchState,
+    seasonYear: 2026,
+    seasonStepIndex: 0,
+    currentRound: 1,
+    dayOffset: 0,
+    isMatchDay: false,
+    transferredOutClubPlayerIds: [],
+    pendingOffers: [],
+    transferHistory: [],
+    financeLedger: career.financeLedger,
+  };
+
+  let done = false;
+  let guard = 0;
+  while (!done && guard < 90) {
+    guard++;
+    const step = simulateNextAutoStep(snap, MAX_SEASON_DAY_OFFSET, rng);
+    snap = step.snapshot;
+    done = step.done;
+  }
+
+  assert.equal(snap.seasonStepIndex, SEASON_CALENDAR.length - 1);
+  assert.ok(snap.copaDoBrasil.championClubId, 'Copa do Brasil should have a 2026 champion');
+  assert.ok(snap.libertadores.championClubId, 'Libertadores should have a 2026 champion');
+
+  const relegatedExpected = snap.standings.slice(-4).map((r) => r.clubId);
+  const promotedExpected = snap.secondaryStandings.slice(0, 4).map((r) => r.clubId);
+
+  const rollover = executeNewSeasonRollover({
+    currentYear: 2026,
+    clubs: snap.clubs,
+    userClubId: snap.userClubId,
+    userSquad: snap.squad,
+    aiSquads: snap.aiSquads || {},
+    freeAgents: career.freeAgents || [],
+    loanedOutPlayers: [],
+    standings: snap.standings,
+    secondaryStandings: snap.secondaryStandings,
+    copaDoBrasil: snap.copaDoBrasil,
+    libertadores: snap.libertadores,
+    seasonHistory: [],
+    managerName: 'Técnico Contínuo',
+    rng,
+  });
+
+  assert.equal(rollover.nextYear, 2027);
+  assert.equal(rollover.archiveEntry.year, 2026);
+  assert.equal(rollover.nextFixtures.length, 380);
+  assert.equal(rollover.nextSecondaryFixtures.length, 380);
+  assert.ok(rollover.nextStandings.every((r) => r.played === 0 && r.points === 0));
+  assert.ok(rollover.nextSecondaryStandings.every((r) => r.played === 0 && r.points === 0));
+
+  for (const id of relegatedExpected) {
+    assert.equal(
+      rollover.updatedClubs.find((c) => c.id === id)?.division,
+      'B',
+      `Expected relegated club ${id} in Série B for 2027`
+    );
+  }
+  for (const id of promotedExpected) {
+    assert.equal(
+      rollover.updatedClubs.find((c) => c.id === id)?.division,
+      'A',
+      `Expected promoted club ${id} in Série A for 2027`
+    );
+  }
+
+  const beforeFirstPlayer = snap.squad[0];
+  const afterFirstPlayer = rollover.updatedUserSquad.find((p) => p.id === beforeFirstPlayer.id)!;
+  assert.equal(afterFirstPlayer.age, beforeFirstPlayer.age + 1);
+  assert.equal(afterFirstPlayer.seasonStats.matches, 0);
+});
 
 

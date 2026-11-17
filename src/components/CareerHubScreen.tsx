@@ -25,7 +25,8 @@ import {
   CareerSlotIndex,
   Club,
 } from '../types/football';
-import { formatCompactBRL, getContrastTextColor } from '../utils/formatters';
+import { formatCompactBRL } from '../utils/formatters';
+import { ClubBadge } from './ClubBadge';
 import {
   CAREER_SLOTS,
   formatSavedTimestamp,
@@ -220,19 +221,18 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
       >
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div
-              className="w-11 h-11 rounded-2xl flex items-center justify-center font-display font-extrabold text-sm shrink-0 border border-white/20 shadow-md"
-              style={{
-                backgroundColor: save.clubPrimaryColor,
-                color: getContrastTextColor(save.clubPrimaryColor),
-              }}
-            >
-              {save.clubAbbr}
-            </div>
+            <ClubBadge
+              clubId={save.userClubId}
+              abbr={save.clubAbbr}
+              name={save.clubName}
+              primaryColor={save.clubPrimaryColor}
+              size="md"
+            />
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#b5ff00]">
-                  Slot 0{slotIdx} · Série {save.division}
+                  Slot 0{slotIdx} · Série {save.division} ·{' '}
+                  {save.currentYear || 2026}
                 </span>
                 {activeCareerSlot === slotIdx && (
                   <span className="text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 rounded-full bg-[#b5ff00]/15 text-[#b5ff00]">
@@ -460,17 +460,14 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
                       </div>
 
                       <div className="flex items-center gap-4">
-                        <div
-                          className="w-14 h-14 rounded-2xl flex items-center justify-center font-display font-extrabold text-xl shadow-xl border-2 border-[#0b0c10]/20 shrink-0"
-                          style={{
-                            backgroundColor: latestSave.clubPrimaryColor,
-                            color: getContrastTextColor(
-                              latestSave.clubPrimaryColor
-                            ),
-                          }}
-                        >
-                          {latestSave.clubAbbr}
-                        </div>
+                        <ClubBadge
+                          clubId={latestSave.userClubId}
+                          abbr={latestSave.clubAbbr}
+                          name={latestSave.clubName}
+                          primaryColor={latestSave.clubPrimaryColor}
+                          size="lg"
+                          surface="light"
+                        />
                         <div className="min-w-0">
                           <h2 className="font-display text-3xl font-extrabold uppercase tracking-tight leading-none truncate">
                             {latestSave.clubName}
@@ -716,15 +713,14 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
                     </div>
 
                     <div className="flex items-center gap-4">
-                      <div
-                        className="w-14 h-14 rounded-2xl flex items-center justify-center font-display font-extrabold text-xl shadow-lg border-2 border-[#0b0c10]/20 shrink-0"
-                        style={{
-                          backgroundColor: selectedClub.primaryColor,
-                          color: getContrastTextColor(selectedClub.primaryColor),
-                        }}
-                      >
-                        {selectedClub.abbr}
-                      </div>
+                      <ClubBadge
+                        clubId={selectedClub.id}
+                        abbr={selectedClub.abbr}
+                        name={selectedClub.name}
+                        primaryColor={selectedClub.primaryColor}
+                        size="lg"
+                        surface="light"
+                      />
                       <div className="min-w-0">
                         <h2 className="font-display text-2xl sm:text-3xl font-extrabold uppercase tracking-tight leading-none truncate">
                           {selectedClub.name}
@@ -902,15 +898,13 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <div
-                            className="w-10 h-10 rounded-xl flex items-center justify-center font-display font-extrabold text-xs shrink-0 border border-white/15"
-                            style={{
-                              backgroundColor: club.primaryColor,
-                              color: getContrastTextColor(club.primaryColor),
-                            }}
-                          >
-                            {club.abbr}
-                          </div>
+                          <ClubBadge
+                            clubId={club.id}
+                            abbr={club.abbr}
+                            name={club.name}
+                            primaryColor={club.primaryColor}
+                            size="md"
+                          />
                           <div className="min-w-0">
                             <div className="font-display font-extrabold text-base uppercase tracking-tight text-white truncate">
                               {club.shortName}

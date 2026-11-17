@@ -81,8 +81,26 @@ export const INITIAL_STANDINGS_B: StandingsRow[] = SERIE_B_CLUBS.map((club) => (
 export const INITIAL_STANDINGS: StandingsRow[] = INITIAL_STANDINGS_A;
 
 export function getInitialStandingsForDivision(
-  division: 'A' | 'B'
+  division: 'A' | 'B',
+  clubsPool?: Club[]
 ): StandingsRow[] {
+  if (clubsPool && clubsPool.length > 0) {
+    const filtered = clubsPool.filter((c) => c.division === division);
+    if (filtered.length > 0) {
+      return filtered.map((club) => ({
+        clubId: club.id,
+        played: 0,
+        won: 0,
+        drawn: 0,
+        lost: 0,
+        goalsFor: 0,
+        goalsAgainst: 0,
+        goalDifference: 0,
+        points: 0,
+        form: [],
+      }));
+    }
+  }
   const source = division === 'B' ? INITIAL_STANDINGS_B : INITIAL_STANDINGS_A;
   return source.map((row) => ({ ...row, form: [...row.form] }));
 }
@@ -101,30 +119,45 @@ const OFFICIAL_SERIE_A_ROUND_1_PAIRS: Array<[string, string]> = [
   ['chapecoense', 'santos'],
 ];
 
-// Generate deterministic schedule for rounds 1 to 19 within the club's division
+// Generate deterministic 38-round schedule (19 home/away 1º turno + 19 reversed 2º turno)
 export function generateLeagueSchedule(
   userClubId: string = USER_CLUB_ID,
-  division?: 'A' | 'B'
+  division?: 'A' | 'B',
+  clubsPool?: Club[]
 ): RoundFixture[] {
-  const userClub = INITIAL_CLUBS.find((c) => c.id === userClubId);
+  const sourcePool = clubsPool && clubsPool.length > 0 ? clubsPool : INITIAL_CLUBS;
+  const userClub = sourcePool.find((c) => c.id === userClubId);
   const resolvedDivision: 'A' | 'B' =
     division ?? (userClub?.division === 'B' ? 'B' : 'A');
-  const divisionClubs =
-    resolvedDivision === 'B' ? SERIE_B_CLUBS : SERIE_A_CLUBS;
+  const divisionClubs = sourcePool.filter((c) => c.division === resolvedDivision);
 
-  const clubIds = divisionClubs.map((c) => c.id);
-  const fixtures: RoundFixture[] = [];
+  const clubIds = (
+    divisionClubs.length >= 20
+      ? divisionClubs
+      : resolvedDivision === 'B'
+      ? SERIE_B_CLUBS
+      : SERIE_A_CLUBS
+  ).map((c) => c.id);
+
+  const clubIdSet = new Set(clubIds);
+  const canUseOfficialRound1 =
+    resolvedDivision === 'A' &&
+    OFFICIAL_SERIE_A_ROUND_1_PAIRS.every(
+      ([h, a]) => clubIdSet.has(h) && clubIdSet.has(a)
+    );
+
+  const firstHalfFixtures: RoundFixture[] = [];
 
   const n = clubIds.length;
   const fixed = clubIds[0];
   const rotating = clubIds.slice(1);
 
   for (let round = 1; round <= 19; round++) {
-    if (resolvedDivision === 'A' && round === 1) {
+    if (canUseOfficialRound1 && round === 1) {
       OFFICIAL_SERIE_A_ROUND_1_PAIRS.forEach(([homeClubId, awayClubId], idx) => {
         const isUserMatch =
           homeClubId === userClubId || awayClubId === userClubId;
-        fixtures.push({
+        firstHalfFixtures.push({
           id: `a-r1-m${idx + 1}`,
           division: 'A',
           roundNumber: 1,
@@ -155,7 +188,7 @@ export function generateLeagueSchedule(
       const isUserMatch =
         homeClubId === userClubId || awayClubId === userClubId;
 
-      fixtures.push({
+      firstHalfFixtures.push({
         id: `${resolvedDivision.toLowerCase()}-r${round}-m${i + 1}`,
         division: resolvedDivision,
         roundNumber: round,
@@ -169,7 +202,26 @@ export function generateLeagueSchedule(
     }
   }
 
-  return fixtures;
+  // 2º Turno (Rodadas 20..38): espelha 1..19 com mando de campo invertido
+  const secondHalfFixtures: RoundFixture[] = firstHalfFixtures.map((fix, idx) => {
+    const returnRound = fix.roundNumber + 19;
+    const matchSlot = (idx % (n / 2)) + 1;
+    const homeClubId = fix.awayClubId;
+    const awayClubId = fix.homeClubId;
+    return {
+      id: `${resolvedDivision.toLowerCase()}-r${returnRound}-m${matchSlot}`,
+      division: resolvedDivision,
+      roundNumber: returnRound,
+      homeClubId,
+      awayClubId,
+      homeGoals: null,
+      awayGoals: null,
+      played: false,
+      isUserMatch: homeClubId === userClubId || awayClubId === userClubId,
+    };
+  });
+
+  return [...firstHalfFixtures, ...secondHalfFixtures];
 }
 
 export const INITIAL_INBOX_MESSAGES: InboxMessage[] = [

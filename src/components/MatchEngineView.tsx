@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Play,
   Pause,
@@ -6,9 +6,13 @@ import {
   RefreshCw,
   Trophy,
   ArrowRight,
+  ArrowLeft,
   UserCheck,
   CheckCircle2,
   Eye,
+  Sparkles,
+  Zap,
+  ShieldAlert,
 } from 'lucide-react';
 import {
   Club,
@@ -17,6 +21,11 @@ import {
   Player,
   RoundFixture,
 } from '../types/football';
+import {
+  generateSubstitutionSuggestions,
+  SubstitutionSuggestion,
+} from '../engine/substitutionAdvisor';
+import { ClubBadge } from './ClubBadge';
 
 interface MatchEngineViewProps {
   match: LiveMatchState;
@@ -33,6 +42,7 @@ interface MatchEngineViewProps {
   onMakeSubstitution: (starterOutId: string, reserveInId: string) => void;
   onInstantFinishMatch: () => void;
   onProceedAfterFullTime: () => void;
+  onExitPreMatch?: () => void;
 }
 
 export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
@@ -50,17 +60,59 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
   onMakeSubstitution,
   onInstantFinishMatch,
   onProceedAfterFullTime,
+  onExitPreMatch,
 }) => {
-  const [showSubsPanel, setShowSubsPanel] = useState(false);
+  const [showSubsPanel, setShowSubsPanel] = useState(true);
+  const [suggestionIndex, setSuggestionIndex] = useState(0);
+
+  const suggestions = useMemo(
+    () => generateSubstitutionSuggestions(squad, match),
+    [squad, match]
+  );
+
+  const activeSuggestion: SubstitutionSuggestion | null =
+    suggestions.length > 0
+      ? suggestions[suggestionIndex % suggestions.length]
+      : null;
+
   const [selectedStarterOutId, setSelectedStarterOutId] = useState<string>(
     () =>
-      squad.find((p) => p.isStarter && p.condition < 80)?.id ||
+      activeSuggestion?.starterOut.id ||
+      squad.find((p) => p.isStarter && p.position !== 'GOL')?.id ||
       squad.find((p) => p.isStarter)?.id ||
       ''
   );
   const [selectedReserveInId, setSelectedReserveInId] = useState<string>(
-    () => squad.find((p) => !p.isStarter && !p.injured)?.id || ''
+    () =>
+      activeSuggestion?.reserveIn.id ||
+      squad.find((p) => !p.isStarter && !p.injured && p.position !== 'GOL')?.id ||
+      ''
   );
+
+  // Keep selected players valid when squad changes (e.g. after a substitution)
+  useEffect(() => {
+    const starterStillOnPitch = squad.some(
+      (p) => p.id === selectedStarterOutId && p.isStarter
+    );
+    const reserveStillOnBench = squad.some(
+      (p) => p.id === selectedReserveInId && !p.isStarter && !p.injured
+    );
+    if (!starterStillOnPitch || !reserveStillOnBench) {
+      if (activeSuggestion) {
+        setSelectedStarterOutId(activeSuggestion.starterOut.id);
+        setSelectedReserveInId(activeSuggestion.reserveIn.id);
+      } else {
+        const nextStarter = squad.find(
+          (p) => p.isStarter && p.position !== 'GOL'
+        );
+        const nextReserve = squad.find(
+          (p) => !p.isStarter && !p.injured && p.position !== 'GOL'
+        );
+        if (nextStarter) setSelectedStarterOutId(nextStarter.id);
+        if (nextReserve) setSelectedReserveInId(nextReserve.id);
+      }
+    }
+  }, [squad, selectedStarterOutId, selectedReserveInId, activeSuggestion]);
 
   const starters = squad.filter((p) => p.isStarter);
   const reserves = squad.filter((p) => !p.isStarter);
@@ -73,7 +125,6 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
   );
   const awayPossessionPct = 100 - homePossessionPct;
 
-  // Compute live win/draw/loss probability strip (Reference Screen 2 motif)
   const goalDiff = match.homeGoals - match.awayGoals;
   const xgDiff = match.homeXG - match.awayXG;
   const homeProb = Math.min(
@@ -86,18 +137,33 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
   );
   const awayProb = Math.max(4, 100 - homeProb - drawProb);
 
-  const handleConfirmSub = () => {
+  const subsRemaining = Math.max(
+    0,
+    match.maxSubstitutions - match.substitutionsMade
+  );
+
+  const handleCycleNextSuggestion = () => {
+    if (suggestions.length === 0) return;
+    const nextIdx = (suggestionIndex + 1) % suggestions.length;
+    setSuggestionIndex(nextIdx);
+    const nextSug = suggestions[nextIdx];
+    if (nextSug) {
+      setSelectedStarterOutId(nextSug.starterOut.id);
+      setSelectedReserveInId(nextSug.reserveIn.id);
+    }
+  };
+
+  const handleApplySuggestion = (sug: SubstitutionSuggestion) => {
+    if (match.substitutionsMade >= match.maxSubstitutions) return;
+    onMakeSubstitution(sug.starterOut.id, sug.reserveIn.id);
+    setSuggestionIndex(0);
+  };
+
+  const handleConfirmManualSub = () => {
     if (!selectedStarterOutId || !selectedReserveInId) return;
     if (match.substitutionsMade >= match.maxSubstitutions) return;
     onMakeSubstitution(selectedStarterOutId, selectedReserveInId);
-    const remainingStarters = squad.filter(
-      (p) => p.isStarter && p.id !== selectedStarterOutId
-    );
-    const remainingReserves = squad.filter(
-      (p) => !p.isStarter && p.id !== selectedReserveInId && !p.injured
-    );
-    if (remainingStarters[0]) setSelectedStarterOutId(remainingStarters[0].id);
-    if (remainingReserves[0]) setSelectedReserveInId(remainingReserves[0].id);
+    setSuggestionIndex(0);
   };
 
   const renderStatComparisonRow = (
@@ -137,7 +203,78 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
 
   return (
     <div className="space-y-5">
-      {/* Reference Screen 2 Inspired Live Scoreboard Hero Banner */}
+      {/* Exclusive Match Moment Context Bar */}
+      <div className="bg-[#11141c] border border-white/10 rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          {match.phase === 'PRE_MATCH' && onExitPreMatch ? (
+            <button
+              type="button"
+              onClick={onExitPreMatch}
+              className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-200 border border-white/10 transition-colors flex items-center gap-1.5"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 text-[#b5ff00]" />
+              <span>Voltar à Preparação (Gestão & Táticas)</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-zinc-300 font-medium">
+              <ShieldAlert className="w-4 h-4 text-[#b5ff00] shrink-0" />
+              <span>
+                Modo Exclusivo de Partida — Configurações externas bloqueadas até o apito final
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 text-xs font-mono text-zinc-400">
+          <span className="text-[#b5ff00] font-bold">
+            {match.competitionLabel || `${match.roundNumber}ª Rodada`}
+          </span>
+          <span>·</span>
+          <span>{homeClub.stadium}</span>
+        </div>
+      </div>
+
+      {/* Pre-Match Exclusive Mode Decision Banner (Watch Live 2D vs Fast Simulate) */}
+      {match.phase === 'PRE_MATCH' && (
+        <div className="bg-gradient-to-r from-[#171c26] via-[#14171f] to-[#192212] border border-[#b5ff00]/35 rounded-[28px] p-5 sm:p-6 shadow-2xl">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold uppercase tracking-wider text-[#b5ff00]">
+                <Zap className="w-3.5 h-3.5" />
+                <span>Momento Exclusivo de Partida · Escolha Como Jogar</span>
+              </div>
+              <h2 className="font-display text-2xl sm:text-3xl font-extrabold uppercase tracking-tight text-white">
+                {homeClub.shortName} vs {awayClub.shortName} pronto para o apito inicial
+              </h2>
+              <p className="text-xs text-zinc-300 max-w-2xl">
+                Acompanhe a transmissão tática 2D em tempo real com controle de mentalidade e sugestões de substituições ao vivo, ou execute a simulação rápida para obter o resultado imediato dos 90 minutos.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              <button
+                type="button"
+                onClick={onStartOrResume}
+                className="px-5 py-3 rounded-2xl text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-2 shadow-lg"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                <span>Assistir Partida 2D ao Vivo</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={onInstantFinishMatch}
+                className="px-5 py-3 rounded-2xl text-xs font-extrabold bg-white hover:bg-zinc-200 text-[#090a0f] transition-colors flex items-center gap-2 shadow-lg"
+              >
+                <FastForward className="w-4 h-4" />
+                <span>Simulação Rápida (Resultado 90&apos;)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Live Scoreboard Hero Banner */}
       <div className="bg-[#14171f] border border-white/[0.08] rounded-[28px] p-4 sm:p-6 shadow-2xl space-y-5">
         {/* Top Row: Spectators Counter + Live Lime Status Pill + Speed & Sim Controls */}
         <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-white/[0.07]">
@@ -215,7 +352,7 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
                   title="Simular rapidamente até os 90 minutos"
                 >
                   <FastForward className="w-3.5 h-3.5 text-[#b5ff00]" />
-                  <span>Simular até 90&apos;</span>
+                  <span>Simular Rápido (90&apos;)</span>
                 </button>
               </>
             )}
@@ -241,7 +378,7 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
           </div>
         </div>
 
-        {/* Center Scoreboard Lockup (Exact Reference Screen 2 Typography: Giant Condensed Score 1:2) */}
+        {/* Center Scoreboard Lockup */}
         <div className="grid grid-cols-3 items-center text-center py-1">
           {/* Home Team */}
           <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-end gap-2 sm:gap-3">
@@ -253,12 +390,14 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
                 xG {match.homeXG.toFixed(2)} · {homeClub.formation}
               </div>
             </div>
-            <div
-              className="order-1 sm:order-2 w-11 h-11 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center font-display font-extrabold text-base sm:text-xl text-[#090a0f] shrink-0 shadow-lg"
-              style={{ backgroundColor: '#b5ff00' }}
-            >
-              {homeClub.abbr}
-            </div>
+            <ClubBadge
+              clubId={homeClub.id}
+              abbr={homeClub.abbr}
+              name={homeClub.name}
+              primaryColor={homeClub.primaryColor}
+              size="lg"
+              className="order-1 sm:order-2"
+            />
           </div>
 
           {/* Giant Condensed Score */}
@@ -283,9 +422,13 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
 
           {/* Away Team */}
           <div className="flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-2 sm:gap-3">
-            <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center font-display font-extrabold text-base sm:text-xl text-[#090a0f] bg-white shrink-0 shadow-lg">
-              {awayClub.abbr}
-            </div>
+            <ClubBadge
+              clubId={awayClub.id}
+              abbr={awayClub.abbr}
+              name={awayClub.name}
+              primaryColor={awayClub.primaryColor}
+              size="lg"
+            />
             <div className="text-center sm:text-left">
               <div className="font-display text-base sm:text-2xl font-extrabold uppercase tracking-tight text-white leading-none">
                 {awayClub.shortName}
@@ -322,7 +465,7 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
             </div>
           </div>
 
-          {/* Reference Screen 2 3-Tile Live Win Probability */}
+          {/* 3-Tile Live Win Probability */}
           <div className="grid grid-cols-3 gap-2 sm:w-80">
             <div className="bg-[#b5ff00] text-[#090a0f] rounded-xl px-3 py-1.5 flex items-center justify-between">
               <span className="font-display font-extrabold text-base tabular-nums">
@@ -376,7 +519,7 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
               className="px-5 py-2.5 rounded-full text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-2 whitespace-nowrap shadow-md"
             >
               <Trophy className="w-4 h-4" />
-              <span>Continuar e Ver Competições</span>
+              <span>Encerrar Partida e Voltar à Gestão</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -422,32 +565,132 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
         </div>
       )}
 
-      {/* Collapsible Live Substitution Drawer */}
-      {showSubsPanel && (
-        <div className="bg-[#14171f] border border-[#b5ff00]/40 rounded-[24px] p-4 sm:p-5 space-y-3">
-          <div className="flex items-center justify-between">
+      {/* Live Substitution Drawer with Coherent Suggestions & Reload Button */}
+      {showSubsPanel && match.phase !== 'FULL_TIME' && (
+        <div className="bg-[#14171f] border border-[#b5ff00]/40 rounded-[24px] p-4 sm:p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.07] pb-3">
             <div className="text-xs font-bold text-[#b5ff00] flex items-center gap-2">
               <UserCheck className="w-4 h-4" />
               <span>
-                Painel de Substituição Tática ao Vivo ({match.substitutionsMade}
-                /{match.maxSubstitutions} utilizadas)
+                Central de Substituições & Auxiliar Técnico ({match.substitutionsMade}
+                /{match.maxSubstitutions} utilizadas · {subsRemaining}{' '}
+                {subsRemaining === 1 ? 'restante' : 'restantes'})
               </span>
             </div>
             <button
               onClick={() => setShowSubsPanel(false)}
               className="text-xs text-zinc-400 hover:text-white"
             >
-              Fechar painel
+              Ocultar painel
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+          {/* Coherent Assistant Suggestion Card with Reload */}
+          {activeSuggestion && subsRemaining > 0 && (
+            <div className="bg-[#0b0c10] border border-[#b5ff00]/30 rounded-2xl p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-[#b5ff00] text-[#090a0f] text-[10px] font-extrabold uppercase tracking-wider">
+                    <Sparkles className="w-3 h-3" />
+                    {activeSuggestion.categoryLabel}
+                  </span>
+                  <span className="text-[11px] font-mono text-zinc-300 bg-white/[0.06] px-2.5 py-0.5 rounded-full">
+                    {activeSuggestion.compatibilityLabel}
+                  </span>
+                  <span className="text-[11px] font-mono text-zinc-400">
+                    Sugestão {(suggestionIndex % suggestions.length) + 1} de{' '}
+                    {suggestions.length}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCycleNextSuggestion}
+                    data-testid="reload-sub-suggestion"
+                    className="px-3 py-1.5 rounded-full text-xs font-bold bg-[#14171f] hover:bg-white/[0.1] text-white border border-white/15 transition-colors flex items-center gap-1.5"
+                    title="Gerar outra sugestão coerente de substituição"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-[#b5ff00]" />
+                    <span>Nova Sugestão</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleApplySuggestion(activeSuggestion)}
+                    className="px-3.5 py-1.5 rounded-full text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1.5 shadow-sm"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>Aplicar Sugestão</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-11 gap-2.5 items-center bg-[#14171f] rounded-xl p-3 border border-white/[0.06]">
+                {/* Starter Out */}
+                <div className="md:col-span-5 flex items-center justify-between gap-2 bg-[#0b0c10] rounded-xl px-3 py-2 border border-rose-500/25">
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-mono uppercase text-rose-400 font-bold">
+                      SAI DE CAMPO · {activeSuggestion.starterOut.position}
+                    </div>
+                    <div className="text-xs font-bold text-white truncate">
+                      #{activeSuggestion.starterOut.number}{' '}
+                      {activeSuggestion.starterOut.name}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 font-mono">
+                    <div className="text-xs font-bold text-rose-300">
+                      {activeSuggestion.starterLiveCondition}% fís.
+                    </div>
+                    <div className="text-[10px] text-zinc-400">
+                      OVR {activeSuggestion.starterOvr} · Nota{' '}
+                      {activeSuggestion.starterLiveRating.toFixed(1)}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="md:col-span-1 flex items-center justify-center text-[#b5ff00] font-mono text-xs font-bold">
+                  ➔
+                </div>
+
+                {/* Reserve In */}
+                <div className="md:col-span-5 flex items-center justify-between gap-2 bg-[#0b0c10] rounded-xl px-3 py-2 border border-[#b5ff00]/35">
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-mono uppercase text-[#b5ff00] font-bold">
+                      ENTRA EM CAMPO · {activeSuggestion.reserveIn.position}
+                    </div>
+                    <div className="text-xs font-bold text-white truncate">
+                      #{activeSuggestion.reserveIn.number}{' '}
+                      {activeSuggestion.reserveIn.name}
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 font-mono">
+                    <div className="text-xs font-bold text-[#b5ff00]">
+                      {activeSuggestion.reserveCondition}% fís.
+                    </div>
+                    <div className="text-[10px] text-zinc-400">
+                      OVR {activeSuggestion.reserveOvr} · Adeq.{' '}
+                      {activeSuggestion.roleSuitabilityPct}%
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-xs text-zinc-300 leading-relaxed">
+                <strong className="text-[#b5ff00]">Análise do Auxiliar:</strong>{' '}
+                {activeSuggestion.reason}
+              </p>
+            </div>
+          )}
+
+          {/* Manual Override Selector */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end pt-1">
             <div>
               <label
                 htmlFor="sub-out-select"
                 className="block text-xs text-zinc-400 mb-1"
               >
-                Sai de Campo (Titular em Jogo)
+                Escolha Manual — Sai (Titular em Jogo)
               </label>
               <select
                 id="sub-out-select"
@@ -477,7 +720,7 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
                 htmlFor="sub-in-select"
                 className="block text-xs text-zinc-400 mb-1"
               >
-                Entra em Campo (Banco de Reservas)
+                Escolha Manual — Entra (Banco de Reservas)
               </label>
               <select
                 id="sub-in-select"
@@ -496,11 +739,11 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
             </div>
 
             <button
-              onClick={handleConfirmSub}
+              onClick={handleConfirmManualSub}
               disabled={match.substitutionsMade >= match.maxSubstitutions}
-              className="py-2.5 px-4 rounded-full text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] disabled:bg-zinc-800 disabled:text-zinc-500 text-[#090a0f] transition-colors"
+              className="py-2.5 px-4 rounded-full text-xs font-extrabold bg-white hover:bg-[#b5ff00] disabled:bg-zinc-800 disabled:text-zinc-500 text-[#090a0f] transition-colors"
             >
-              Confirmar Substituição Agora
+              Confirmar Seleção Manual
             </button>
           </div>
         </div>

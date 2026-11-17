@@ -266,8 +266,18 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
             <div className="font-display text-4xl sm:text-6xl font-extrabold tabular-nums text-white tracking-tight leading-none">
               {match.homeGoals}:{match.awayGoals}
             </div>
-            <div className="text-[10px] sm:text-[11px] font-mono text-zinc-400 mt-1.5 truncate max-w-[120px] sm:max-w-none">
-              {homeClub.stadium}
+            {match.homePenalties !== null &&
+              match.homePenalties !== undefined &&
+              match.awayPenalties !== null &&
+              match.awayPenalties !== undefined && (
+                <div className="text-[11px] font-mono font-bold text-[#b5ff00] mt-1">
+                  Pênaltis: {match.homePenalties}:{match.awayPenalties}
+                </div>
+              )}
+            <div className="text-[10px] sm:text-[11px] font-mono text-zinc-400 mt-1.5 truncate max-w-[140px] sm:max-w-none">
+              {match.competitionLabel
+                ? `${match.competitionLabel} · ${homeClub.stadium}`
+                : homeClub.stadium}
             </div>
           </div>
 
@@ -342,7 +352,7 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
         </div>
       </div>
 
-      {/* Full-Time Round Summary & Other 9 Matches Results */}
+      {/* Full-Time Round Summary & Parallel Stage Results */}
       {match.phase === 'FULL_TIME' && (
         <div className="bg-[#14171f] border border-[#b5ff00]/50 rounded-[28px] p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/[0.07] pb-3.5">
@@ -350,13 +360,14 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
               <div className="flex items-center gap-2 text-[#b5ff00] text-xs font-bold">
                 <CheckCircle2 className="w-4 h-4" />
                 <span>
-                  Fim de Jogo (90&apos;) — Os outros 9 jogos da{' '}
-                  {match.roundNumber}ª Rodada foram simulados e a tabela de 20
-                  clubes foi atualizada!
+                  Fim de Jogo (90&apos;) —{' '}
+                  {match.winnerClubId
+                    ? `Classificado: ${clubMap.get(match.winnerClubId)?.name || ''}`
+                    : `Jogos de ${match.competitionLabel || `${match.roundNumber}ª Rodada`} simulados e classificação atualizada!`}
                 </span>
               </div>
               <h3 className="font-display text-2xl font-extrabold uppercase tracking-tight text-white mt-1">
-                Placar Final dos 10 Jogos da {match.roundNumber}ª Rodada
+                Resultados — {match.competitionLabel || `${match.roundNumber}ª Rodada`}
               </h3>
             </div>
 
@@ -365,40 +376,48 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
               className="px-5 py-2.5 rounded-full text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-2 whitespace-nowrap shadow-md"
             >
               <Trophy className="w-4 h-4" />
-              <span>Ver Tabela Atualizada (20 Clubes)</span>
+              <span>Continuar e Ver Competições</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-            {roundFixtures
-              .filter((f) => f.roundNumber === match.roundNumber)
-              .map((fix) => {
-                const hClub = clubMap.get(fix.homeClubId);
-                const aClub = clubMap.get(fix.awayClubId);
-                return (
-                  <div
-                    key={fix.id}
-                    className={`px-3.5 py-2.5 rounded-2xl border text-xs font-mono tabular-nums ${
-                      fix.isUserMatch
-                        ? 'bg-[#b5ff00] text-[#090a0f] border-[#b5ff00] font-bold'
-                        : 'bg-[#0b0c10] border-white/[0.07] text-zinc-200'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="font-sans font-semibold truncate max-w-[75px]">
-                        {hClub?.shortName}
-                      </span>
-                      <span className="font-extrabold whitespace-nowrap">
-                        {fix.homeGoals ?? 0} - {fix.awayGoals ?? 0}
-                      </span>
-                      <span className="font-sans font-semibold truncate max-w-[75px] text-right">
-                        {aClub?.shortName}
-                      </span>
-                    </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
+            {roundFixtures.slice(0, 16).map((fix) => {
+              const hClub = clubMap.get(fix.homeClubId);
+              const aClub = clubMap.get(fix.awayClubId);
+              const hasPens =
+                fix.homePenalties !== null &&
+                fix.homePenalties !== undefined &&
+                fix.awayPenalties !== null &&
+                fix.awayPenalties !== undefined;
+              return (
+                <div
+                  key={fix.id}
+                  className={`px-3.5 py-2.5 rounded-2xl border text-xs font-mono tabular-nums ${
+                    fix.isUserMatch
+                      ? 'bg-[#b5ff00] text-[#090a0f] border-[#b5ff00] font-bold'
+                      : 'bg-[#0b0c10] border-white/[0.07] text-zinc-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="font-sans font-semibold truncate max-w-[75px]">
+                      {hClub?.shortName}
+                    </span>
+                    <span className="font-extrabold whitespace-nowrap">
+                      {fix.homeGoals ?? 0} - {fix.awayGoals ?? 0}
+                    </span>
+                    <span className="font-sans font-semibold truncate max-w-[75px] text-right">
+                      {aClub?.shortName}
+                    </span>
                   </div>
-                );
-              })}
+                  {hasPens && (
+                    <div className="text-[10px] text-center opacity-80 mt-0.5">
+                      Pen: {fix.homePenalties} - {fix.awayPenalties}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

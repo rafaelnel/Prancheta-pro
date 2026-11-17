@@ -1,4 +1,9 @@
 import { CareerSaveData, CareerSlotIndex } from '../types/football';
+import { CONMEBOL_FOREIGN_CLUBS } from '../data/initialDatabase';
+import {
+  createInitialCopaDoBrasil,
+  createInitialLibertadores,
+} from '../data/cupFactory';
 
 export const MAX_CAREER_SLOTS = 4;
 export const CAREER_SLOTS: CareerSlotIndex[] = [1, 2, 3, 4];
@@ -73,13 +78,36 @@ function writeSlotMap(
   }
 }
 
+function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
+  const existingIds = new Set(save.clubs.map((c) => c.id));
+  const missingForeign = CONMEBOL_FOREIGN_CLUBS.filter(
+    (c) => !existingIds.has(c.id)
+  ).map((c) => ({
+    ...c,
+    instructions: { ...c.instructions },
+    starPlayers: c.starPlayers.map((s) => ({ ...s })),
+  }));
+
+  return {
+    ...save,
+    clubs:
+      missingForeign.length > 0 ? [...save.clubs, ...missingForeign] : save.clubs,
+    seasonStepIndex: save.seasonStepIndex ?? Math.max(0, save.currentRound - 1),
+    activeCompetition: save.activeCompetition ?? 'BRASILEIRAO',
+    copaDoBrasil:
+      save.copaDoBrasil ?? createInitialCopaDoBrasil(save.userClubId),
+    libertadores:
+      save.libertadores ?? createInitialLibertadores(save.userClubId),
+  };
+}
+
 export function loadAllCareerSlots(
   storage: StorageAdapter | null = getDefaultStorage()
 ): Array<CareerSaveData | null> {
   const map = readSlotMap(storage);
   return CAREER_SLOTS.map((slot) => {
     const item = map[String(slot)];
-    return isValidCareerSave(item) ? item : null;
+    return isValidCareerSave(item) ? hydrateCareerSave(item) : null;
   });
 }
 
@@ -89,7 +117,7 @@ export function loadCareerSlot(
 ): CareerSaveData | null {
   const map = readSlotMap(storage);
   const item = map[String(slotIndex)];
-  return isValidCareerSave(item) ? item : null;
+  return isValidCareerSave(item) ? hydrateCareerSave(item) : null;
 }
 
 export function getLatestCareerSave(
@@ -138,11 +166,11 @@ export function parseCareerBackup(
   try {
     const parsed = JSON.parse(jsonText) as unknown;
     if (!isValidCareerSave(parsed)) return null;
-    return {
+    return hydrateCareerSave({
       ...parsed,
       slotIndex: targetSlot,
       savedAt: new Date().toISOString(),
-    };
+    });
   } catch {
     return null;
   }

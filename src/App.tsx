@@ -15,7 +15,7 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import {
-  INITIAL_CLUBS,
+  ALL_WORLD_CLUBS,
   INITIAL_INBOX_MESSAGES,
   INITIAL_STANDINGS,
   INITIAL_USER_SQUAD,
@@ -23,6 +23,16 @@ import {
   generateLeagueSchedule,
   getInitialStandingsForDivision,
 } from './data/initialDatabase';
+import {
+  SEASON_CALENDAR,
+  advanceCopaDoBrasilStage,
+  advanceLibertadoresGroupRound,
+  advanceLibertadoresKnockoutStage,
+  createInitialCopaDoBrasil,
+  createInitialLibertadores,
+  findUserFixtureForStep,
+  getCupPrizeMoney,
+} from './data/cupFactory';
 import { createNewCareerSave } from './data/careerFactory';
 import { FORMATIONS, getRoleById } from './data/tacticsData';
 import {
@@ -37,8 +47,10 @@ import {
   CareerSaveData,
   CareerSlotIndex,
   Club,
+  CopaDoBrasilState,
   FormationType,
   InboxMessage,
+  LibertadoresState,
   LiveMatchState,
   MentalityType,
   NavigationTab,
@@ -65,6 +77,7 @@ import { DashboardInbox } from './components/DashboardInbox';
 import { SquadView } from './components/SquadView';
 import { TacticalBoard } from './components/TacticalBoard';
 import { MatchEngineView } from './components/MatchEngineView';
+import { AnnualCalendarView } from './components/AnnualCalendarView';
 import { CompetitionsView } from './components/CompetitionsView';
 import { FinancesView } from './components/FinancesView';
 import { PlayerProfileModal } from './components/PlayerProfileModal';
@@ -102,7 +115,7 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<NavigationTab>('inbox');
   const [clubs, setClubs] = useState<Club[]>(
-    () => initialAutostartSave?.clubs || INITIAL_CLUBS
+    () => initialAutostartSave?.clubs || ALL_WORLD_CLUBS
   );
   const [squad, setSquad] = useState<Player[]>(
     () => initialAutostartSave?.squad || INITIAL_USER_SQUAD
@@ -123,11 +136,24 @@ export default function App() {
       initialAutostartSave?.secondaryFixtures ||
       generateLeagueSchedule('__none__', 'B')
   );
+  const [copaDoBrasil, setCopaDoBrasil] = useState<CopaDoBrasilState>(
+    () =>
+      initialAutostartSave?.copaDoBrasil ||
+      createInitialCopaDoBrasil(initialAutostartSave?.userClubId || USER_CLUB_ID)
+  );
+  const [libertadores, setLibertadores] = useState<LibertadoresState>(
+    () =>
+      initialAutostartSave?.libertadores ||
+      createInitialLibertadores(initialAutostartSave?.userClubId || USER_CLUB_ID)
+  );
   const [messages, setMessages] = useState<InboxMessage[]>(
     () => initialAutostartSave?.messages || INITIAL_INBOX_MESSAGES
   );
 
-  // Calendar & Round Progression
+  // Calendar & Multi-Competition Progression
+  const [seasonStepIndex, setSeasonStepIndex] = useState<number>(
+    initialAutostartSave?.seasonStepIndex || 0
+  );
   const [currentRound, setCurrentRound] = useState<number>(
     initialAutostartSave?.currentRound || 1
   );
@@ -153,12 +179,34 @@ export default function App() {
     [clubs, userClubId]
   );
 
+  const currentCalendarStep = useMemo(
+    () =>
+      SEASON_CALENDAR[seasonStepIndex] ||
+      SEASON_CALENDAR[SEASON_CALENDAR.length - 1],
+    [seasonStepIndex]
+  );
+
   const currentUserFixture = useMemo(
     () =>
+      findUserFixtureForStep(
+        currentCalendarStep,
+        userClubId,
+        fixtures,
+        copaDoBrasil,
+        libertadores
+      ) ||
       fixtures.find(
         (f) => f.roundNumber === currentRound && f.isUserMatch
-      ) || fixtures[0],
-    [fixtures, currentRound]
+      ) ||
+      fixtures[0],
+    [
+      currentCalendarStep,
+      userClubId,
+      fixtures,
+      copaDoBrasil,
+      libertadores,
+      currentRound,
+    ]
   );
 
   const homeClub = useMemo(
@@ -214,12 +262,15 @@ export default function App() {
         slotIndex: targetSlot,
         managerName: override?.managerName ?? managerName,
         userClubId: nextUserClubId,
-        division: nextClub.division,
+        division: nextClub.division === 'B' ? 'B' : 'A',
         clubName: nextClub.name,
         clubShortName: nextClub.shortName,
         clubAbbr: nextClub.abbr,
         clubPrimaryColor: nextClub.primaryColor,
         currentRound: override?.currentRound ?? currentRound,
+        seasonStepIndex: override?.seasonStepIndex ?? seasonStepIndex,
+        activeCompetition:
+          override?.activeCompetition ?? currentCalendarStep.competition,
         dayOffset: override?.dayOffset ?? dayOffset,
         isMatchDay: override?.isMatchDay ?? isMatchDay,
         userRank: nextRank > 0 ? nextRank : 1,
@@ -233,6 +284,8 @@ export default function App() {
         secondaryStandings:
           override?.secondaryStandings ?? secondaryStandings,
         secondaryFixtures: override?.secondaryFixtures ?? secondaryFixtures,
+        copaDoBrasil: override?.copaDoBrasil ?? copaDoBrasil,
+        libertadores: override?.libertadores ?? libertadores,
         messages: override?.messages ?? messages,
         matchState: override?.matchState ?? matchState,
       };
@@ -249,12 +302,16 @@ export default function App() {
       userClub,
       managerName,
       currentRound,
+      seasonStepIndex,
+      currentCalendarStep.competition,
       dayOffset,
       isMatchDay,
       squad,
       fixtures,
       secondaryStandings,
       secondaryFixtures,
+      copaDoBrasil,
+      libertadores,
       messages,
       matchState,
     ]
@@ -275,8 +332,15 @@ export default function App() {
     setSecondaryFixtures(
       save.secondaryFixtures || generateLeagueSchedule('__none__', otherDivision)
     );
+    setCopaDoBrasil(
+      save.copaDoBrasil || createInitialCopaDoBrasil(save.userClubId)
+    );
+    setLibertadores(
+      save.libertadores || createInitialLibertadores(save.userClubId)
+    );
     setMessages(save.messages);
     setCurrentRound(save.currentRound);
+    setSeasonStepIndex(save.seasonStepIndex ?? 0);
     setDayOffset(save.dayOffset);
     setIsMatchDay(save.isMatchDay);
     setMatchState({ ...save.matchState, isRunning: false });
@@ -366,71 +430,143 @@ export default function App() {
     }
   }, [screen, activeTab, matchState.phase, matchState.isRunning]);
 
-  // Process automatic round simulation & standings update when match reaches 90' FULL_TIME
+  // Process automatic round/cup simulation & standings update when match reaches 90' FULL_TIME
   useEffect(() => {
     if (matchState.phase === 'FULL_TIME' && !matchState.roundProcessed) {
-      const updatedFixtures = simulateRoundFixtures(
-        fixtures,
-        matchState.roundNumber,
-        {
-          fixtureId: matchState.fixtureId,
-          homeGoals: matchState.homeGoals,
-          awayGoals: matchState.awayGoals,
-          homeXG: matchState.homeXG,
-          awayXG: matchState.awayXG,
-        },
-        clubs
-      );
-
-      const roundCompletedFixtures = updatedFixtures.filter(
-        (f) => f.roundNumber === matchState.roundNumber
-      );
-
-      const newStandings = updateStandingsWithRound(
-        standings,
-        roundCompletedFixtures
-      );
-
-      const updatedSecondaryFixtures = simulateRoundFixtures(
-        secondaryFixtures,
-        matchState.roundNumber,
-        {
-          fixtureId: '__none__',
-          homeGoals: 0,
-          awayGoals: 0,
-          homeXG: 0,
-          awayXG: 0,
-        },
-        clubs
-      );
-      const secondaryRoundCompleted = updatedSecondaryFixtures.filter(
-        (f) => f.roundNumber === matchState.roundNumber
-      );
-      const newSecondaryStandings = updateStandingsWithRound(
-        secondaryStandings,
-        secondaryRoundCompleted
-      );
-
+      const comp = matchState.competition || 'BRASILEIRAO';
       const userGoals = matchState.isUserHome
         ? matchState.homeGoals
         : matchState.awayGoals;
       const oppGoals = matchState.isUserHome
         ? matchState.awayGoals
         : matchState.homeGoals;
-      const userWon = userGoals > oppGoals;
-      const userDrew = userGoals === oppGoals;
+      const userWon90 = userGoals > oppGoals;
+      const userDrew90 = userGoals === oppGoals;
+      const userAdvanced = matchState.winnerClubId
+        ? matchState.winnerClubId === userClubId
+        : userWon90;
 
-      // Update club cash balance (gate receipts) and board confidence
       const gateRevenue = matchState.isUserHome
         ? Math.round((userClub.capacity * 0.85 * 90) / 100000) * 100000
         : 950000;
-      const confidenceDelta = userWon ? 4 : userDrew ? 1 : -4;
+
+      let updatedFixtures = fixtures;
+      let newStandings = standings;
+      let updatedSecondaryFixtures = secondaryFixtures;
+      let newSecondaryStandings = secondaryStandings;
+      let updatedCopaDoBrasil = copaDoBrasil;
+      let updatedLibertadores = libertadores;
+      let prizeMoney = 0;
+
+      const userMatchPayload = {
+        fixtureId: matchState.fixtureId,
+        homeGoals: matchState.homeGoals,
+        awayGoals: matchState.awayGoals,
+        homeXG: matchState.homeXG,
+        awayXG: matchState.awayXG,
+        homePenalties: matchState.homePenalties,
+        awayPenalties: matchState.awayPenalties,
+        winnerClubId: matchState.winnerClubId,
+      };
+
+      if (comp === 'COPA_DO_BRASIL' && currentCalendarStep.copaStage) {
+        updatedCopaDoBrasil = advanceCopaDoBrasilStage(
+          copaDoBrasil,
+          currentCalendarStep.copaStage,
+          userMatchPayload,
+          clubs,
+          userClubId
+        );
+        prizeMoney = getCupPrizeMoney(
+          'COPA_DO_BRASIL',
+          currentCalendarStep.copaStage,
+          userAdvanced,
+          currentCalendarStep.copaStage === 'Final' && userAdvanced
+        );
+      } else if (comp === 'LIBERTADORES') {
+        if (
+          currentCalendarStep.libStage === 'Grupos' &&
+          currentCalendarStep.libGroupRound
+        ) {
+          updatedLibertadores = advanceLibertadoresGroupRound(
+            libertadores,
+            currentCalendarStep.libGroupRound,
+            userMatchPayload,
+            clubs,
+            userClubId
+          );
+          prizeMoney = getCupPrizeMoney(
+            'LIBERTADORES',
+            'Grupo',
+            userWon90,
+            false
+          );
+        } else if (
+          currentCalendarStep.libStage &&
+          currentCalendarStep.libStage !== 'Grupos'
+        ) {
+          updatedLibertadores = advanceLibertadoresKnockoutStage(
+            libertadores,
+            currentCalendarStep.libStage,
+            userMatchPayload,
+            clubs,
+            userClubId
+          );
+          prizeMoney = getCupPrizeMoney(
+            'LIBERTADORES',
+            currentCalendarStep.libStage,
+            userAdvanced,
+            currentCalendarStep.libStage === 'Final' && userAdvanced
+          );
+        }
+      } else {
+        updatedFixtures = simulateRoundFixtures(
+          fixtures,
+          matchState.roundNumber,
+          userMatchPayload,
+          clubs
+        );
+        const roundCompletedFixtures = updatedFixtures.filter(
+          (f) => f.roundNumber === matchState.roundNumber
+        );
+        newStandings = updateStandingsWithRound(
+          standings,
+          roundCompletedFixtures
+        );
+
+        updatedSecondaryFixtures = simulateRoundFixtures(
+          secondaryFixtures,
+          matchState.roundNumber,
+          {
+            fixtureId: '__none__',
+            homeGoals: 0,
+            awayGoals: 0,
+            homeXG: 0,
+            awayXG: 0,
+          },
+          clubs
+        );
+        const secondaryRoundCompleted = updatedSecondaryFixtures.filter(
+          (f) => f.roundNumber === matchState.roundNumber
+        );
+        newSecondaryStandings = updateStandingsWithRound(
+          secondaryStandings,
+          secondaryRoundCompleted
+        );
+      }
+
+      const confidenceDelta = userAdvanced
+        ? 4
+        : userDrew90 && !matchState.isKnockout
+        ? 1
+        : -4;
+      const totalRevenue = gateRevenue + prizeMoney;
 
       const updatedClubs = clubs.map((c) =>
         c.id === userClubId
           ? {
               ...c,
-              cashBalance: c.cashBalance + gateRevenue,
+              cashBalance: c.cashBalance + totalRevenue,
               boardConfidence: Math.min(
                 100,
                 Math.max(30, c.boardConfidence + confidenceDelta)
@@ -458,34 +594,52 @@ export default function App() {
         };
       });
 
-      // Add post-match report to Inbox
       const userPos =
         newStandings.findIndex((s) => s.clubId === userClubId) + 1;
-      const resultLabel = userWon
+      const penDetail =
+        matchState.homePenalties !== null &&
+        matchState.homePenalties !== undefined &&
+        matchState.awayPenalties !== null &&
+        matchState.awayPenalties !== undefined
+          ? ` (Pênaltis: ${matchState.homePenalties} x ${matchState.awayPenalties})`
+          : '';
+      const resultLabel = userAdvanced
         ? 'Vitória maiúscula'
-        : userDrew
+        : userDrew90 && !matchState.isKnockout
         ? 'Empate disputado'
-        : 'Revés doloroso';
+        : 'Revés duro';
+
+      const compDisplay =
+        matchState.competitionLabel ||
+        `${matchState.roundNumber}ª Rodada · Série ${userClub.division === 'B' ? 'B' : 'A'}`;
 
       const postMatchMsg: InboxMessage = {
-        id: `msg-post-r${matchState.roundNumber}-${Date.now()}`,
-        date: `${formatCalendarDate(dayOffset)} · 20:15`,
+        id: `msg-post-${comp}-${Date.now()}`,
+        date: `${formatCalendarDate(dayOffset)} · 22:15`,
         sender: 'Comissão Técnica',
         senderRole: 'Auxiliar Técnico',
-        subject: `Relatório (${matchState.roundNumber}ªR): ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName}`,
+        subject: `Relatório (${compDisplay}): ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName}`,
         category: 'Pós-Jogo',
-        priority: userWon ? 'positive' : userDrew ? 'normal' : 'warning',
+        priority: userAdvanced
+          ? 'positive'
+          : userDrew90 && !matchState.isKnockout
+          ? 'normal'
+          : 'warning',
         read: false,
         body: [
-          `${resultLabel} na ${matchState.roundNumber}ª Rodada da Série ${userClub.division}. Placar: ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName} (xG: ${matchState.homeXG.toFixed(2)} vs ${matchState.awayXG.toFixed(2)}).`,
-          `${userClub.name} agora ocupa o ${userPos}º lugar. Bilheteria adicionada: ${formatCompactBRL(gateRevenue)}.`,
+          `${resultLabel} pela ${compDisplay}. Placar: ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName}${penDetail} (xG: ${matchState.homeXG.toFixed(2)} vs ${matchState.awayXG.toFixed(2)}).`,
+          `Receita da partida (bilheteria + premiação): ${formatCompactBRL(totalRevenue)}.`,
         ],
         bulletPoints: [
-          `Placar: ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName}`,
+          `Placar: ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName}${penDetail}`,
           `Finalizações: ${matchState.homeShots} (${matchState.homeShotsOnTarget} no gol) vs ${matchState.awayShots} (${matchState.awayShotsOnTarget} no gol)`,
-          `Posição na Série ${userClub.division}: ${userPos}º lugar`,
+          comp === 'BRASILEIRAO'
+            ? `Posição na Série ${userClub.division}: ${userPos}º lugar`
+            : userAdvanced
+            ? `Classificação / resultado positivo garantido em ${compDisplay}`
+            : `Fim da linha ou tropeço em ${compDisplay}`,
         ],
-        actionLabel: 'Ver Tabela Completa',
+        actionLabel: 'Ver Competições',
         actionTargetTab: 'competitions',
       };
 
@@ -498,10 +652,11 @@ export default function App() {
       setStandings(newStandings);
       setSecondaryFixtures(updatedSecondaryFixtures);
       setSecondaryStandings(newSecondaryStandings);
+      setCopaDoBrasil(updatedCopaDoBrasil);
+      setLibertadores(updatedLibertadores);
       setMessages(updatedMessages);
       setMatchState(processedMatchState);
 
-      // Auto-save post-match progress
       persistCareer({
         clubs: updatedClubs,
         squad: updatedSquad,
@@ -509,6 +664,8 @@ export default function App() {
         standings: newStandings,
         secondaryFixtures: updatedSecondaryFixtures,
         secondaryStandings: newSecondaryStandings,
+        copaDoBrasil: updatedCopaDoBrasil,
+        libertadores: updatedLibertadores,
         messages: updatedMessages,
         matchState: processedMatchState,
       });
@@ -520,6 +677,9 @@ export default function App() {
     standings,
     secondaryFixtures,
     secondaryStandings,
+    copaDoBrasil,
+    libertadores,
+    currentCalendarStep,
     squad,
     messages,
     dayOffset,
@@ -873,24 +1033,105 @@ export default function App() {
   };
 
   const handleAdvanceToNextRound = () => {
-    const nextRound = Math.min(19, currentRound + 1);
-    const nextRoundFixture =
-      fixtures.find((f) => f.roundNumber === nextRound && f.isUserMatch) ||
-      fixtures[0];
-    const nextHome =
-      clubs.find((c) => c.id === nextRoundFixture.homeClubId) || clubs[0];
-    const nextAway =
-      clubs.find((c) => c.id === nextRoundFixture.awayClubId) || clubs[1];
+    let nextIdx = Math.min(SEASON_CALENDAR.length - 1, seasonStepIndex + 1);
+    let nextCdb = copaDoBrasil;
+    let nextLib = libertadores;
+    let nextLeagueRound = currentRound;
 
-    // Recover squad condition between rounds
+    // Auto-simulate any cup rounds where user does not participate or was eliminated
+    while (nextIdx < SEASON_CALENDAR.length - 1) {
+      const candidateStep = SEASON_CALENDAR[nextIdx];
+      if (candidateStep.leagueRound) {
+        nextLeagueRound = candidateStep.leagueRound;
+        break;
+      }
+
+      const candidateUserFix = findUserFixtureForStep(
+        candidateStep,
+        userClubId,
+        fixtures,
+        nextCdb,
+        nextLib
+      );
+      if (candidateUserFix) {
+        break;
+      }
+
+      if (
+        candidateStep.competition === 'COPA_DO_BRASIL' &&
+        candidateStep.copaStage
+      ) {
+        nextCdb = advanceCopaDoBrasilStage(
+          nextCdb,
+          candidateStep.copaStage,
+          null,
+          clubs,
+          userClubId
+        );
+      } else if (candidateStep.competition === 'LIBERTADORES') {
+        if (
+          candidateStep.libStage === 'Grupos' &&
+          candidateStep.libGroupRound
+        ) {
+          nextLib = advanceLibertadoresGroupRound(
+            nextLib,
+            candidateStep.libGroupRound,
+            null,
+            clubs,
+            userClubId
+          );
+        } else if (
+          candidateStep.libStage &&
+          candidateStep.libStage !== 'Grupos'
+        ) {
+          nextLib = advanceLibertadoresKnockoutStage(
+            nextLib,
+            candidateStep.libStage,
+            null,
+            clubs,
+            userClubId
+          );
+        }
+      }
+      nextIdx += 1;
+    }
+
+    const targetStep =
+      SEASON_CALENDAR[nextIdx] || SEASON_CALENDAR[SEASON_CALENDAR.length - 1];
+    if (targetStep.leagueRound) {
+      nextLeagueRound = targetStep.leagueRound;
+    }
+
+    const nextFixture =
+      findUserFixtureForStep(
+        targetStep,
+        userClubId,
+        fixtures,
+        nextCdb,
+        nextLib
+      ) ||
+      fixtures.find(
+        (f) => f.roundNumber === nextLeagueRound && f.isUserMatch
+      ) ||
+      fixtures[0];
+
+    const nextHome =
+      clubs.find((c) => c.id === nextFixture.homeClubId) || clubs[0];
+    const nextAway =
+      clubs.find((c) => c.id === nextFixture.awayClubId) || clubs[1];
+
+    // Recover squad condition between matches
     const recoveredSquad = squad.map((p) => ({
       ...p,
       condition: Math.min(99, p.condition + 14),
     }));
-    const nextDayOffset = dayOffset + 6;
+    const nextDayOffset = Math.max(
+      dayOffset + 1,
+      (targetStep.dayOffset ?? dayOffset + 4) - 1
+    );
     const nextMatch = createInitialMatchState(
-      nextRound,
-      nextRoundFixture,
+      nextLeagueRound,
+      nextFixture,
       nextHome,
       nextAway,
       recoveredSquad,
@@ -898,7 +1139,10 @@ export default function App() {
     );
 
     setSquad(recoveredSquad);
-    setCurrentRound(nextRound);
+    setCopaDoBrasil(nextCdb);
+    setLibertadores(nextLib);
+    setSeasonStepIndex(nextIdx);
+    setCurrentRound(nextLeagueRound);
     setDayOffset(nextDayOffset);
     setIsMatchDay(false);
     setMatchState(nextMatch);
@@ -906,7 +1150,11 @@ export default function App() {
 
     persistCareer({
       squad: recoveredSquad,
-      currentRound: nextRound,
+      copaDoBrasil: nextCdb,
+      libertadores: nextLib,
+      seasonStepIndex: nextIdx,
+      activeCompetition: targetStep.competition,
+      currentRound: nextLeagueRound,
       dayOffset: nextDayOffset,
       isMatchDay: false,
       matchState: nextMatch,
@@ -946,6 +1194,40 @@ export default function App() {
     [squad, inspectedPlayerId]
   );
 
+  const activeRoundFixturesForMatchView = useMemo(() => {
+    if (
+      currentCalendarStep.competition === 'COPA_DO_BRASIL' &&
+      currentCalendarStep.copaStage
+    ) {
+      return copaDoBrasil.fixturesByStage[currentCalendarStep.copaStage] || [];
+    }
+    if (currentCalendarStep.competition === 'LIBERTADORES') {
+      if (
+        currentCalendarStep.libStage === 'Grupos' &&
+        currentCalendarStep.libGroupRound
+      ) {
+        const grpRound = currentCalendarStep.libGroupRound;
+        const all = libertadores.groups.flatMap((g) =>
+          g.fixtures.filter((f) => f.roundNumber === grpRound)
+        );
+        return all.sort((a, b) => Number(b.isUserMatch) - Number(a.isUserMatch));
+      }
+      if (
+        currentCalendarStep.libStage &&
+        currentCalendarStep.libStage !== 'Grupos'
+      ) {
+        return libertadores.knockoutFixtures[currentCalendarStep.libStage] || [];
+      }
+    }
+    return fixtures.filter((f) => f.roundNumber === matchState.roundNumber);
+  }, [
+    currentCalendarStep,
+    copaDoBrasil,
+    libertadores,
+    fixtures,
+    matchState.roundNumber,
+  ]);
+
   // Render Entry / Career Slot Selection Screen when on 'hub'
   if (screen === 'hub') {
     return (
@@ -968,14 +1250,14 @@ export default function App() {
   const primaryActionLabel =
     activeTab === 'match'
       ? matchState.phase === 'FULL_TIME'
-        ? 'Concluir Rodada e Ver Tabela'
+        ? 'Concluir Jogo e Avançar'
         : matchState.isRunning
         ? `Em Jogo (${matchState.minute}') · Pausar`
         : matchState.phase === 'HALF_TIME'
         ? 'Iniciar 2º Tempo'
         : "Apito Inicial (0')"
       : isMatchDay
-      ? `Ir para o Jogo (${currentRound}ª Rodada)`
+      ? `Ir para o Jogo`
       : 'Continuar Calendário';
 
   const mobilePrimaryActionLabel =
@@ -1025,6 +1307,13 @@ export default function App() {
           : `R${currentRound}`,
     },
     {
+      id: 'calendar' as const,
+      label: 'Calendário Anual',
+      mobileLabel: 'Agenda',
+      icon: Calendar,
+      badge: '2026',
+    },
+    {
       id: 'competitions' as const,
       label: 'Competições',
       mobileLabel: 'Liga',
@@ -1034,7 +1323,7 @@ export default function App() {
     {
       id: 'finances' as const,
       label: 'Finanças',
-      mobileLabel: 'Finanças',
+      mobileLabel: 'Caixa',
       icon: Wallet,
       badge: null,
     },
@@ -1103,9 +1392,13 @@ export default function App() {
         <div className="p-3.5 space-y-2.5">
           <div className="p-4 rounded-2xl border border-white/[0.07] bg-[#0b0c10] space-y-2">
             <div className="flex items-center justify-between text-[11px] text-zinc-400">
-              <span>Próximo Compromisso</span>
-              <span className="font-mono font-bold text-[#b5ff00]">
-                {currentRound}ª Rodada
+              <span>Próximo Jogo</span>
+              <span className="font-mono font-bold text-[#b5ff00] truncate max-w-[130px]">
+                {currentCalendarStep.competition === 'COPA_DO_BRASIL'
+                  ? `CdB · ${currentCalendarStep.copaStage}`
+                  : currentCalendarStep.competition === 'LIBERTADORES'
+                  ? `Lib · ${currentCalendarStep.libStage === 'Grupos' ? `G${currentCalendarStep.libGroupRound}` : currentCalendarStep.libStage}`
+                  : `${currentRound}ª Rodada`}
               </span>
             </div>
             <div className="font-display text-base font-extrabold uppercase tracking-tight text-white truncate">
@@ -1188,8 +1481,13 @@ export default function App() {
 
           {/* Right: Calendar Date, Cash Balance, Board Confidence, Save/Hub Actions & Primary Pill */}
           <div className="flex items-center gap-1.5 sm:gap-3 lg:gap-4 shrink-0">
-            {/* Data atual do calendário */}
-            <div className="hidden md:flex items-center gap-2 text-xs">
+            {/* Data atual do calendário (atalho para o Calendário Anual) */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('calendar')}
+              title="Abrir Calendário Anual 2026"
+              className="hidden md:flex items-center gap-2 text-xs text-left hover:bg-white/[0.05] px-2.5 py-1.5 rounded-xl transition-colors"
+            >
               <Calendar className="w-4 h-4 text-[#b5ff00]" />
               <div>
                 <div className="text-[10px] text-zinc-400 leading-none">
@@ -1199,7 +1497,7 @@ export default function App() {
                   {formatCalendarDate(dayOffset)}
                 </div>
               </div>
-            </div>
+            </button>
 
             {/* Saldo em Caixa */}
             <div className="hidden xl:flex items-center gap-2 text-xs border-l border-white/[0.08] pl-4">
@@ -1296,6 +1594,8 @@ export default function App() {
               clubs={clubs}
               squad={squad}
               currentRound={currentRound}
+              activeCompetition={currentCalendarStep.competition}
+              competitionLabel={currentCalendarStep.label}
               isMatchDay={isMatchDay}
               onGoToMatch={() => {
                 setIsMatchDay(true);
@@ -1332,7 +1632,7 @@ export default function App() {
               homeClub={homeClub}
               awayClub={awayClub}
               squad={squad}
-              roundFixtures={fixtures}
+              roundFixtures={activeRoundFixturesForMatchView}
               clubs={clubs}
               userMentality={userClub.instructions.mentality}
               onStartOrResume={handleStartOrResumeMatch}
@@ -1347,6 +1647,24 @@ export default function App() {
             />
           )}
 
+          {activeTab === 'calendar' && (
+            <AnnualCalendarView
+              userClub={userClub}
+              clubs={clubs}
+              fixtures={fixtures}
+              copaDoBrasil={copaDoBrasil}
+              libertadores={libertadores}
+              seasonStepIndex={seasonStepIndex}
+              dayOffset={dayOffset}
+              isMatchDay={isMatchDay}
+              onGoToMatch={() => {
+                setIsMatchDay(true);
+                setActiveTab('match');
+              }}
+              onOpenCompetitions={() => setActiveTab('competitions')}
+            />
+          )}
+
           {activeTab === 'competitions' && (
             <CompetitionsView
               standings={standings}
@@ -1354,9 +1672,12 @@ export default function App() {
               fixtures={fixtures}
               currentRound={currentRound}
               userClubId={userClubId}
-              userDivision={userClub.division}
+              userDivision={userClub.division === 'B' ? 'B' : 'A'}
               secondaryStandings={secondaryStandings}
               secondaryFixtures={secondaryFixtures}
+              copaDoBrasil={copaDoBrasil}
+              libertadores={libertadores}
+              activeCompetition={currentCalendarStep.competition}
             />
           )}
 
@@ -1369,7 +1690,7 @@ export default function App() {
       {/* Mobile Bottom Capsule Navigation Bar (< lg) */}
       <nav
         aria-label="Navegação mobile"
-        className="lg:hidden fixed bottom-2 left-2.5 right-2.5 z-40 h-14 bg-[#14171f]/95 border border-white/10 rounded-full grid grid-cols-6 items-center px-1.5 shadow-2xl select-none"
+        className="lg:hidden fixed bottom-2 left-2 right-2 z-40 h-14 bg-[#14171f]/95 border border-white/10 rounded-full grid grid-cols-7 items-center px-1 shadow-2xl select-none"
       >
         {navItems.map((item) => {
           const Icon = item.icon;

@@ -390,10 +390,29 @@ export function createInitialMatchState(
   );
 
   const initialCarrier = homeTokens[5] || homeTokens[0];
+  const competition = fixture.competition || 'BRASILEIRAO';
+  const leagueDiv = homeClub.division === 'B' ? 'Série B' : 'Série A';
+  const competitionLabel =
+    competition === 'COPA_DO_BRASIL'
+      ? `Copa do Brasil · ${fixture.stageLabel || 'Mata-Mata'}`
+      : competition === 'LIBERTADORES'
+      ? `Copa Libertadores · ${fixture.stageLabel || 'Fase de Grupos'}`
+      : `Brasileirão ${leagueDiv} · ${roundNumber}ª Rodada`;
+
+  const isKnockout =
+    competition === 'COPA_DO_BRASIL' ||
+    (competition === 'LIBERTADORES' &&
+      Boolean(fixture.stageLabel && !fixture.stageLabel.startsWith('Grupo')));
 
   return {
     roundNumber,
     fixtureId: fixture.id,
+    competition,
+    competitionLabel,
+    isKnockout,
+    homePenalties: null,
+    awayPenalties: null,
+    winnerClubId: null,
     minute: 0,
     subTick: 0,
     isRunning: false,
@@ -433,7 +452,7 @@ export function createInitialMatchState(
         minute: 0,
         type: 'INICIO',
         team: 'NEUTRAL',
-        text: `Tudo pronto no ${homeClub.stadium}! ${homeClub.name} e ${awayClub.name} perfilados para a ${roundNumber}ª Rodada do Brasileirão Série ${homeClub.division}.`,
+        text: `Tudo pronto no ${homeClub.stadium}! ${homeClub.name} e ${awayClub.name} perfilados pela ${competitionLabel}.`,
       },
     ],
     homeTokens,
@@ -846,18 +865,56 @@ export function stepMatchMinute(
   let phase: MatchPhase =
     state.phase === 'PRE_MATCH' ? 'FIRST_HALF' : state.phase;
   let isRunning = state.isRunning;
+  let homePenalties = state.homePenalties ?? null;
+  let awayPenalties = state.awayPenalties ?? null;
+  let winnerClubId = state.winnerClubId ?? null;
 
   if (nextMinute >= 90) {
     phase = 'FULL_TIME';
     isRunning = false;
+
+    if (state.isKnockout) {
+      if (homeGoals > awayGoals) {
+        winnerClubId = state.homeClubId;
+      } else if (awayGoals > homeGoals) {
+        winnerClubId = state.awayClubId;
+      } else {
+        const homeAdvantage = homeClub.reputation >= awayClub.reputation ? 0.54 : 0.48;
+        const homeWinsPens = rng() < homeAdvantage;
+        const shootouts: Array<[number, number]> = [
+          [5, 4],
+          [4, 3],
+          [4, 2],
+          [5, 3],
+          [6, 5],
+        ];
+        const [wPen, lPen] = shootouts[Math.floor(rng() * shootouts.length)];
+        homePenalties = homeWinsPens ? wPen : lPen;
+        awayPenalties = homeWinsPens ? lPen : wPen;
+        winnerClubId = homeWinsPens ? state.homeClubId : state.awayClubId;
+      }
+    }
+
+    const winnerClubName =
+      winnerClubId === state.homeClubId
+        ? homeClub.shortName
+        : winnerClubId === state.awayClubId
+        ? awayClub.shortName
+        : null;
+
+    const penText =
+      homePenalties !== null && awayPenalties !== null && winnerClubName
+        ? ` Pênaltis: ${homePenalties} x ${awayPenalties} — ${winnerClubName} classificado!`
+        : '';
+
     newEvents.unshift({
       id: `evt-ft-90`,
       minute: 90,
       type: 'FIM',
       team: 'NEUTRAL',
-      text: `90' — Apito Final! Placar encerrado: ${homeClub.name} ${homeGoals} x ${awayGoals} ${awayClub.name}.`,
+      text: `90' — Apito Final! ${homeClub.name} ${homeGoals} x ${awayGoals} ${awayClub.name}.${penText}`,
     });
-    lastActionLabel = `Partida encerrada! ${homeClub.shortName} ${homeGoals} x ${awayGoals} ${awayClub.shortName}.`;
+    lastActionLabel = `Partida encerrada! ${homeClub.shortName} ${homeGoals} x ${awayGoals} ${awayClub.shortName}.${penText}`;
   }
 
   return {
@@ -867,6 +924,9 @@ export function stepMatchMinute(
     isRunning,
     homeGoals,
     awayGoals,
+    homePenalties,
+    awayPenalties,
+    winnerClubId,
     homePossessionTicks,
     awayPossessionTicks,
     homeShots,

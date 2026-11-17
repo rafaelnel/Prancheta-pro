@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import {
   Club,
+  CompetitionType,
   InboxMessage,
   NavigationTab,
   Player,
@@ -36,6 +37,8 @@ interface DashboardInboxProps {
   clubs: Club[];
   squad: Player[];
   currentRound: number;
+  activeCompetition?: CompetitionType;
+  competitionLabel?: string;
   isMatchDay: boolean;
   onGoToMatch: () => void;
 }
@@ -53,6 +56,8 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   clubs,
   squad,
   currentRound,
+  activeCompetition = 'BRASILEIRAO',
+  competitionLabel,
   isMatchDay,
   onGoToMatch,
 }) => {
@@ -115,7 +120,12 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
 
   // Other featured fixtures of the round for the reference-inspired dual-tone cards
   const otherClubs = clubs.filter(
-    (c) => c.id !== userClub.id && c.id !== opponentClub?.id
+    (c) =>
+      c.id !== userClub.id &&
+      c.id !== opponentClub?.id &&
+      (activeCompetition === 'LIBERTADORES'
+        ? c.division === 'LIB'
+        : c.division === userClub.division)
   );
   const otherRoundFixtures =
     otherClubs.length >= 2
@@ -123,10 +133,21 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
           {
             home: otherClubs[0],
             away: otherClubs[1],
-            time: '18:30',
+            time: activeCompetition === 'LIBERTADORES' ? '21:30' : '18:30',
           },
         ]
       : [];
+
+  const resolvedCompLabel =
+    competitionLabel ||
+    `Brasileirão Série ${userClub.division} · ${currentRound}ª Rodada`;
+
+  const shortCompLabel =
+    activeCompetition === 'COPA_DO_BRASIL'
+      ? `COPA DO BRASIL · ${nextFixture?.stageLabel || 'MATA-MATA'}`
+      : activeCompetition === 'LIBERTADORES'
+      ? `LIBERTADORES · ${nextFixture?.stageLabel || 'GRUPOS'}`
+      : `SÉRIE ${userClub.division} · R${currentRound}`;
 
   const renderComparisonBar = (
     label: string,
@@ -230,8 +251,8 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                 {/* Upper Half: Electric Lime Gradient Header with Club Badges & Black VS Circle */}
                 <div className="bg-gradient-to-b from-[#b5ff00] to-[#8fd400] px-5 pt-5 pb-6 text-[#090a0f] relative">
                   <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase tracking-wider text-[#090a0f]/75 mb-3">
-                    <span>Brasileirão Série {userClub.division} · {currentRound}ª Rodada</span>
-                    <span>
+                    <span className="truncate pr-2">{resolvedCompLabel}</span>
+                    <span className="shrink-0">
                       {isMatchDay ? 'HOJE · DIA DE JOGO' : 'PRÓXIMO CONFRONTO'}
                     </span>
                   </div>
@@ -280,7 +301,11 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                         {opponentClub.shortName}
                       </div>
                       <div className="text-[11px] font-mono font-bold text-[#090a0f]/75">
-                        {opponentStandingIndex + 1}º · {opponentClub.formation}
+                        {opponentClub.countryCode
+                          ? `${opponentClub.countryCode} · ${opponentClub.formation}`
+                          : opponentStandingIndex >= 0
+                          ? `${opponentStandingIndex + 1}º · ${opponentClub.formation}`
+                          : `Série ${opponentClub.division} · ${opponentClub.formation}`}
                       </div>
                     </div>
                   </div>
@@ -293,13 +318,13 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                       Competição
                     </div>
                     <div className="font-display font-extrabold text-base uppercase tracking-tight text-[#090a0f]">
-                      SÉRIE {userClub.division} · R{currentRound}
+                      {shortCompLabel}
                     </div>
                   </div>
 
                   <div className="text-center px-3 border-x border-zinc-300/80">
                     <div className="font-display font-extrabold text-3xl leading-none tracking-tight text-[#090a0f] tabular-nums">
-                      16:00
+                      {activeCompetition === 'BRASILEIRAO' ? '16:00' : '21:30'}
                     </div>
                     <div className="text-[11px] font-medium text-zinc-600 mt-0.5">
                       {nextFixture.homeClubId === userClub.id

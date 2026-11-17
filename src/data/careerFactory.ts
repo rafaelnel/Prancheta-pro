@@ -1,9 +1,15 @@
 import {
-  INITIAL_CLUBS,
+  ALL_WORLD_CLUBS,
+  CONMEBOL_FOREIGN_CLUBS,
+  LIBERTADORES_BR_CLUB_IDS,
   generateLeagueSchedule,
   getInitialStandingsForDivision,
   getRealSquadForClub,
 } from './initialDatabase';
+import {
+  createInitialCopaDoBrasil,
+  createInitialLibertadores,
+} from './cupFactory';
 import { createInitialMatchState } from '../engine/matchEngine';
 import {
   CareerSaveData,
@@ -117,12 +123,12 @@ export function createInitialInboxForCareer(
       bulletPoints: [
         club.division === 'B'
           ? club.reputation >= 74
-            ? 'Meta 2026: Acesso direto no G-4 da Série B.'
-            : 'Meta 2026: Campanha segura na Série B.'
-          : club.reputation >= 85
-          ? 'Meta 2026: Título e vaga no G-4.'
-          : 'Meta 2026: Permanência e vaga continental.',
-        `Folha mensal: ${formatCompactBRL(club.wageBudget)}.`,
+            ? 'Meta 2026: Acesso direto no G-4 da Série B e avanço na Copa do Brasil.'
+            : 'Meta 2026: Campanha segura na Série B e Copa do Brasil.'
+          : LIBERTADORES_BR_CLUB_IDS.includes(club.id)
+          ? 'Meta 2026: Título da Série A, Copa do Brasil e Copa Libertadores.'
+          : 'Meta 2026: Permanência, Copa do Brasil e vaga na Libertadores.',
+        `Folha mensal: ${formatCompactBRL(club.wageBudget)} · ${CONMEBOL_FOREIGN_CLUBS.length + LIBERTADORES_BR_CLUB_IDS.length} clubes na Libertadores.`,
       ],
       actionLabel: 'Ver Finanças',
       actionTargetTab: 'finances',
@@ -136,20 +142,23 @@ export function createNewCareerSave(
   managerName: string
 ): CareerSaveData {
   const cleanManagerName = managerName.trim() || 'Treinador Silva';
-  const clubs: Club[] = INITIAL_CLUBS.map((c) => ({
+  const clubs: Club[] = ALL_WORLD_CLUBS.map((c) => ({
     ...c,
     instructions: { ...c.instructions },
     starPlayers: c.starPlayers.map((s) => ({ ...s })),
   }));
 
   const userClub = clubs.find((c) => c.id === clubId) || clubs[0];
-  const division = userClub.division;
+  const division: 'A' | 'B' = userClub.division === 'B' ? 'B' : 'A';
   const otherDivision: 'A' | 'B' = division === 'A' ? 'B' : 'A';
 
   const standings = getInitialStandingsForDivision(division);
   const fixtures = generateLeagueSchedule(userClub.id, division);
   const secondaryStandings = getInitialStandingsForDivision(otherDivision);
   const secondaryFixtures = generateLeagueSchedule('__none__', otherDivision);
+
+  const copaDoBrasil = createInitialCopaDoBrasil(userClub.id);
+  const libertadores = createInitialLibertadores(userClub.id);
 
   const squad = createSquadForClub(userClub);
 
@@ -191,6 +200,8 @@ export function createNewCareerSave(
     clubAbbr: userClub.abbr,
     clubPrimaryColor: userClub.primaryColor,
     currentRound: 1,
+    seasonStepIndex: 0,
+    activeCompetition: 'BRASILEIRAO',
     dayOffset: 0,
     isMatchDay: false,
     userRank,
@@ -203,6 +214,8 @@ export function createNewCareerSave(
     fixtures,
     secondaryStandings,
     secondaryFixtures,
+    copaDoBrasil,
+    libertadores,
     messages,
     matchState,
   };

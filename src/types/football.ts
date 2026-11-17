@@ -127,9 +127,38 @@ export interface OpponentStarPlayer {
   highlightAttribute: string;
 }
 
+export type CompetitionType = 'BRASILEIRAO' | 'COPA_DO_BRASIL' | 'LIBERTADORES';
+
+export type CopaDoBrasilStage =
+  | '3ª Fase'
+  | 'Oitavas'
+  | 'Quartas'
+  | 'Semifinal'
+  | 'Final';
+
+export type LibertadoresKnockoutStage =
+  | 'Oitavas'
+  | 'Quartas'
+  | 'Semifinal'
+  | 'Final';
+
+export type LibertadoresStage = 'Grupos' | LibertadoresKnockoutStage;
+
+export type LibertadoresGroupName =
+  | 'A'
+  | 'B'
+  | 'C'
+  | 'D'
+  | 'E'
+  | 'F'
+  | 'G'
+  | 'H';
+
 export interface Club {
   id: string;
-  division: 'A' | 'B';
+  division: 'A' | 'B' | 'LIB';
+  country?: string;
+  countryCode?: string;
   name: string;
   shortName: string;
   abbr: string;
@@ -140,9 +169,9 @@ export interface Club {
   stadium: string;
   capacity: number;
   reputation: number; // 1 to 100
-  overallAttack: number; // 1 to 20 scale (e.g., 14.8)
-  overallMidfield: number; // 1 to 20 scale
-  overallDefense: number; // 1 to 20 scale
+  overallAttack: number; // 60 to 99 scale
+  overallMidfield: number; // 60 to 99 scale
+  overallDefense: number; // 60 to 99 scale
   cashBalance: number;
   wageBudget: number;
   boardConfidence: number; // 0 to 100%
@@ -166,16 +195,58 @@ export interface StandingsRow {
 
 export interface RoundFixture {
   id: string;
-  division?: 'A' | 'B';
+  division?: 'A' | 'B' | 'LIB';
+  competition?: CompetitionType;
+  stageLabel?: string;
+  groupName?: LibertadoresGroupName;
   roundNumber: number;
   homeClubId: string;
   awayClubId: string;
   homeGoals: number | null;
   awayGoals: number | null;
+  homePenalties?: number | null;
+  awayPenalties?: number | null;
+  winnerClubId?: string | null;
   homeXG?: number;
   awayXG?: number;
   played: boolean;
   isUserMatch: boolean;
+}
+
+export interface CopaDoBrasilState {
+  participantIds: string[];
+  currentStage: CopaDoBrasilStage;
+  fixturesByStage: Record<CopaDoBrasilStage, RoundFixture[]>;
+  eliminatedIds: string[];
+  championClubId: string | null;
+}
+
+export interface LibertadoresGroup {
+  name: LibertadoresGroupName;
+  clubIds: string[];
+  standings: StandingsRow[];
+  fixtures: RoundFixture[];
+}
+
+export interface LibertadoresState {
+  participantIds: string[];
+  currentPhase: LibertadoresStage;
+  groupRound: number; // 1..6 during group stage
+  groups: LibertadoresGroup[];
+  knockoutFixtures: Record<LibertadoresKnockoutStage, RoundFixture[]>;
+  eliminatedIds: string[];
+  championClubId: string | null;
+}
+
+export interface SeasonCalendarStep {
+  index: number;
+  competition: CompetitionType;
+  leagueRound?: number;
+  copaStage?: CopaDoBrasilStage;
+  libStage?: LibertadoresStage;
+  libGroupRound?: number;
+  dayOffset?: number;
+  label: string;
 }
 
 export type NavigationTab =
@@ -183,6 +254,7 @@ export type NavigationTab =
   | 'squad'
   | 'tactics'
   | 'match'
+  | 'calendar'
   | 'competitions'
   | 'finances';
 
@@ -259,6 +331,12 @@ export type MatchPhase =
 export interface LiveMatchState {
   roundNumber: number;
   fixtureId: string;
+  competition?: CompetitionType;
+  competitionLabel?: string;
+  isKnockout?: boolean;
+  homePenalties?: number | null;
+  awayPenalties?: number | null;
+  winnerClubId?: string | null;
   minute: number;
   subTick: number; // 0..3 within a minute for smooth 2D movement
   isRunning: boolean;
@@ -313,6 +391,8 @@ export interface CareerSaveData {
   clubAbbr: string;
   clubPrimaryColor: string;
   currentRound: number;
+  seasonStepIndex?: number;
+  activeCompetition?: CompetitionType;
   dayOffset: number;
   isMatchDay: boolean;
   userRank: number;
@@ -325,6 +405,8 @@ export interface CareerSaveData {
   fixtures: RoundFixture[];
   secondaryStandings?: StandingsRow[];
   secondaryFixtures?: RoundFixture[];
+  copaDoBrasil?: CopaDoBrasilState;
+  libertadores?: LibertadoresState;
   messages: InboxMessage[];
   matchState: LiveMatchState;
 }

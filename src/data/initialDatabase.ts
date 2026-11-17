@@ -6,19 +6,34 @@ import {
   StandingsRow,
 } from '../types/football';
 import { ALL_REAL_CLUBS, SERIE_A_CLUBS, SERIE_B_CLUBS } from './realClubs';
+import {
+  CONMEBOL_FOREIGN_CLUBS,
+  LIBERTADORES_BR_CLUB_IDS,
+} from './libertadoresClubs';
 import { REAL_SQUADS_SERIE_A } from './realSquadsA';
 import { REAL_SQUADS_SERIE_B } from './realSquadsB';
+import { REAL_SQUADS_LIBERTADORES } from './realSquadsLibertadores';
 import { buildPlayersFromSeeds, RealPlayerSeed } from './squadBuilder';
 
-export { SERIE_A_CLUBS, SERIE_B_CLUBS };
+export {
+  SERIE_A_CLUBS,
+  SERIE_B_CLUBS,
+  CONMEBOL_FOREIGN_CLUBS,
+  LIBERTADORES_BR_CLUB_IDS,
+};
 
 export const USER_CLUB_ID = 'flamengo';
 
 export const INITIAL_CLUBS: Club[] = ALL_REAL_CLUBS;
+export const ALL_WORLD_CLUBS: Club[] = [
+  ...ALL_REAL_CLUBS,
+  ...CONMEBOL_FOREIGN_CLUBS,
+];
 
 export const REAL_SQUAD_SEEDS: Record<string, RealPlayerSeed[]> = {
   ...REAL_SQUADS_SERIE_A,
   ...REAL_SQUADS_SERIE_B,
+  ...REAL_SQUADS_LIBERTADORES,
 };
 
 export function getRealSquadForClub(club: Club): Player[] {
@@ -92,7 +107,8 @@ export function generateLeagueSchedule(
   division?: 'A' | 'B'
 ): RoundFixture[] {
   const userClub = INITIAL_CLUBS.find((c) => c.id === userClubId);
-  const resolvedDivision = division ?? userClub?.division ?? 'A';
+  const resolvedDivision: 'A' | 'B' =
+    division ?? (userClub?.division === 'B' ? 'B' : 'A');
   const divisionClubs =
     resolvedDivision === 'B' ? SERIE_B_CLUBS : SERIE_A_CLUBS;
 

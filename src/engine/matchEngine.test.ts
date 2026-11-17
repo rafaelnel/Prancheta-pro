@@ -328,3 +328,175 @@ test('Save manager supports 4 independent Série A/B career slots, latest save d
   const latestAfterDelete = getLatestCareerSave(mockStorage);
   assert.equal(latestAfterDelete?.slotIndex, 3);
 });
+
+test('Copa Libertadores 2026 covers all 10 CONMEBOL countries, 32 clubs, 8 groups, 6 rounds and knockout bracket to champion', async () => {
+  const {
+    ALL_WORLD_CLUBS,
+    CONMEBOL_FOREIGN_CLUBS,
+    LIBERTADORES_BR_CLUB_IDS,
+  } = await import('../data/initialDatabase');
+  const {
+    createInitialLibertadores,
+    advanceLibertadoresGroupRound,
+    advanceLibertadoresKnockoutStage,
+    LIBERTADORES_KNOCKOUT_STAGES,
+  } = await import('../data/cupFactory');
+
+  // 8 Brazilian clubs + 24 foreign clubs = 32 clubs across all 10 CONMEBOL countries
+  assert.equal(LIBERTADORES_BR_CLUB_IDS.length, 8);
+  assert.equal(CONMEBOL_FOREIGN_CLUBS.length, 24);
+  assert.equal(ALL_WORLD_CLUBS.length, 64);
+
+  const foreignCountries = new Set(CONMEBOL_FOREIGN_CLUBS.map((c) => c.countryCode));
+  for (const code of ['ARG', 'URU', 'COL', 'ECU', 'PAR', 'CHI', 'PER', 'BOL', 'VEN']) {
+    assert.ok(foreignCountries.has(code), `Expected CONMEBOL nation ${code} in Libertadores`);
+  }
+  assert.equal(foreignCountries.size, 9); // + BRA = 10 CONMEBOL nations
+
+  // All 24 foreign clubs have complete starter + bench real squads (13-15 players) & 60-99 ratings
+  for (const club of CONMEBOL_FOREIGN_CLUBS) {
+    const squad = getRealSquadForClub(club);
+    assert.ok(squad.length >= 13, `Expected at least 13 real players for ${club.name}, got ${squad.length}`);
+    assert.equal(squad.filter((p) => p.isStarter).length, 11);
+    for (const p of squad) {
+      const ovr = calculatePlayerOverall(p.attributes, p.position);
+      assert.ok(ovr >= 60 && ovr <= 99, `OVR ${ovr} out of bounds for ${p.name}`);
+    }
+  }
+
+  let lib = createInitialLibertadores('flamengo');
+  assert.equal(lib.participantIds.length, 32);
+  assert.equal(lib.groups.length, 8);
+  for (const grp of lib.groups) {
+    assert.equal(grp.clubIds.length, 4);
+    assert.equal(grp.fixtures.length, 12); // 6 rounds x 2 matches
+  }
+
+  let seed = 101;
+  const rng = () => {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+
+  for (let r = 1; r <= 6; r++) {
+    lib = advanceLibertadoresGroupRound(lib, r, null, ALL_WORLD_CLUBS, 'flamengo', rng);
+  }
+  assert.equal(lib.currentPhase, 'Oitavas');
+  assert.equal(lib.knockoutFixtures.Oitavas.length, 8);
+  assert.equal(lib.eliminatedIds.length, 16);
+
+  for (const stage of LIBERTADORES_KNOCKOUT_STAGES) {
+    lib = advanceLibertadoresKnockoutStage(lib, stage, null, ALL_WORLD_CLUBS, 'flamengo', rng);
+  }
+  assert.ok(lib.championClubId, 'Libertadores should crown a champion');
+  assert.ok(lib.knockoutFixtures.Final[0]?.played);
+  assert.ok(lib.knockoutFixtures.Final[0]?.winnerClubId);
+});
+
+test('Copa do Brasil 2026 includes 32 clubs (always guaranteeing Série B user clubs) and resolves ties via penalties through Final', async () => {
+  const { ALL_WORLD_CLUBS } = await import('../data/initialDatabase');
+  const {
+    createInitialCopaDoBrasil,
+    advanceCopaDoBrasilStage,
+    COPA_DO_BRASIL_STAGES,
+  } = await import('../data/cupFactory');
+
+  // Série B club should still be included in the 32-team Copa do Brasil bracket
+  let cdb = createInitialCopaDoBrasil('ponte-preta');
+  assert.equal(cdb.participantIds.length, 32);
+  assert.ok(cdb.participantIds.includes('ponte-preta'));
+  assert.equal(cdb.currentStage, '3ª Fase');
+  assert.equal(cdb.fixturesByStage['3ª Fase'].length, 16);
+
+  let seed = 2026;
+  const rng = () => {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+
+  for (const stage of COPA_DO_BRASIL_STAGES) {
+    cdb = advanceCopaDoBrasilStage(cdb, stage, null, ALL_WORLD_CLUBS, 'ponte-preta', rng);
+  }
+
+  assert.ok(cdb.championClubId, 'Copa do Brasil should crown a champion');
+  assert.equal(cdb.fixturesByStage.Final.length, 1);
+  assert.ok(cdb.fixturesByStage.Final[0].played);
+  assert.ok(cdb.fixturesByStage.Final[0].winnerClubId);
+});
+
+test('2D Match Engine supports Libertadores foreign opponent and resolves knockout draw via penalty shootout at 90 minutes', async () => {
+  const { ALL_WORLD_CLUBS } = await import('../data/initialDatabase');
+  const river = ALL_WORLD_CLUBS.find((c) => c.id === 'river-plate')!;
+  const flamengo = ALL_WORLD_CLUBS.find((c) => c.id === 'flamengo')!;
+
+  const koFixture = {
+    id: 'lib-oitavas-test',
+    division: 'LIB' as const,
+    competition: 'LIBERTADORES' as const,
+    stageLabel: 'Oitavas',
+    roundNumber: 1,
+    homeClubId: flamengo.id,
+    awayClubId: river.id,
+    homeGoals: null,
+    awayGoals: null,
+    homePenalties: null,
+    awayPenalties: null,
+    winnerClubId: null,
+    played: false,
+    isUserMatch: true,
+  };
+
+  let match = createInitialMatchState(
+    1,
+    koFixture,
+    flamengo,
+    river,
+    INITIAL_USER_SQUAD,
+    flamengo.id
+  );
+  assert.equal(match.isKnockout, true);
+  assert.equal(match.competition, 'LIBERTADORES');
+  assert.ok(match.awayTokens.every((t) => !t.name.startsWith('Atleta ')));
+
+  // Jump to minute 89 with a tied score (1-1) to verify shootout trigger at 90'
+  match.minute = 89;
+  match.homeGoals = 1;
+  match.awayGoals = 1;
+  match.phase = 'SECOND_HALF';
+  match.isRunning = true;
+
+  // Use RNG that triggers penalty win without scoring at minute 90
+  const stableDrawRng = () => 0.99;
+  match = stepMatchMinute(match, flamengo, river, INITIAL_USER_SQUAD, stableDrawRng);
+
+  assert.equal(match.phase, 'FULL_TIME');
+  assert.equal(match.minute, 90);
+  assert.ok(match.winnerClubId, 'Tied knockout match must decide a winner via penalties');
+  assert.ok(
+    match.homePenalties !== null && match.awayPenalties !== null && match.homePenalties !== match.awayPenalties,
+    'Penalty shootout scores must be distinct'
+  );
+});
+
+test('SEASON_CALENDAR spans all 12 months of 2026 chronologically across Brasileirão, Copa do Brasil, and Libertadores', async () => {
+  const { SEASON_CALENDAR } = await import('../data/cupFactory');
+  assert.equal(SEASON_CALENDAR.length, 34);
+
+  const monthsSeen = new Set<number>();
+  let prevOffset = -1;
+  for (const step of SEASON_CALENDAR) {
+    assert.ok(
+      typeof step.dayOffset === 'number' && step.dayOffset > prevOffset,
+      `Expected monotonic dayOffset for ${step.label}`
+    );
+    prevOffset = step.dayOffset;
+    const d = new Date(2026, 0, 28);
+    d.setDate(d.getDate() + step.dayOffset);
+    assert.equal(d.getFullYear(), 2026);
+    monthsSeen.add(d.getMonth());
+  }
+
+  assert.equal(monthsSeen.size, 12, 'Expected fixtures across all 12 months (Jan-Dec 2026)');
+});
+
+

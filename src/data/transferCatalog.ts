@@ -4,6 +4,8 @@ import { calculatePlayerOverall } from '../engine/playerOverall';
 import {
   assignPotentialStars,
   calculateBalancedValuationAndWage,
+  calibrateAttributesToTargetOvr,
+  getMaxRealisticOvrForAgeAndPotential,
 } from '../engine/economyAndEvolution';
 import {
   MarketClubProfile,
@@ -323,16 +325,29 @@ function buildCatalogPlayer(
   const defaultRole =
     getRolesForSector(sector)[0] || getRoleById('meia-area-a-area');
 
-  const attributes = generateAttributesFromSeed(
+  let attributes = generateAttributesFromSeed(
     position,
     seedStrength,
     rng,
     overrides
   );
 
-  const ovr = calculatePlayerOverall(attributes, position);
+  let ovr = calculatePlayerOverall(attributes, position);
   const clubRep = isIntl ? Math.round(80 * repFactor) : 74;
   const potentialStars = assignPotentialStars(ovr, age, clubRep, id);
+  const maxAllowedForAge = getMaxRealisticOvrForAgeAndPotential(
+    age,
+    potentialStars
+  );
+  if (age <= 22 && ovr > maxAllowedForAge) {
+    attributes = calibrateAttributesToTargetOvr(
+      attributes,
+      position,
+      maxAllowedForAge,
+      maxAllowedForAge
+    );
+    ovr = calculatePlayerOverall(attributes, position);
+  }
   const { marketValue, salary } = calculateBalancedValuationAndWage({
     ovr,
     age,

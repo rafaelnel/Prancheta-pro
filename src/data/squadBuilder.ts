@@ -3,6 +3,8 @@ import { calculatePlayerOverall } from '../engine/playerOverall';
 import {
   assignPotentialStars,
   calculateBalancedValuationAndWage,
+  calibrateAttributesToTargetOvr,
+  getMaxRealisticOvrForAgeAndPotential,
 } from '../engine/economyAndEvolution';
 import {
   Club,
@@ -127,8 +129,8 @@ export function buildPlayersFromSeeds(
     const isFatiguedStarter = idx === 5;
     const isTransitionReserve = idx === 21;
 
-    const attributes = generateAttributesFromSeed(position, overall, rng, overrides);
-    const ovr6099 = calculatePlayerOverall(attributes, position);
+    let attributes = generateAttributesFromSeed(position, overall, rng, overrides);
+    let ovr6099 = calculatePlayerOverall(attributes, position);
     const playerId = `${club.id}-p${idx + 1}`;
     const potentialStars = assignPotentialStars(
       ovr6099,
@@ -136,6 +138,19 @@ export function buildPlayersFromSeeds(
       club.reputation,
       playerId
     );
+    const maxAllowedForAge = getMaxRealisticOvrForAgeAndPotential(
+      age,
+      potentialStars
+    );
+    if (age <= 22 && ovr6099 > maxAllowedForAge) {
+      attributes = calibrateAttributesToTargetOvr(
+        attributes,
+        position,
+        maxAllowedForAge,
+        maxAllowedForAge
+      );
+      ovr6099 = calculatePlayerOverall(attributes, position);
+    }
     const { marketValue, salary } = calculateBalancedValuationAndWage({
       ovr: ovr6099,
       age,
@@ -151,6 +166,17 @@ export function buildPlayersFromSeeds(
       : isStarter
       ? 89 + Math.floor(rng() * 9)
       : 94 + Math.floor(rng() * 5);
+
+    const initialOvrDelta =
+      age <= 20 && potentialStars >= 4
+        ? 2
+        : age <= 22
+        ? 1
+        : age >= 34
+        ? -2
+        : age >= 32
+        ? -1
+        : 0;
 
     return {
       id: playerId,
@@ -181,6 +207,7 @@ export function buildPlayersFromSeeds(
       assignedDuty: slotDef ? slotDef.defaultDuty : defaultRole.allowedDuties[0] || 'Apoiar',
       injured: isTransitionReserve,
       injuryNote: isTransitionReserve ? 'Transição física (desgaste leve)' : undefined,
+      recentOvrDelta: initialOvrDelta,
       seasonStats: {
         matches: 0,
         goals: 0,

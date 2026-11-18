@@ -78,6 +78,11 @@ interface MarketViewProps {
     player: Player;
     action: 'VENDA' | 'EMPRESTIMO_OUT' | 'DEVOLVER_EMPRESTIMO';
   }) => void;
+  onTogglePlayerMarketListing?: (
+    playerId: string,
+    mode: 'TRANSFER' | 'LOAN'
+  ) => void;
+  onSolicitOfferForPlayer?: (playerId: string) => void;
 }
 
 type MarketSubTab =
@@ -243,6 +248,8 @@ export const MarketView: React.FC<MarketViewProps> = ({
   onInspectPlayer,
   onProposeTransfer,
   onOutgoingTransfer,
+  onTogglePlayerMarketListing,
+  onSolicitOfferForPlayer,
 }) => {
   const [subTab, setSubTab] = useState<MarketSubTab>('NACIONAL_LIB');
   const [domesticScope, setDomesticScope] =
@@ -1310,7 +1317,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                     <th className="py-3 px-4 font-medium">Atleta</th>
                     <th className="py-3 px-2 font-medium">Pos</th>
                     <th className="py-3 px-2 font-medium text-right">OVR</th>
-                    <th className="py-3 px-3 font-medium">Vínculo</th>
+                    <th className="py-3 px-3 font-medium">Status no Mercado</th>
                     <th className="py-3 px-3 font-medium text-right">
                       Salário Atual
                     </th>
@@ -1354,22 +1361,105 @@ export const MarketView: React.FC<MarketViewProps> = ({
                                 clubReputation={userClub.reputation}
                                 size="xs"
                               />
+                              {player.isTransferListed && (
+                                <span className="px-1.5 py-0.5 rounded bg-amber-400/15 border border-amber-400/35 text-[9px] font-mono font-bold text-amber-300">
+                                  DISP. VENDA
+                                </span>
+                              )}
+                              {player.isLoanListed && (
+                                <span className="px-1.5 py-0.5 rounded bg-sky-400/15 border border-sky-400/35 text-[9px] font-mono font-bold text-sky-300">
+                                  DISP. EMPRÉSTIMO
+                                </span>
+                              )}
                             </div>
                             <div className="text-[11px] text-zinc-400">
                               {player.age} anos ·{' '}
-                              {player.isStarter ? 'Titular' : 'Reserva'}
+                              {player.isStarter ? 'Titular' : 'Reserva'} ·{' '}
+                              {player.contractType === 'EMPRESTADO'
+                                ? `Emprestado (${player.loanOriginClubName || 'Clube'})`
+                                : 'Vínculo Definitivo'}
                             </div>
                           </td>
                           <td className="py-3 px-2 font-mono font-bold text-white">
                             {player.position}
                           </td>
                           <td className="py-3 px-2 text-right font-mono tabular-nums font-bold text-[#b5ff00]">
-                            {ovr}
+                            <div className="inline-flex items-center justify-end gap-1">
+                              <span>{ovr}</span>
+                              {player.recentOvrDelta !== undefined && player.recentOvrDelta > 0 ? (
+                                <span className="text-[10px] text-[#b5ff00] font-bold" title={`Evolução: +${player.recentOvrDelta} OVR`}>
+                                  ▲+{player.recentOvrDelta}
+                                </span>
+                              ) : player.recentOvrDelta !== undefined && player.recentOvrDelta < 0 ? (
+                                <span className="text-[10px] text-rose-400 font-bold" title={`Regressão: ${player.recentOvrDelta} OVR`}>
+                                  ▼{player.recentOvrDelta}
+                                </span>
+                              ) : null}
+                            </div>
                           </td>
-                          <td className="py-3 px-3 text-zinc-300">
-                            {player.contractType === 'EMPRESTADO'
-                              ? `Empréstimo (${player.loanOriginClubName || 'Clube'})`
-                              : 'Definitivo'}
+                          <td className="py-3 px-3">
+                            {player.contractType === 'EMPRESTADO' ? (
+                              <span className="text-[11px] text-zinc-500">
+                                Atleta emprestado ao clube
+                              </span>
+                            ) : (
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {onTogglePlayerMarketListing && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        onTogglePlayerMarketListing(
+                                          player.id,
+                                          'TRANSFER'
+                                        )
+                                      }
+                                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors ${
+                                        player.isTransferListed
+                                          ? 'bg-amber-400 text-[#090a0f] border-amber-400 font-extrabold'
+                                          : 'bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-300 border-white/10'
+                                      }`}
+                                    >
+                                      {player.isTransferListed
+                                        ? 'Listado p/ Venda ✓'
+                                        : 'Disponibilizar Venda'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        onTogglePlayerMarketListing(
+                                          player.id,
+                                          'LOAN'
+                                        )
+                                      }
+                                      className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors ${
+                                        player.isLoanListed
+                                          ? 'bg-sky-400 text-[#090a0f] border-sky-400 font-extrabold'
+                                          : 'bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-300 border-white/10'
+                                      }`}
+                                    >
+                                      {player.isLoanListed
+                                        ? 'Listado p/ Emprést. ✓'
+                                        : 'Disponibilizar Emprést.'}
+                                    </button>
+                                  </>
+                                )}
+                                {onSolicitOfferForPlayer &&
+                                  (player.isTransferListed ||
+                                    player.isLoanListed) && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        onSolicitOfferForPlayer(player.id)
+                                      }
+                                      title="Sondar clubes interessados que precisam desta posição para receber uma proposta oficial imediatamente"
+                                      className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-[#b5ff00]/15 hover:bg-[#b5ff00]/25 text-[#b5ff00] border border-[#b5ff00]/40 transition-colors"
+                                    >
+                                      Oferecer a Clubes
+                                    </button>
+                                  )}
+                              </div>
+                            )}
                           </td>
                           <td className="py-3 px-3 text-right font-mono tabular-nums text-zinc-300">
                             {formatCompactBRL(getPlayerPaidSalary(player))}
@@ -1430,7 +1520,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                                   }
                                   className="px-3 py-1.5 rounded-full bg-[#b5ff00] hover:bg-[#c8ff33] disabled:bg-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed text-[#090a0f] text-[11px] font-extrabold whitespace-nowrap"
                                 >
-                                  Vender
+                                  Vender Direto
                                 </button>
                               </div>
                             )}

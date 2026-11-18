@@ -30,6 +30,10 @@ interface PlayerProfileModalProps {
     roleId: string,
     duty: TacticalDuty
   ) => void;
+  onTogglePlayerMarketListing?: (
+    playerId: string,
+    mode: 'TRANSFER' | 'LOAN'
+  ) => void;
 }
 
 export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
@@ -37,6 +41,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   readOnly = false,
   onClose,
   onUpdateRoleDuty,
+  onTogglePlayerMarketListing,
 }) => {
   if (!player) return null;
 
@@ -192,8 +197,35 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
               >
                 OVR (60–99)
               </div>
-              <div className="font-display text-2xl sm:text-3xl font-extrabold tabular-nums text-[#b5ff00] leading-none">
-                {overall}
+              <div className="flex items-center justify-end gap-2">
+                <div className="font-display text-2xl sm:text-3xl font-extrabold tabular-nums text-[#b5ff00] leading-none">
+                  {overall}
+                </div>
+                <div className="flex flex-col items-end">
+                  {player.recentOvrDelta !== undefined && player.recentOvrDelta > 0 ? (
+                    <span
+                      className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-emerald-500/20 text-[#b5ff00] border border-[#b5ff00]/50 text-xs font-mono font-extrabold shadow-sm"
+                      title="Evolução semestral de OVR"
+                    >
+                      ▲ +{player.recentOvrDelta}
+                    </span>
+                  ) : player.recentOvrDelta !== undefined && player.recentOvrDelta < 0 ? (
+                    <span
+                      className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/50 text-xs font-mono font-extrabold shadow-sm"
+                      title="Regressão semestral de OVR"
+                    >
+                      ▼ {player.recentOvrDelta}
+                    </span>
+                  ) : (
+                    <span
+                      className="inline-flex items-center px-1.5 py-0.5 rounded bg-white/[0.05] text-zinc-400 border border-white/10 text-[10px] font-mono"
+                      title="OVR estável no semestre"
+                    >
+                      ▬ 0 Estável
+                    </span>
+                  )}
+                  <span className="text-[9px] text-zinc-400 font-medium">Evolução 6m</span>
+                </div>
               </div>
               <div className="mt-1 flex items-center justify-end gap-1">
                 <span className="text-[10px] text-zinc-500 font-mono">POT</span>
@@ -302,6 +334,53 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
               </p>
             </div>
           </div>
+
+          {!readOnly &&
+            onTogglePlayerMarketListing &&
+            player.contractType !== 'EMPRESTADO' && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#0b0c10] border border-white/[0.07]">
+                <div>
+                  <div className="text-xs font-bold text-white">
+                    Disponibilidade no Mercado de Transferências
+                  </div>
+                  <div className="text-[11px] text-zinc-400">
+                    Colocar o atleta disponível aumenta a procura por clubes da IA que precisam da posição ({player.position}) e facilita negociações.
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onTogglePlayerMarketListing(player.id, 'TRANSFER')
+                    }
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                      player.isTransferListed
+                        ? 'bg-sky-400 text-[#090a0f] border-sky-400'
+                        : 'bg-[#14171f] text-zinc-300 hover:text-white border-white/10'
+                    }`}
+                  >
+                    {player.isTransferListed
+                      ? '✓ Disponível p/ Venda'
+                      : 'Disponibilizar p/ Venda'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onTogglePlayerMarketListing(player.id, 'LOAN')
+                    }
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                      player.isLoanListed
+                        ? 'bg-indigo-400 text-[#090a0f] border-indigo-400'
+                        : 'bg-[#14171f] text-zinc-300 hover:text-white border-white/10'
+                    }`}
+                  >
+                    {player.isLoanListed
+                      ? '✓ Disponível p/ Empréstimo'
+                      : 'Disponibilizar p/ Empréstimo'}
+                  </button>
+                </div>
+              </div>
+            )}
 
           {/* Legend for highlighted attributes */}
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-400">

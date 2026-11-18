@@ -90,8 +90,9 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
     ledger.seasonSponsorshipRevenue;
   const totalSeasonInflow =
     totalThreePillarsRevenue + ledger.seasonPrizeRevenue;
+  const youthSpend = ledger.seasonYouthAcademySpend || 0;
   const totalSeasonOutflow =
-    ledger.seasonTransferSpend + ledger.seasonOperationalExpense;
+    ledger.seasonTransferSpend + ledger.seasonOperationalExpense + youthSpend;
 
   return (
     <div className="space-y-5">
@@ -277,6 +278,22 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
                   -{formatCompactBRL(ledger.seasonTransferSpend)}
                 </span>
               </div>
+
+              {youthSpend > 0 && (
+                <div className="py-3 flex items-center justify-between gap-2">
+                  <div>
+                    <div className="font-semibold text-white">
+                      Base & Categorias Sub-20 ({ledger.seasonYear})
+                    </div>
+                    <div className="text-[11px] text-zinc-400">
+                      Custeio mensal acumulado em captação e formação de jovens
+                    </div>
+                  </div>
+                  <span className="font-mono tabular-nums font-bold text-rose-400">
+                    -{formatCompactBRL(youthSpend)}
+                  </span>
+                </div>
+              )}
 
               <div className="py-3 flex items-center justify-between gap-2">
                 <div>

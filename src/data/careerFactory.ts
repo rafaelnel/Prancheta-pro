@@ -14,6 +14,7 @@ import { createInitialFreeAgents } from './transferCatalog';
 import { createInitialMatchState } from '../engine/matchEngine';
 import { buildInitialAiSquads } from '../engine/aiMarketEngine';
 import { createInitialFinanceLedger } from '../engine/economyAndEvolution';
+import { createInitialYouthAcademy } from '../engine/youthAcademyEngine';
 import {
   CareerSaveData,
   CareerSlotIndex,
@@ -236,5 +237,11 @@ export function createNewCareerSave(
     financeLedger,
     seasonHistory: [],
     seasonEndReport: null,
+    youthAcademy: createInitialYouthAcademy(
+      userClub.id,
+      userClub.reputation,
+      userClub.division,
+      2026
+    ),
   };
 }

@@ -10,6 +10,10 @@ import {
   createInitialFinanceLedger,
   ensurePlayerDefaults,
 } from '../engine/economyAndEvolution';
+import {
+  YOUTH_TIERS,
+  createInitialYouthAcademy,
+} from '../engine/youthAcademyEngine';
 
 export const MAX_CAREER_SLOTS = 4;
 export const CAREER_SLOTS: CareerSlotIndex[] = [1, 2, 3, 4];
@@ -131,6 +135,34 @@ function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
       createInitialFinanceLedger(userClub, hydratedSquad, seasonYear),
     seasonHistory: save.seasonHistory ?? [],
     seasonEndReport: save.seasonEndReport ?? null,
+    youthAcademy: (() => {
+      const fallback = createInitialYouthAcademy(
+        userClub.id,
+        userClub.reputation,
+        userClub.division,
+        seasonYear
+      );
+      if (!save.youthAcademy) return fallback;
+      const tierDef =
+        YOUTH_TIERS.find((t) => t.tier === save.youthAcademy?.investmentTier) ||
+        YOUTH_TIERS[1];
+      const rawRoster =
+        save.youthAcademy.youthRoster && save.youthAcademy.youthRoster.length > 0
+          ? save.youthAcademy.youthRoster
+          : fallback.youthRoster || [];
+      const sanitizedRoster = rawRoster.map((yp) =>
+        ensurePlayerDefaults(
+          { ...yp, isRegen: true },
+          userClub.reputation,
+          userClub.division
+        )
+      );
+      return {
+        ...save.youthAcademy,
+        monthlyCost: tierDef.monthlyCost,
+        youthRoster: sanitizedRoster,
+      };
+    })(),
   };
 }
 

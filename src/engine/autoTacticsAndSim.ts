@@ -21,6 +21,7 @@ import { formatCalendarDate, formatCompactBRL } from '../utils/formatters';
 import {
   calculateMatchGateRevenue,
   createInitialFinanceLedger,
+  processMidSeasonEvolution,
 } from './economyAndEvolution';
 import {
   createOfferInboxMessage,
@@ -46,6 +47,7 @@ import {
   TacticalRoleDefinition,
   TeamInstructions,
   TransferRecord,
+  YouthAcademyState,
 } from '../types/football';
 
 export const SEASON_START_UTC = Date.UTC(2026, 0, 28); // 28 Jan 2026
@@ -433,6 +435,8 @@ export interface AutoSimCareerSnapshot {
   pendingOffers?: IncomingTransferOffer[];
   transferHistory?: TransferRecord[];
   financeLedger?: ClubFinanceLedger;
+  youthAcademy?: YouthAcademyState;
+  midSeasonEvolutionProcessedYear?: number;
 }
 
 export interface AutoSimMatchLogEntry {
@@ -1054,27 +1058,40 @@ export function simulateNextAutoStep(
     );
   }
 
-  // Monthly sponsorship installment if month boundary crossed
+  // Monthly sponsorship installment & youth academy deduction if month boundary crossed
   const prevMonth = dayOffsetToDate(working.dayOffset, seasonYear).getMonth();
   const nextMonth = dayOffsetToDate(stepDayOffset, seasonYear).getMonth();
   const baseLedger =
     working.financeLedger ||
     createInitialFinanceLedger(updatedUserClubWithTactics, recoveredSquad, seasonYear);
+  const monthsCrossed =
+    nextMonth > prevMonth ? Math.max(1, nextMonth - prevMonth) : 0;
   const monthlySponsorInstallment =
-    nextMonth !== prevMonth ? baseLedger.sponsorshipContract.monthlyInstallment : 0;
+    monthsCrossed > 0
+      ? baseLedger.sponsorshipContract.monthlyInstallment * monthsCrossed
+      : 0;
+  const monthlyYouthSpend =
+    monthsCrossed > 0 && working.youthAcademy
+      ? working.youthAcademy.monthlyCost * monthsCrossed
+      : 0;
 
-  const confidenceDelta = userAdvanced
+  const isCupAdvance =
+    (comp === 'COPA_DO_BRASIL' || comp === 'LIBERTADORES') && userAdvanced;
+  const confidenceDelta = isCupAdvance
+    ? 8
+    : userAdvanced
     ? 4
     : userDrew90 && !simMatch.isKnockout
     ? 1
     : -4;
-  const totalRevenue = gateRevenue + prizeMoney + monthlySponsorInstallment;
+  const totalNetCashDelta =
+    gateRevenue + prizeMoney + monthlySponsorInstallment - monthlyYouthSpend;
 
   nextClubs = nextClubs.map((c) =>
     c.id === working.userClubId
       ? {
           ...c,
-          cashBalance: c.cashBalance + totalRevenue,
+          cashBalance: Math.max(0, c.cashBalance + totalNetCashDelta),
           boardConfidence: Math.min(100, Math.max(30, c.boardConfidence + confidenceDelta)),
         }
       : c
@@ -1086,9 +1103,23 @@ export function simulateNextAutoStep(
     seasonPrizeRevenue: baseLedger.seasonPrizeRevenue + prizeMoney,
     seasonSponsorshipRevenue:
       baseLedger.seasonSponsorshipRevenue + monthlySponsorInstallment,
+    seasonYouthAcademySpend:
+      (baseLedger.seasonYouthAcademySpend || 0) + monthlyYouthSpend,
     lastMatchGateRevenue: isUserHome ? gateRevenue : baseLedger.lastMatchGateRevenue,
     lastMatchAttendance: isUserHome ? attendance : baseLedger.lastMatchAttendance,
   };
+
+  const nextYouthAcademy: YouthAcademyState | undefined = working.youthAcademy
+    ? {
+        ...working.youthAcademy,
+        accumulatedSeasonInvestment:
+          working.youthAcademy.accumulatedSeasonInvestment + monthlyYouthSpend,
+        monthsInvestedThisSeason: Math.min(
+          12,
+          working.youthAcademy.monthsInvestedThisSeason + monthsCrossed
+        ),
+      }
+    : undefined;
 
   // Update player condition & detailed season stats (matches, goals, assists, cards, avgRating)
   const userTokens = isUserHome ? simMatch.homeTokens : simMatch.awayTokens;
@@ -1101,7 +1132,7 @@ export function simulateNextAutoStep(
     (e) => e.type === 'CARTAO_AMARELO' && e.team === userTeamTag
   );
 
-  const finalSquadAfterMatch = recoveredSquad.map((p) => {
+  const squadAfterStats = recoveredSquad.map((p) => {
     const tok = tokenMap.get(p.id);
     if (!tok) return p;
 
@@ -1117,9 +1148,17 @@ export function simulateNextAutoStep(
       ((p.seasonStats.avgRating * prevMatches + tok.rating) / newMatches).toFixed(2)
     );
 
+    const finalCond = isCupAdvance
+      ? Math.min(100, Math.round(tok.condition) + 8)
+      : Math.max(55, Math.round(tok.condition));
+    const finalMorale = isCupAdvance
+      ? (p.morale === 'Exuberante' ? 'Exuberante' : 'Muito Alta')
+      : p.morale;
+
     return {
       ...p,
-      condition: Math.max(55, Math.round(tok.condition)),
+      morale: finalMorale as Player['morale'],
+      condition: finalCond,
       seasonStats: {
         matches: newMatches,
         goals: p.seasonStats.goals + scoredCount,
@@ -1130,10 +1169,31 @@ export function simulateNextAutoStep(
     };
   });
 
+  // Mid-season evolution check around July 1st (dayOffset >= 154)
+  let finalSquadAfterMatch = squadAfterStats;
+  let midSeasonProcessedYear = working.midSeasonEvolutionProcessedYear;
+  let extraMsgs: InboxMessage[] = [];
+
+  if (stepDayOffset >= 154 && midSeasonProcessedYear !== seasonYear) {
+    const midRes = processMidSeasonEvolution({
+      clubs: nextClubs,
+      userClubId: working.userClubId,
+      userSquad: squadAfterStats,
+      aiSquads: nextAiSquads,
+      loanedOutPlayers: [],
+      currentYear: seasonYear,
+      rng,
+    });
+    nextClubs = midRes.updatedClubs;
+    finalSquadAfterMatch = midRes.updatedUserSquad;
+    nextAiSquads = midRes.updatedAiSquads;
+    midSeasonProcessedYear = seasonYear;
+    extraMsgs.push(midRes.inboxMessage);
+  }
+
   // Periodic AI Transfer Market activity & incoming user offers during auto-sim
   let nextTransferHistory = working.transferHistory || [];
   let nextPendingOffers = working.pendingOffers || [];
-  let extraMsgs: InboxMessage[] = [];
 
   if (Object.keys(nextAiSquads).length > 0 && idx % 3 === 0) {
     const aiTick = simulateAiTransferWindowTick({
@@ -1151,7 +1211,14 @@ export function simulateNextAutoStep(
       nextTransferHistory = [...aiTick.newRecords, ...nextTransferHistory].slice(0, 80);
     }
 
-    if (idx % 6 === 0 && rng() < 0.55) {
+    const hasListedPlayers = finalSquadAfterMatch.some(
+      (p) => p.isTransferListed || p.isLoanListed
+    );
+    const shouldTryOffer = hasListedPlayers
+      ? rng() < 0.78
+      : idx % 6 === 0 && rng() < 0.55;
+
+    if (shouldTryOffer) {
       const latestUserClub =
         nextClubs.find((c) => c.id === working.userClubId) || updatedUserClubWithTactics;
       const newOffer = maybeGenerateIncomingOfferForUser({
@@ -1161,6 +1228,7 @@ export function simulateNextAutoStep(
         pendingOffers: nextPendingOffers,
         dayOffset: stepDayOffset,
         seasonYear,
+        aiSquads: nextAiSquads,
         rng,
       });
       if (newOffer) {
@@ -1290,6 +1358,8 @@ export function simulateNextAutoStep(
       pendingOffers: nextPendingOffers,
       transferHistory: nextTransferHistory,
       financeLedger: nextLedger,
+      youthAcademy: nextYouthAcademy,
+      midSeasonEvolutionProcessedYear: midSeasonProcessedYear,
     },
     logEntry,
   };

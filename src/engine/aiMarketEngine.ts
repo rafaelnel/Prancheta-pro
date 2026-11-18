@@ -279,6 +279,8 @@ export function maybeGenerateIncomingOfferForUser(params: {
   pendingOffers: IncomingTransferOffer[];
   dayOffset: number;
   seasonYear: number;
+  aiSquads?: Record<string, Player[]>;
+  specificPlayerId?: string;
   rng?: () => number;
 }): IncomingTransferOffer | null {
   const {
@@ -288,13 +290,15 @@ export function maybeGenerateIncomingOfferForUser(params: {
     pendingOffers,
     dayOffset,
     seasonYear,
+    aiSquads,
+    specificPlayerId,
     rng = Math.random,
   } = params;
 
   const activePending = pendingOffers.filter(
     (o) => o.status === 'PENDING' && o.expiresDayOffset >= dayOffset
   );
-  if (activePending.length >= 3) return null;
+  if (activePending.length >= 5) return null;
   if (userSquad.length <= MIN_SQUAD_SIZE) return null;
 
   const pendingPlayerIds = new Set(activePending.map((o) => o.playerId));
@@ -302,6 +306,7 @@ export function maybeGenerateIncomingOfferForUser(params: {
 
   const candidates = userSquad
     .filter((p) => {
+      if (specificPlayerId && p.id !== specificPlayerId) return false;
       if (p.contractType === 'EMPRESTADO') return false;
       if (pendingPlayerIds.has(p.id)) return false;
       if (p.position === 'GOL' && gkCount <= MIN_GOALKEEPERS) return false;
@@ -315,44 +320,104 @@ export function maybeGenerateIncomingOfferForUser(params: {
       const formBoost =
         p.seasonStats.matches >= 4 && p.seasonStats.avgRating >= 7.1 ? 6 : 0;
       const youthBoost = p.age <= 22 && stars >= 4 ? 5 : 0;
-      const interestScore = ovr + formBoost + youthBoost;
-      return { player: p, ovr, stars, interestScore };
+      const listedBoost =
+        p.isTransferListed || p.isLoanListed ? 34 : 0;
+      const interestScore = ovr + formBoost + youthBoost + listedBoost;
+      return {
+        player: p,
+        ovr,
+        stars,
+        interestScore,
+        isListed: Boolean(p.isTransferListed || p.isLoanListed),
+      };
     })
     .sort((a, b) => b.interestScore - a.interestScore);
 
   if (candidates.length === 0) return null;
 
-  const topPool = candidates.slice(0, Math.min(8, candidates.length));
+  const listedCandidates = candidates.filter((c) => c.isListed);
+  const topPool =
+    specificPlayerId
+      ? candidates
+      : listedCandidates.length > 0 && rng() < 0.8
+      ? listedCandidates
+      : candidates.slice(0, Math.min(8, candidates.length));
+
   const picked = topPool[Math.floor(rng() * topPool.length)];
   const p = picked.player;
 
-  // Pick a plausible interested AI club with cash
+  const forceLoanOnly = Boolean(p.isLoanListed && !p.isTransferListed);
+  const forceBuyOnly = Boolean(p.isTransferListed && !p.isLoanListed);
+  const isListed = picked.isListed;
+
+  const minCashRequired = forceLoanOnly
+    ? Math.max(800_000, p.marketValue * 0.1)
+    : isListed
+    ? Math.max(2_000_000, p.marketValue * 0.35)
+    : Math.max(3_500_000, p.marketValue * 0.45);
+
+  const minRepRequired = isListed
+    ? Math.max(60, picked.ovr - 18)
+    : Math.max(66, picked.ovr - 12);
+
+  // Pick a plausible interested AI club with cash, prioritizing clubs that need this sector/position
   const interestedClubs = clubs.filter(
     (c) =>
       c.id !== userClub.id &&
-      c.cashBalance >= Math.max(3_500_000, p.marketValue * 0.45) &&
-      c.reputation >= Math.max(66, picked.ovr - 12)
+      c.cashBalance >= minCashRequired &&
+      c.reputation >= minRepRequired
   );
   if (interestedClubs.length === 0) return null;
 
-  const buyer =
-    interestedClubs[Math.floor(rng() * interestedClubs.length)];
-  const isLoan =
-    (!p.isStarter || p.age <= 22) && rng() < 0.35;
+  const clubsWithNeed = aiSquads
+    ? interestedClubs.filter((c) => {
+        const sq = aiSquads[c.id];
+        if (!sq || sq.length === 0) return false;
+        const weakest = findWeakestSector(sq);
+        if (weakest === p.sector) return true;
+        const posPlayers = sq.filter((sp) => sp.position === p.position);
+        if (posPlayers.length <= 1) return true;
+        const bestAtPos = Math.max(
+          ...posPlayers.map((sp) =>
+            calculatePlayerOverall(sp.attributes, sp.position)
+          )
+        );
+        return picked.ovr >= bestAtPos - 1;
+      })
+    : [];
+
+  const buyerPool =
+    clubsWithNeed.length > 0 && rng() < 0.85 ? clubsWithNeed : interestedClubs;
+  const buyer = buyerPool[Math.floor(rng() * buyerPool.length)];
+
+  const isLoan = forceLoanOnly
+    ? true
+    : forceBuyOnly
+    ? false
+    : (!p.isStarter || p.age <= 22 || p.isLoanListed) && rng() < 0.4;
+
+  const feeMultiplier = isListed ? 0.92 + rng() * 0.18 : 0.95 + rng() * 0.22;
 
   const rawFee = isLoan
-    ? Math.max(300_000, Math.round((p.marketValue * 0.14) / 50_000) * 50_000)
+    ? Math.max(250_000, Math.round((p.marketValue * 0.13) / 50_000) * 50_000)
     : Math.min(
         Math.round((buyer.cashBalance * 0.85) / 100_000) * 100_000,
         Math.max(
-          900_000,
-          Math.round((p.marketValue * (0.95 + rng() * 0.22)) / 250_000) * 250_000
+          750_000,
+          Math.round((p.marketValue * feeMultiplier) / 250_000) * 250_000
         )
       );
 
-  if (rawFee < 300_000) return null;
+  if (rawFee < 250_000) return null;
 
   const reasonParts: string[] = [];
+  if (p.isTransferListed && p.isLoanListed) {
+    reasonParts.push('disponível para venda/empréstimo');
+  } else if (p.isTransferListed) {
+    reasonParts.push('listado para transferência');
+  } else if (p.isLoanListed) {
+    reasonParts.push('disponível para empréstimo');
+  }
   if (p.seasonStats.matches >= 4 && p.seasonStats.avgRating >= 7.0) {
     reasonParts.push(`boa fase (${p.seasonStats.avgRating.toFixed(2)} média)`);
   }
@@ -383,7 +448,7 @@ export function maybeGenerateIncomingOfferForUser(params: {
     expiresDayOffset: dayOffset + 18,
     negotiationStep: 0,
     status: 'PENDING',
-    rationale: `${buyer.shortName} busca reforço no setor (${reasonParts.join(' · ')}).`,
+    rationale: `${buyer.shortName} tem carência na posição (${p.position}) e busca fechar negócio (${reasonParts.join(' · ')}).`,
   };
 }
 
@@ -504,7 +569,10 @@ export function resolveIncomingOfferAction(params: {
 
   if (action === 'COUNTER_15' || action === 'COUNTER_30') {
     const canBuyerPay = buyerClub ? buyerClub.cashBalance >= requestedFee : true;
-    const baseAcceptProb = action === 'COUNTER_15' ? 0.68 : 0.42;
+    const listedBonus =
+      targetPlayer.isTransferListed || targetPlayer.isLoanListed ? 0.14 : 0;
+    const baseAcceptProb =
+      (action === 'COUNTER_15' ? 0.68 : 0.42) + listedBonus;
     const isAccepted = canBuyerPay && rng() < baseAcceptProb;
 
     if (!isAccepted) {

@@ -12,6 +12,7 @@ import {
   calculateDynamicSponsorship,
   processSeasonEvolutionAndAging,
 } from './economyAndEvolution';
+import { generateYouthRegens } from './youthAcademyEngine';
 import { createInitialMatchState } from './matchEngine';
 import { formatCompactBRL } from '../utils/formatters';
 import {
@@ -394,6 +395,7 @@ export function executeNewSeasonRollover(params: {
   libertadores: LibertadoresState;
   seasonHistory: SeasonArchiveEntry[];
   managerName: string;
+  youthAcademy?: import('../types/football').YouthAcademyState;
   rng?: () => number;
 }): {
   nextYear: number;
@@ -414,6 +416,7 @@ export function executeNewSeasonRollover(params: {
   nextMatchState: LiveMatchState;
   nextMessages: InboxMessage[];
   nextDivision: 'A' | 'B';
+  nextYouthAcademy: import('../types/football').YouthAcademyState;
 } {
   const {
     currentYear,
@@ -429,6 +432,14 @@ export function executeNewSeasonRollover(params: {
     libertadores,
     seasonHistory,
     managerName,
+    youthAcademy = {
+      investmentTier: 'ESTRUTURADO',
+      focusSector: 'EQUILIBRADO',
+      monthlyCost: 450_000,
+      accumulatedSeasonInvestment: 0,
+      monthsInvestedThisSeason: 12,
+      lastGraduatedRegens: [],
+    },
     rng = Math.random,
   } = params;
 
@@ -603,12 +614,30 @@ export function executeNewSeasonRollover(params: {
   const r1Away =
     clubsAfterSponsor.find((c) => c.id === r1Fix.awayClubId) || clubsAfterSponsor[1];
 
+  const youthResult = generateYouthRegens({
+    academy: youthAcademy,
+    clubId: userClubId,
+    clubReputation: updatedUserClub.reputation,
+    division: nextDivision,
+    seasonYear: nextYear,
+    rng,
+  });
+
+  const finalUserSquad = evoResult.updatedUserSquad;
+  const nextYouthAcademy = {
+    ...youthAcademy,
+    accumulatedSeasonInvestment: youthAcademy.monthlyCost,
+    monthsInvestedThisSeason: 1,
+    lastGraduatedRegens: youthResult.reportItems,
+    youthRoster: youthResult.updatedYouthRoster,
+  };
+
   const nextMatchState = createInitialMatchState(
     1,
     r1Fix,
     r1Home,
     r1Away,
-    evoResult.updatedUserSquad,
+    finalUserSquad,
     userClubId,
     [],
     evoResult.updatedAiSquads
@@ -621,6 +650,7 @@ export function executeNewSeasonRollover(params: {
   const fullReport: SeasonEndReport = {
     ...baseReport,
     userEvolutionHighlights: sortedEvoHighlights,
+    promotedYouthRegens: youthResult.reportItems,
   };
 
   const archiveEntry: SeasonArchiveEntry = {
@@ -651,7 +681,29 @@ export function executeNewSeasonRollover(params: {
   const oppName =
     r1Fix.homeClubId === userClubId ? r1Away.shortName : r1Home.shortName;
 
+  const youthInboxMsg: InboxMessage | null = youthResult.newPlayers.length > 0 ? {
+    id: `msg-youth-grads-${nextYear}`,
+    date: `28 Jan ${nextYear} · 09:15`,
+    sender: 'Coordenação da Base',
+    senderRole: 'Sub-20 & Captação',
+    subject: `Safra ${nextYear} na Base: ${youthResult.newPlayers.length} Jovens Captados no Sub-20!`,
+    category: 'Olheiro',
+    priority: 'positive',
+    read: false,
+    body: [
+      `A captação anual da Base e Sub-20 trouxe ${youthResult.newPlayers.length} novos talentos para o CT do ${finalUserClub.shortName}. Os atletas já na base também completaram +1 ano de maturação.`,
+      `Acesse a aba Base & Sub-20 para inspecionar os atributos e promover ao elenco profissional os jogadores a partir de 16 anos que vão ajudar a equipe!`,
+    ],
+    bulletPoints: youthResult.reportItems.map(
+      (r) =>
+        `${r.name} (${r.position} · ${r.age} anos · OVR ${Math.round(r.ovr)} · ${r.potentialStars}★)`
+    ),
+    actionLabel: 'Avaliar Base & Sub-20',
+    actionTargetTab: 'youth',
+  } : null;
+
   const nextMessages: InboxMessage[] = [
+    ...(youthInboxMsg ? [youthInboxMsg] : []),
     {
       id: `msg-newseason-${nextYear}-1`,
       date: `28 Jan ${nextYear} · 09:00`,
@@ -707,7 +759,7 @@ export function executeNewSeasonRollover(params: {
     report: fullReport,
     archiveEntry,
     updatedClubs: clubsAfterSponsor,
-    updatedUserSquad: evoResult.updatedUserSquad,
+    updatedUserSquad: finalUserSquad,
     updatedAiSquads: evoResult.updatedAiSquads,
     updatedFreeAgents: evoResult.updatedFreeAgents,
     updatedLoanedOut: [],
@@ -721,5 +773,8 @@ export function executeNewSeasonRollover(params: {
     nextMatchState,
     nextMessages,
     nextDivision,
+    nextYouthAcademy,
   };
 }
+
+

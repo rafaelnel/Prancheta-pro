@@ -5,6 +5,8 @@ import {
   Eye,
   AlertTriangle,
   Sparkles,
+  TrendingUp,
+  RefreshCw,
 } from 'lucide-react';
 import { getRoleById } from '../data/tacticsData';
 import {
@@ -25,6 +27,11 @@ interface SquadViewProps {
   onInspectPlayer: (player: Player) => void;
   onSwapPlayers: (playerAId: string, playerBId: string) => void;
   onAutoPickBestXI: () => void;
+  onTogglePlayerMarketListing?: (
+    playerId: string,
+    mode: 'TRANSFER' | 'LOAN'
+  ) => void;
+  onSimulateMidSeasonEvolution?: () => void;
 }
 
 export const SquadView: React.FC<SquadViewProps> = ({
@@ -32,19 +39,27 @@ export const SquadView: React.FC<SquadViewProps> = ({
   onInspectPlayer,
   onSwapPlayers,
   onAutoPickBestXI,
+  onTogglePlayerMarketListing,
+  onSimulateMidSeasonEvolution,
 }) => {
   const [sectorFilter, setSectorFilter] = useState<
-    'ALL' | 'STARTERS' | 'RESERVES' | PositionSector
+    'ALL' | 'STARTERS' | 'RESERVES' | 'LISTED' | PositionSector
   >('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedForSwapId, setSelectedForSwapId] = useState<string | null>(
     null
   );
 
+  const listedCount = squad.filter(
+    (p) => p.isTransferListed || p.isLoanListed
+  ).length;
+
   const filteredPlayers = squad
     .filter((p) => {
       if (sectorFilter === 'STARTERS') return p.isStarter;
       if (sectorFilter === 'RESERVES') return !p.isStarter;
+      if (sectorFilter === 'LISTED')
+        return Boolean(p.isTransferListed || p.isLoanListed);
       if (sectorFilter !== 'ALL') return p.sector === sectorFilter;
       return true;
     })
@@ -121,6 +136,10 @@ export const SquadView: React.FC<SquadViewProps> = ({
               id: 'RESERVES',
               label: `Reservas (${squad.filter((p) => !p.isStarter).length})`,
             },
+            {
+              id: 'LISTED',
+              label: `Disponíveis no Mercado (${listedCount})`,
+            },
             { id: 'GOL', label: 'Goleiros' },
             { id: 'DEF', label: 'Defensores' },
             { id: 'MEI', label: 'Meio-Campo' },
@@ -139,6 +158,35 @@ export const SquadView: React.FC<SquadViewProps> = ({
             {tab.label}
           </button>
         ))}
+      </div>
+
+      {/* Visual Legend & Semiannual Evolution Guide */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 bg-[#0b0c10]/80 border border-white/[0.08] rounded-2xl text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-bold text-white flex items-center gap-1.5 whitespace-nowrap">
+            <TrendingUp className="w-4 h-4 text-[#b5ff00]" />
+            Setas de Evolução Semestral (a cada 6 meses):
+          </span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/20 text-[#b5ff00] font-mono font-bold border border-[#b5ff00]/40">
+            ▲ +X (Evolução)
+          </span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono font-bold border border-rose-500/40">
+            ▼ -X (Regressão)
+          </span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white/[0.05] text-zinc-400 font-mono border border-white/10">
+            ▬ 0 (Estável)
+          </span>
+        </div>
+        {onSimulateMidSeasonEvolution && (
+          <button
+            onClick={onSimulateMidSeasonEvolution}
+            className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-[#14171f] hover:bg-white/[0.08] text-[#b5ff00] border border-[#b5ff00]/40 hover:border-[#b5ff00] transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shadow-sm"
+            title="Recalcula a evolução semestral dos jogadores com base no desempenho e minutagem no 1º turno"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            Recalcular Evolução Semestral Agora
+          </button>
+        )}
       </div>
 
       {selectedSwapPlayer && (
@@ -206,7 +254,12 @@ export const SquadView: React.FC<SquadViewProps> = ({
                 >
                   VEL
                 </th>
-                <th className="py-3.5 px-2 font-medium text-right" title="Overall (60-99 · 99 = Auge Histórico)">OVR</th>
+                <th
+                  className="py-3.5 px-3 font-medium text-right"
+                  title="Overall (60-99) e Evolução Semestral (▲ verde / ▼ vermelha)"
+                >
+                  OVR / EVOL
+                </th>
                 <th className="py-3.5 px-3 font-medium text-right">Valor</th>
                 <th className="py-3.5 px-3 font-medium text-right">Salário</th>
                 <th className="py-3.5 px-3 font-medium text-right">Ações</th>
@@ -274,6 +327,21 @@ export const SquadView: React.FC<SquadViewProps> = ({
                         {player.contractType === 'EMPRESTADO' && (
                           <span className="text-amber-300 font-medium">
                             · Empréstimo ({player.loanOriginClubName || 'Clube'})
+                          </span>
+                        )}
+                        {player.isRegen && (
+                          <span className="text-[#b5ff00] font-mono text-[10px]">
+                            · Revelado na Base
+                          </span>
+                        )}
+                        {player.isTransferListed && (
+                          <span className="text-sky-300 font-mono font-bold text-[10px]">
+                            · [DISP. VENDA]
+                          </span>
+                        )}
+                        {player.isLoanListed && (
+                          <span className="text-indigo-300 font-mono font-bold text-[10px]">
+                            · [DISP. EMPRÉSTIMO]
                           </span>
                         )}
                       </div>
@@ -354,8 +422,34 @@ export const SquadView: React.FC<SquadViewProps> = ({
                     >
                       {player.attributes.velocidade}
                     </td>
-                    <td className="py-2.5 px-2 text-right font-mono tabular-nums font-bold text-[#b5ff00] whitespace-nowrap">
-                      {ovr}
+                    <td className="py-2.5 px-3 text-right font-mono tabular-nums whitespace-nowrap">
+                      <div className="inline-flex items-center justify-end gap-1.5">
+                        <span className="font-bold text-[#b5ff00] text-xs sm:text-sm">
+                          {ovr}
+                        </span>
+                        {player.recentOvrDelta !== undefined && player.recentOvrDelta > 0 ? (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-500/20 text-[#b5ff00] font-mono text-[11px] font-extrabold border border-[#b5ff00]/40 shadow-sm"
+                            title={`Evolução semestral: +${player.recentOvrDelta} OVR`}
+                          >
+                            ▲+{player.recentOvrDelta}
+                          </span>
+                        ) : player.recentOvrDelta !== undefined && player.recentOvrDelta < 0 ? (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono text-[11px] font-extrabold border border-rose-500/40 shadow-sm"
+                            title={`Regressão semestral: ${player.recentOvrDelta} OVR`}
+                          >
+                            ▼{player.recentOvrDelta}
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center px-1.5 py-0.5 rounded bg-white/[0.04] text-zinc-500 font-mono text-[10px] border border-white/[0.06]"
+                            title="OVR estável no semestre"
+                          >
+                            ▬ 0
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="py-2.5 px-3 text-right font-mono tabular-nums text-zinc-300 whitespace-nowrap">
                       {formatCompactBRL(player.marketValue)}
@@ -365,6 +459,44 @@ export const SquadView: React.FC<SquadViewProps> = ({
                     </td>
                     <td className="py-2.5 px-3 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        {onTogglePlayerMarketListing &&
+                          player.contractType !== 'EMPRESTADO' && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onTogglePlayerMarketListing(
+                                    player.id,
+                                    'TRANSFER'
+                                  )
+                                }
+                                title="Disponibilizar jogador para transferência (aumenta procura de clubes da IA e facilita venda)"
+                                className={`px-2.5 py-1.5 rounded-full text-[10px] font-bold transition-colors whitespace-nowrap border ${
+                                  player.isTransferListed
+                                    ? 'bg-sky-400 text-[#090a0f] border-sky-400'
+                                    : 'bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-400 hover:text-white border-white/10'
+                                }`}
+                              >
+                                {player.isTransferListed
+                                  ? '✓ À Venda'
+                                  : 'Listar Venda'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onTogglePlayerMarketListing(player.id, 'LOAN')
+                                }
+                                title="Disponibilizar jogador para empréstimo (atrai propostas de clubes que precisam da posição)"
+                                className={`px-2.5 py-1.5 rounded-full text-[10px] font-bold transition-colors whitespace-nowrap border ${
+                                  player.isLoanListed
+                                    ? 'bg-indigo-400 text-[#090a0f] border-indigo-400'
+                                    : 'bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-400 hover:text-white border-white/10'
+                                }`}
+                              >
+                                {player.isLoanListed ? '✓ P/ Emp.' : 'Listar Emp.'}
+                              </button>
+                            </>
+                          )}
                         <button
                           onClick={() => onInspectPlayer(player)}
                           aria-label={`Ver 18 atributos de ${player.name}`}

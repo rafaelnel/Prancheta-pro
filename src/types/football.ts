@@ -110,6 +110,11 @@ export interface Player {
   wageSharePaid?: number;
   purchaseOptionFee?: number;
   loanDestinationClubName?: string;
+  isRegen?: boolean;
+  regenBatchYear?: number;
+  isTransferListed?: boolean;
+  isLoanListed?: boolean;
+  recentOvrDelta?: number;
 }
 
 export interface FormationSlot {
@@ -265,6 +270,7 @@ export type NavigationTab =
   | 'tactics'
   | 'match'
   | 'market'
+  | 'youth'
   | 'calendar'
   | 'competitions'
   | 'finances';
@@ -395,6 +401,7 @@ export interface MatchEvent {
   text: string;
   scorerName?: string;
   assistName?: string;
+  playerId?: string;
   xGAdded?: number;
 }
 
@@ -481,6 +488,33 @@ export interface SponsorshipContract {
   seasonYear: number;
 }
 
+export type YouthInvestmentTier = 'BASICO' | 'ESTRUTURADO' | 'AVANCADO' | 'ELITE';
+
+export type YouthFocusSector = 'EQUILIBRADO' | PositionSector;
+
+export interface YouthRegenReportItem {
+  id: string;
+  name: string;
+  age: number;
+  position: NaturalPosition;
+  sector: PositionSector;
+  ovr: number;
+  potentialStars: PotentialStars;
+  marketValue: number;
+  salary: number;
+  highlightNote: string;
+}
+
+export interface YouthAcademyState {
+  investmentTier: YouthInvestmentTier;
+  focusSector: YouthFocusSector;
+  monthlyCost: number;
+  accumulatedSeasonInvestment: number;
+  monthsInvestedThisSeason: number;
+  lastGraduatedRegens: YouthRegenReportItem[];
+  youthRoster?: Player[];
+}
+
 export interface ClubFinanceLedger {
   seasonYear: number;
   seasonGateRevenue: number;
@@ -489,9 +523,11 @@ export interface ClubFinanceLedger {
   seasonPrizeRevenue: number;
   seasonSponsorshipRevenue: number;
   seasonOperationalExpense: number;
+  seasonYouthAcademySpend?: number;
   lastMatchGateRevenue: number;
   lastMatchAttendance: number;
   sponsorshipContract: SponsorshipContract;
+  youthAcademy?: YouthAcademyState;
 }
 
 export interface IncomingTransferOffer {
@@ -568,6 +604,7 @@ export interface SeasonEndReport {
   libertadoresQualifiedBrIds: string[];
   awards: SeasonAwardsSummary;
   userEvolutionHighlights: PlayerEvolutionReportItem[];
+  promotedYouthRegens?: YouthRegenReportItem[];
 }
 
 export interface SeasonArchiveEntry {
@@ -634,7 +671,10 @@ export interface CareerSaveData {
   transferredOutClubPlayerIds?: string[];
   pendingOffers?: IncomingTransferOffer[];
   financeLedger?: ClubFinanceLedger;
+  youthAcademy?: YouthAcademyState;
   seasonHistory?: SeasonArchiveEntry[];
   seasonEndReport?: SeasonEndReport | null;
+  midSeasonEvolutionProcessedYear?: number;
 }
+
 

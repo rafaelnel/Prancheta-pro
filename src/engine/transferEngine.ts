@@ -506,13 +506,16 @@ export function evaluateOutgoingPlayer(
       'Atleta emprestado de outro clube — não pode ser vendido, apenas devolvido.';
   }
 
+  const saleMultiplier =
+    (ovr >= 82 ? 1.05 : 0.92) + (player.isTransferListed ? 0.06 : 0);
   const saleValue = Math.max(
     500000,
-    Math.round((player.marketValue * (ovr >= 82 ? 1.05 : 0.92)) / 250000) * 250000
+    Math.round((player.marketValue * saleMultiplier) / 250000) * 250000
   );
+  const loanMultiplier = 0.08 + (player.isLoanListed ? 0.03 : 0);
   const loanOutFee = Math.max(
     100000,
-    Math.round((player.marketValue * 0.08) / 50000) * 50000
+    Math.round((player.marketValue * loanMultiplier) / 50000) * 50000
   );
   const loanOutResidualShare = 0.1; // Partner club pays 90% of salary
   const paidCurrently = getPlayerPaidSalary(player);

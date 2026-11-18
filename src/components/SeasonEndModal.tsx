@@ -440,13 +440,45 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
               </div>
             </div>
           )}
+
+          {/* 6. Youth Academy Intake (Safras da Base) if available */}
+          {report.promotedYouthRegens && report.promotedYouthRegens.length > 0 && (
+            <div className="bg-[#14171f] border border-[#b5ff00]/25 rounded-2xl p-4 space-y-2.5">
+              <div className="flex items-center justify-between gap-2 text-xs font-bold text-[#b5ff00]">
+                <span>Nova Safra Captada na Base (Sub-17 & Sub-20)</span>
+                <span className="text-[11px] font-mono text-zinc-400">
+                  {report.promotedYouthRegens.length} jovens talentos
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                {report.promotedYouthRegens.map((reg) => (
+                  <div
+                    key={reg.id}
+                    className="bg-[#0b0c10] border border-white/[0.06] rounded-xl px-3 py-2 flex items-center justify-between text-xs"
+                  >
+                    <div className="min-w-0">
+                      <div className="font-semibold text-white truncate">
+                        {reg.name} ({reg.position})
+                      </div>
+                      <div className="text-[10px] text-zinc-400">
+                        {reg.age} anos · Potencial {reg.potentialStars}★
+                      </div>
+                    </div>
+                    <span className="font-mono font-extrabold text-[#b5ff00] ml-2">
+                      OVR {reg.ovr}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer CTA */}
         <div className="px-5 sm:px-7 py-4 bg-[#0b0c10] border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="text-xs text-zinc-400">
-            A virada de ano atualiza idades (+1), evolução/regressão por
-            desempenho e estrelas, patrocínios e tabela de 38 rodadas.
+            A virada de ano atualiza idades (+1), evolução/regressão, safra da
+            base Sub-20, patrocínios e tabela de 38 rodadas.
           </div>
 
           <div className="flex items-center gap-2.5 ml-auto">

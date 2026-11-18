@@ -10,6 +10,7 @@ import {
   PotentialStars,
   SponsorshipContract,
   StandingsRow,
+  InboxMessage,
 } from '../types/football';
 
 function hashStr(input: string): number {
@@ -23,25 +24,125 @@ function hashStr(input: string): number {
 
 /**
  * Maps Potential Stars (1..5) to the maximum realistic OVR ceiling (60..99 scale).
+ * Only a rare 5★ generational superstar can ever cross 83+ OVR in their prime.
  */
 export function getPotentialCeilingOvr(stars: PotentialStars): number {
   switch (stars) {
     case 5:
-      return 92;
+      return 89;
     case 4:
-      return 85;
+      return 82;
     case 3:
-      return 79;
+      return 77;
     case 2:
-      return 74;
+      return 72;
     case 1:
     default:
-      return 69;
+      return 67;
   }
 }
 
 /**
+ * Returns the maximum realistic OVR a player can have at a given age and star potential.
+ * Prevents young players (15–22) from having exaggerated 80+ or 90+ OVRs unless they are
+ * an extraordinary 5★ phenomenon already reaching 20–22 years old.
+ */
+export function getMaxRealisticOvrForAgeAndPotential(
+  age: number,
+  stars: PotentialStars
+): number {
+  const careerCeiling = getPotentialCeilingOvr(stars);
+  let ageCap = careerCeiling;
+
+  if (age <= 15) {
+    ageCap = stars === 5 ? 66 : stars === 4 ? 64 : 62;
+  } else if (age === 16) {
+    ageCap = stars === 5 ? 69 : stars === 4 ? 66 : 64;
+  } else if (age === 17) {
+    ageCap = stars === 5 ? 72 : stars === 4 ? 69 : 66;
+  } else if (age === 18) {
+    ageCap = stars === 5 ? 74 : stars === 4 ? 71 : 68;
+  } else if (age === 19) {
+    ageCap = stars === 5 ? 77 : stars === 4 ? 74 : 70;
+  } else if (age === 20) {
+    ageCap = stars === 5 ? 80 : stars === 4 ? 76 : 72;
+  } else if (age === 21) {
+    ageCap = stars === 5 ? 82 : stars === 4 ? 78 : 74;
+  } else if (age === 22) {
+    ageCap = stars === 5 ? 84 : stars === 4 ? 80 : 76;
+  }
+
+  return Math.min(careerCeiling, ageCap);
+}
+
+/**
+ * Smoothly calibrates a 1..20 attribute set so `calculatePlayerOverall(attrs, position)`
+ * lands on `targetOvr` (within ±1) and never exceeds `maxOvr`.
+ */
+export function calibrateAttributesToTargetOvr(
+  attrs: PlayerAttributes,
+  position: NaturalPosition,
+  targetOvr: number,
+  maxOvr: number = targetOvr
+): PlayerAttributes {
+  const next: PlayerAttributes = { ...attrs };
+  const allKeys = Object.keys(next) as Array<keyof PlayerAttributes>;
+
+  // First, if any attributes are exaggerated (e.g., 19-20 on a young player), scale toward a sensible base
+  const curOvr = calculatePlayerOverall(next, position);
+  if (curOvr > maxOvr + 4) {
+    // Convert targetOvr (60..89) to approximate 1..20 raw weighted average (12.0..18.5)
+    const t = Math.max(0, Math.min(1, (targetOvr - 60) / 39));
+    const targetRaw = 12.0 + Math.pow(t, 1 / 1.42) * 8.0;
+    const avgAttr =
+      allKeys.reduce((acc, k) => acc + next[k], 0) / allKeys.length;
+    const scale = avgAttr > 0 ? (targetRaw - 0.8) / avgAttr : 0.7;
+
+    for (const k of allKeys) {
+      next[k] = Math.max(5, Math.min(19, Math.round(next[k] * scale)));
+    }
+  }
+
+  const priorityByPos: Record<NaturalPosition, (keyof PlayerAttributes)[]> = {
+    GOL: ['posicionamento', 'agilidade', 'impulsao', 'compostura', 'decisoes', 'passe', 'forca'],
+    ZAG: ['desarme', 'posicionamento', 'forca', 'impulsao', 'decisoes', 'compostura', 'passe', 'velocidade'],
+    LD: ['velocidade', 'aceleracao', 'resistencia', 'cruzamento', 'desarme', 'indiceDeTrabalho', 'posicionamento', 'passe', 'drible'],
+    LE: ['velocidade', 'aceleracao', 'resistencia', 'cruzamento', 'desarme', 'indiceDeTrabalho', 'posicionamento', 'passe', 'drible'],
+    VOL: ['desarme', 'posicionamento', 'indiceDeTrabalho', 'resistencia', 'passe', 'decisoes', 'forca', 'compostura'],
+    MC: ['passe', 'visaoDeJogo', 'primeiroToque', 'decisoes', 'resistencia', 'indiceDeTrabalho', 'compostura', 'desarme', 'semBola'],
+    MEI: ['passe', 'visaoDeJogo', 'primeiroToque', 'drible', 'decisoes', 'semBola', 'agilidade', 'finalizacao'],
+    PD: ['drible', 'velocidade', 'aceleracao', 'agilidade', 'primeiroToque', 'semBola', 'cruzamento', 'finalizacao', 'passe'],
+    PE: ['drible', 'velocidade', 'aceleracao', 'agilidade', 'primeiroToque', 'semBola', 'cruzamento', 'finalizacao', 'passe'],
+    ATA: ['finalizacao', 'semBola', 'compostura', 'primeiroToque', 'decisoes', 'aceleracao', 'forca', 'impulsao'],
+  };
+
+  const posKeys = priorityByPos[position];
+  let guard = 0;
+
+  while (guard < 80) {
+    guard++;
+    const current = calculatePlayerOverall(next, position);
+    if (current > maxOvr) {
+      const k = posKeys[guard % posKeys.length];
+      if (next[k] > 5) next[k] -= 1;
+      else {
+        const anyKey = allKeys[guard % allKeys.length];
+        if (next[anyKey] > 5) next[anyKey] -= 1;
+      }
+    } else if (current < targetOvr - 1) {
+      const k = posKeys[guard % posKeys.length];
+      if (next[k] < 19) next[k] += 1;
+    } else {
+      break;
+    }
+  }
+
+  return next;
+}
+
+/**
  * Deterministic initial star potential (1..5) based on current OVR, age, club reputation, and player ID.
+ * 5★ is reserved for true elite stars or rare young phenomena.
  */
 export function assignPotentialStars(
   ovr: number,
@@ -50,20 +151,20 @@ export function assignPotentialStars(
   playerId: string = 'p'
 ): PotentialStars {
   const roll = (hashStr(playerId) % 100) / 100;
-  let score = 2.6;
+  let score = 2.4;
 
-  if (ovr >= 86) score = 4.9;
-  else if (ovr >= 82) score = 4.3;
-  else if (ovr >= 77) score = 3.7;
-  else if (ovr >= 72) score = 3.1;
-  else if (ovr >= 67) score = 2.4;
+  if (ovr >= 84) score = 4.7;
+  else if (ovr >= 80) score = 4.1;
+  else if (ovr >= 76) score = 3.5;
+  else if (ovr >= 71) score = 2.9;
+  else if (ovr >= 66) score = 2.3;
   else score = 1.8;
 
-  // Youth bonus: young players at reputable clubs can have higher ceiling than current OVR
+  // Controlled youth upside: only top-roll youngsters reach 4★ or rare 5★
   if (age <= 20) {
-    score += 0.95 + (clubReputation >= 80 ? 0.35 : 0) + (roll > 0.65 ? 0.45 : 0);
+    score += 0.55 + (clubReputation >= 82 ? 0.2 : 0) + (roll > 0.88 ? 0.55 : roll > 0.65 ? 0.25 : 0);
   } else if (age <= 23) {
-    score += 0.5 + (roll > 0.72 ? 0.35 : 0);
+    score += 0.35 + (roll > 0.82 ? 0.35 : 0);
   } else if (age >= 32) {
     // Veterans' ceiling reflects remaining peak capacity, never exceeding current tier
     score = Math.min(score, ovr >= 82 ? 4 : ovr >= 76 ? 3 : 2);
@@ -163,13 +264,69 @@ export function ensurePlayerDefaults(
   clubReputation: number = 78,
   division: 'A' | 'B' | 'LIB' = 'A'
 ): Player {
-  const ovr = calculatePlayerOverall(player.attributes, player.position);
+  let attributes = player.attributes;
+  let ovr = calculatePlayerOverall(attributes, player.position);
   const potentialStars =
     player.potentialStars ??
     assignPotentialStars(ovr, player.age, clubReputation, player.id);
+
+  // Sanitize any young player or regen whose OVR is unrealistically high for their age/stars
+  const maxAllowedForAge = getMaxRealisticOvrForAgeAndPotential(
+    player.age,
+    potentialStars
+  );
+  if ((player.age <= 22 || player.isRegen) && ovr > maxAllowedForAge) {
+    const realisticTarget = player.isRegen
+      ? Math.min(
+          maxAllowedForAge,
+          61 +
+            Math.max(0, player.age - 15) * 2 +
+            (potentialStars === 5 ? 4 : potentialStars === 4 ? 2 : 0)
+        )
+      : maxAllowedForAge;
+    attributes = calibrateAttributesToTargetOvr(
+      attributes,
+      player.position,
+      realisticTarget,
+      maxAllowedForAge
+    );
+    ovr = calculatePlayerOverall(attributes, player.position);
+    const recalc = calculateBalancedValuationAndWage({
+      ovr,
+      age: Math.max(16, player.age),
+      clubReputation,
+      division,
+      potentialStars,
+    });
+    return {
+      ...player,
+      attributes,
+      potentialStars,
+      marketValue: recalc.marketValue,
+      salary: player.isRegen
+        ? Math.max(15_000, Math.round((recalc.salary * 0.45) / 5_000) * 5_000)
+        : recalc.salary,
+    };
+  }
+
+  const initialOvrDelta =
+    player.recentOvrDelta !== undefined
+      ? player.recentOvrDelta
+      : player.age <= 20 && potentialStars >= 4
+      ? 2
+      : player.age <= 22
+      ? 1
+      : player.age >= 34
+      ? -2
+      : player.age >= 32
+      ? -1
+      : 0;
+
   return {
     ...player,
+    attributes,
     potentialStars,
+    recentOvrDelta: initialOvrDelta,
     marketValue:
       player.marketValue > 0
         ? player.marketValue
@@ -458,6 +615,7 @@ function adjustAttributesByDelta(
   attrs: PlayerAttributes,
   position: NaturalPosition,
   targetDeltaOvr: number,
+  maxAllowedOvr: number,
   isVeteranPhysicalDecline: boolean,
   rng: () => number
 ): PlayerAttributes {
@@ -479,11 +637,15 @@ function adjustAttributesByDelta(
 
   if (targetDeltaOvr === 0) return next;
 
-  const step = targetDeltaOvr > 0 ? 1 : -1;
-  const numAttributesToShift = Math.min(
-    14,
-    Math.max(2, Math.round(Math.abs(targetDeltaOvr) * 2.2))
-  );
+  const beforeOvr = calculatePlayerOverall(attrs, position);
+  const desiredOvr =
+    targetDeltaOvr > 0
+      ? Math.min(maxAllowedOvr, beforeOvr + targetDeltaOvr)
+      : Math.max(60, beforeOvr + targetDeltaOvr);
+
+  if (desiredOvr === beforeOvr) return next;
+
+  const step = desiredOvr > beforeOvr ? 1 : -1;
 
   const priorityByPos: Record<NaturalPosition, (keyof PlayerAttributes)[]> = {
     GOL: ['posicionamento', 'agilidade', 'impulsao', 'compostura', 'decisoes', 'passe'],
@@ -499,23 +661,24 @@ function adjustAttributesByDelta(
   };
 
   const keys = priorityByPos[position];
-  for (let i = 0; i < numAttributesToShift; i++) {
-    const key = keys[i % keys.length];
-    if (rng() < 0.85 || i < 2) {
-      next[key] = Math.max(4, Math.min(20, next[key] + step));
-    }
-  }
-
-  // Ensure overall moves in the intended direction if attributes barely shifted
   let guard = 0;
-  const beforeOvr = calculatePlayerOverall(attrs, position);
-  while (
-    Math.abs(calculatePlayerOverall(next, position) - beforeOvr) <
-      Math.min(Math.abs(targetDeltaOvr), 4) &&
-    guard < 8
-  ) {
+
+  while (guard < 24) {
+    const curOvr = calculatePlayerOverall(next, position);
+    if (step > 0 && curOvr >= desiredOvr) break;
+    if (step < 0 && curOvr <= desiredOvr) break;
+
     const key = keys[guard % keys.length];
-    next[key] = Math.max(4, Math.min(20, next[key] + step));
+    if (rng() < 0.85 || guard >= keys.length) {
+      const candidateVal = Math.max(4, Math.min(19, next[key] + step));
+      const prevVal = next[key];
+      next[key] = candidateVal;
+      // Prevent overshooting maxAllowedOvr on upward steps
+      if (step > 0 && calculatePlayerOverall(next, position) > maxAllowedOvr) {
+        next[key] = prevVal;
+        break;
+      }
+    }
     guard++;
   }
 
@@ -586,7 +749,7 @@ export function processSeasonEvolutionAndAging(params: {
     const stars =
       player.potentialStars ??
       assignPotentialStars(oldOvr, oldAge, clubRep, player.id);
-    const ceiling = getPotentialCeilingOvr(stars);
+    const ceiling = getMaxRealisticOvrForAgeAndPotential(newAge, stars);
 
     const grp = getPositionGroup(player.position);
     const perfScore = computePositionPerformanceScore(player);
@@ -599,18 +762,20 @@ export function processSeasonEvolutionAndAging(params: {
     let reasonNote = 'Temporada estável';
 
     if (oldAge <= 22) {
-      // Jovens (16-22): +1 a +4 OVR se minutagem + bom desempenho até atingir teto
+      // Jovens (16-22): evolução controlada (+1 a +3 OVR) se minutagem + bom desempenho até atingir o limite da idade/estrelas
+      const highOvrDamping = oldOvr >= 76 ? 1 : 0;
       if (oldOvr >= ceiling) {
-        desiredDelta = relativePerf > 0.7 && stars < 5 ? 0 : 0;
-        reasonNote = 'Atingiu teto de potencial atual';
+        desiredDelta = 0;
+        reasonNote = 'Atingiu o limite de evolução para a faixa de idade/potencial';
       } else if (matches >= 18 && relativePerf >= 0.35) {
-        desiredDelta = Math.min(4, Math.max(2, Math.round(2 + relativePerf)));
+        const rawBoost = Math.min(3, Math.max(1, Math.round(1.6 + relativePerf * 0.8) - highOvrDamping));
+        desiredDelta = rawBoost;
         reasonNote = `Destaque jovem (${matches}j, nota ${player.seasonStats.avgRating.toFixed(1)})`;
       } else if (matches >= 8 && relativePerf >= -0.25) {
-        desiredDelta = 1 + (rng() > 0.55 ? 1 : 0);
+        desiredDelta = oldOvr >= 75 ? (rng() > 0.5 ? 1 : 0) : 1 + (rng() > 0.65 && stars >= 4 ? 1 : 0);
         reasonNote = 'Evolução natural com minutagem';
       } else if (matches >= 4) {
-        desiredDelta = rng() > 0.4 ? 1 : 0;
+        desiredDelta = rng() > 0.5 ? 1 : 0;
         reasonNote = 'Desenvolvimento gradual';
       } else {
         desiredDelta = 0;
@@ -620,7 +785,8 @@ export function processSeasonEvolutionAndAging(params: {
     } else if (oldAge <= 28) {
       // Auge (23-28): +1 a +2 se excelente temporada, 0 normal, -1 se mal
       if (matches >= 20 && relativePerf >= 0.45 && oldOvr < ceiling) {
-        desiredDelta = relativePerf >= 0.95 && oldOvr + 2 <= ceiling ? 2 : 1;
+        desiredDelta =
+          relativePerf >= 1.1 && oldOvr < 80 && oldOvr + 2 <= ceiling ? 2 : 1;
         reasonNote = `Grande temporada no auge (nota ${player.seasonStats.avgRating.toFixed(1)})`;
       } else if (matches >= 10 && relativePerf < -0.55) {
         desiredDelta = -1;
@@ -652,6 +818,7 @@ export function processSeasonEvolutionAndAging(params: {
       player.attributes,
       player.position,
       desiredDelta,
+      ceiling,
       isPhysicalDecline,
       rng
     );
@@ -672,6 +839,7 @@ export function processSeasonEvolutionAndAging(params: {
       attributes: updatedAttrs,
       marketValue,
       salary,
+      recentOvrDelta: newOvr - oldOvr,
       condition: 94,
       injured: false,
       injuryNote: undefined,
@@ -790,5 +958,225 @@ export function processSeasonEvolutionAndAging(params: {
     updatedFreeAgents,
     updatedLoanedOut,
     userEvolutionReport,
+  };
+}
+
+/**
+ * Computes semiannual player evolution (around July 1st) based on first half performance stats,
+ * setting recentOvrDelta and generating an inbox report.
+ */
+export function processMidSeasonEvolution(params: {
+  clubs: Club[];
+  userClubId: string;
+  userSquad: Player[];
+  aiSquads: Record<string, Player[]>;
+  loanedOutPlayers: Player[];
+  currentYear: number;
+  rng?: () => number;
+}): {
+  updatedClubs: Club[];
+  updatedUserSquad: Player[];
+  updatedAiSquads: Record<string, Player[]>;
+  updatedLoanedOut: Player[];
+  evolutionHighlights: PlayerEvolutionReportItem[];
+  inboxMessage: InboxMessage;
+} {
+  const {
+    clubs,
+    userClubId,
+    userSquad,
+    aiSquads,
+    loanedOutPlayers,
+    currentYear,
+    rng = Math.random,
+  } = params;
+
+  const clubMap = new Map(clubs.map((c) => [c.id, c]));
+
+  const allActivePlayers: Player[] = [
+    ...userSquad,
+    ...Object.values(aiSquads).flat(),
+    ...loanedOutPlayers,
+  ];
+
+  const scoresByGroup: Record<string, number[]> = {};
+  for (const p of allActivePlayers) {
+    if (p.seasonStats.matches < 3) continue;
+    const grp = getPositionGroup(p.position);
+    if (!scoresByGroup[grp]) scoresByGroup[grp] = [];
+    scoresByGroup[grp].push(computePositionPerformanceScore(p));
+  }
+
+  const avgByGroup: Record<string, number> = {};
+  for (const [grp, vals] of Object.entries(scoresByGroup)) {
+    avgByGroup[grp] =
+      vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0.4;
+  }
+
+  const evaluateMidSeasonPlayer = (
+    player: Player,
+    clubRep: number,
+    division: 'A' | 'B' | 'LIB'
+  ): { evolved: Player; report: PlayerEvolutionReportItem } => {
+    const oldOvr = calculatePlayerOverall(player.attributes, player.position);
+    const oldAge = player.age;
+    const stars =
+      player.potentialStars ??
+      assignPotentialStars(oldOvr, oldAge, clubRep, player.id);
+    const ceiling = getMaxRealisticOvrForAgeAndPotential(oldAge, stars);
+
+    const grp = getPositionGroup(player.position);
+    const perfScore = computePositionPerformanceScore(player);
+    const peerAvg = avgByGroup[grp] ?? 0.4;
+    const relativePerf = perfScore - peerAvg;
+    const matches = player.seasonStats.matches;
+
+    let desiredDelta = 0;
+    let isPhysicalDecline = false;
+    let reasonNote = 'Primeiro turno estável';
+
+    if (oldAge <= 22) {
+      if (oldOvr < ceiling && matches >= 6 && relativePerf >= 0.15) {
+        desiredDelta = 1;
+        reasonNote = `Destaque jovem no 1º turno (${matches}j)`;
+      } else {
+        desiredDelta = 0;
+        reasonNote = 'Evolução em andamento';
+      }
+    } else if (oldAge <= 28) {
+      if (matches >= 8 && relativePerf >= 0.35 && oldOvr < ceiling) {
+        desiredDelta = 1;
+        reasonNote = `Excelente 1º turno (nota ${player.seasonStats.avgRating.toFixed(1)})`;
+      } else if (matches >= 8 && relativePerf < -0.5) {
+        desiredDelta = -1;
+        reasonNote = 'Queda de rendimento no 1º turno';
+      } else {
+        desiredDelta = 0;
+        reasonNote = 'Desempenho mantido';
+      }
+    } else if (oldAge >= 32) {
+      if (matches >= 8 && relativePerf < -0.3) {
+        desiredDelta = -1;
+        isPhysicalDecline = true;
+        reasonNote = 'Desgaste físico de meio de temporada';
+      } else {
+        desiredDelta = 0;
+        reasonNote = 'Experiência mantém nível';
+      }
+    }
+
+    const updatedAttrs = adjustAttributesByDelta(
+      player.attributes,
+      player.position,
+      desiredDelta,
+      ceiling,
+      isPhysicalDecline,
+      rng
+    );
+    const newOvr = calculatePlayerOverall(updatedAttrs, player.position);
+    const deltaOvr = newOvr - oldOvr;
+
+    const { marketValue, salary } = calculateBalancedValuationAndWage({
+      ovr: newOvr,
+      age: oldAge,
+      clubReputation: clubRep,
+      division,
+      potentialStars: stars,
+    });
+
+    const evolved: Player = {
+      ...player,
+      potentialStars: stars,
+      attributes: updatedAttrs,
+      marketValue,
+      salary,
+      recentOvrDelta: deltaOvr,
+    };
+
+    return {
+      evolved,
+      report: {
+        playerId: player.id,
+        playerName: player.name,
+        position: player.position,
+        oldAge,
+        newAge: oldAge,
+        oldOvr,
+        newOvr,
+        deltaOvr,
+        potentialStars: stars,
+        reasonNote,
+      },
+    };
+  };
+
+  const userClub = clubMap.get(userClubId) || clubs[0];
+  const userEvoPairs = userSquad.map((p) =>
+    evaluateMidSeasonPlayer(p, userClub.reputation, userClub.division)
+  );
+  const updatedUserSquad = userEvoPairs.map((pair) => pair.evolved);
+  const userEvolutionReport = userEvoPairs.map((pair) => pair.report);
+
+  const updatedAiSquads: Record<string, Player[]> = {};
+  for (const [cid, list] of Object.entries(aiSquads)) {
+    const c = clubMap.get(cid);
+    updatedAiSquads[cid] = list.map(
+      (p) =>
+        evaluateMidSeasonPlayer(
+          p,
+          c?.reputation ?? 74,
+          c?.division ?? 'A'
+        ).evolved
+    );
+  }
+
+  const updatedLoanedOut = loanedOutPlayers.map(
+    (p) =>
+      evaluateMidSeasonPlayer(p, userClub.reputation, userClub.division).evolved
+  );
+
+  const sortedHighlights = [...userEvolutionReport].sort(
+    (a, b) => Math.abs(b.deltaOvr) - Math.abs(a.deltaOvr)
+  );
+
+  const topUp = sortedHighlights.find((h) => h.deltaOvr > 0);
+  const topDown = sortedHighlights.find((h) => h.deltaOvr < 0);
+
+  const inboxMessage: InboxMessage = {
+    id: `msg-midseason-evo-${currentYear}`,
+    date: `01 Jul ${currentYear} · 09:00`,
+    sender: 'Comissão Técnica',
+    senderRole: 'Análise Semestral de OVR',
+    subject: `Avaliação Semestral de Desempenho & Evolução (${currentYear})`,
+    category: 'Tática',
+    priority: 'positive',
+    read: false,
+    body: [
+      `A comissão técnica concluiu a reavalianção de OVR de meio de temporada (1º turno) com base no desempenho e minutagem dos atletas em campo.`,
+      topUp
+        ? `Destaque positivo: ${topUp.playerName} evoluiu para OVR ${topUp.newOvr} (▲ +${topUp.deltaOvr}).`
+        : 'Plantel manteve estabilidade geral no 1º turno.',
+      topDown
+        ? `Atenção: ${topDown.playerName} registrou queda para OVR ${topDown.newOvr} (▼ ${topDown.deltaOvr}).`
+        : 'Nenhuma regressão acentuada registrada.',
+    ],
+    bulletPoints: sortedHighlights
+      .filter((h) => h.deltaOvr !== 0)
+      .slice(0, 6)
+      .map(
+        (h) =>
+          `${h.playerName} (${h.position}): ${h.oldOvr} → ${h.newOvr} (${h.deltaOvr > 0 ? `▲ +${h.deltaOvr}` : `▼ ${h.deltaOvr}`}) · ${h.reasonNote}`
+      ),
+    actionLabel: 'Ver Elenco',
+    actionTargetTab: 'squad',
+  };
+
+  return {
+    updatedClubs: clubs,
+    updatedUserSquad,
+    updatedAiSquads,
+    updatedLoanedOut,
+    evolutionHighlights: sortedHighlights,
+    inboxMessage,
   };
 }

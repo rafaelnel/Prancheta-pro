@@ -15,7 +15,15 @@ import {
   FolderOpen,
   ArrowLeftRight,
   FastForward,
+  GraduationCap,
 } from 'lucide-react';
+import { YouthAcademyView } from './components/YouthAcademyView';
+import {
+  YOUTH_TIERS,
+  createInitialYouthAcademy,
+  promoteYouthPlayerToSeniorSquad,
+  releaseYouthPlayerFromAcademy,
+} from './engine/youthAcademyEngine';
 import {
   ALL_WORLD_CLUBS,
   INITIAL_INBOX_MESSAGES,
@@ -76,6 +84,9 @@ import {
   TransferDealMode,
   TransferOfferTier,
   TransferRecord,
+  YouthAcademyState,
+  YouthInvestmentTier,
+  YouthFocusSector,
 } from './types/football';
 import {
   formatCalendarDate,
@@ -112,6 +123,7 @@ import {
 import {
   calculateMatchGateRevenue,
   createInitialFinanceLedger,
+  processMidSeasonEvolution,
 } from './engine/economyAndEvolution';
 import {
   IncomingOfferAction,
@@ -247,6 +259,188 @@ export default function App() {
   const [isSeasonEndModalOpen, setIsSeasonEndModalOpen] = useState<boolean>(
     () => Boolean(initialAutostartSave?.seasonEndReport)
   );
+  const [midSeasonEvolutionProcessedYear, setMidSeasonEvolutionProcessedYear] =
+    useState<number | undefined>(
+      initialAutostartSave?.midSeasonEvolutionProcessedYear
+    );
+
+  const [youthAcademy, setYouthAcademy] = useState<YouthAcademyState>(() => {
+    if (initialAutostartSave?.youthAcademy) {
+      return initialAutostartSave.youthAcademy;
+    }
+    const initClubs = initialAutostartSave?.clubs || ALL_WORLD_CLUBS;
+    const initCid = initialAutostartSave?.userClubId || USER_CLUB_ID;
+    const initClub = initClubs.find((c) => c.id === initCid) || initClubs[0];
+    return createInitialYouthAcademy(
+      initClub.id,
+      initClub.reputation,
+      initClub.division,
+      initialAutostartSave?.currentYear ?? 2026
+    );
+  });
+
+  const handleUpdateYouthAcademySettings = (
+    tier: YouthInvestmentTier,
+    focus: YouthFocusSector
+  ) => {
+    const tierObj = YOUTH_TIERS.find((t) => t.tier === tier) || YOUTH_TIERS[1];
+    const nextState: YouthAcademyState = {
+      ...youthAcademy,
+      investmentTier: tier,
+      focusSector: focus,
+      monthlyCost: tierObj.monthlyCost,
+    };
+    setYouthAcademy(nextState);
+    setHasUnsavedChanges(true);
+    persistCareer({ youthAcademy: nextState });
+  };
+
+  const handlePromoteYouthPlayer = (playerId: string) => {
+    const res = promoteYouthPlayerToSeniorSquad({
+      academy: youthAcademy,
+      seniorSquad: squad,
+      playerId,
+    });
+    if (!res.promotedPlayer) return;
+
+    const ovr = calculatePlayerOverall(
+      res.promotedPlayer.attributes,
+      res.promotedPlayer.position
+    );
+    const dateLabel = formatCalendarDate(dayOffset, currentYear);
+    const promoMsg: InboxMessage = {
+      id: `msg-youth-promo-${res.promotedPlayer.id}-${Date.now()}`,
+      date: `${dateLabel} · Base Sub-20`,
+      sender: 'Coordenação das Categorias de Base',
+      senderRole: 'Transição Base → Profissional',
+      subject: `Promovido ao Profissional: ${res.promotedPlayer.name} (${res.promotedPlayer.position} · ${res.promotedPlayer.age}a · OVR ${ovr})`,
+      category: 'Diretoria',
+      priority: 'positive',
+      read: false,
+      relatedPlayerId: res.promotedPlayer.id,
+      body: [
+        `O jovem ${res.promotedPlayer.name} (${res.promotedPlayer.age} anos, Potencial ${res.promotedPlayer.potentialStars || 3}★) subiu oficialmente da base para o elenco profissional do ${userClub.shortName} com a camisa #${res.promotedPlayer.number}.`,
+        `Salário inicial de transição: ${formatCompactBRL(res.promotedPlayer.salary)}/mês.`,
+      ],
+      actionLabel: 'Ver no Elenco',
+      actionTargetTab: 'squad',
+    };
+
+    const nextMessages = [promoMsg, ...messages].slice(0, 80);
+    setYouthAcademy(res.updatedAcademy);
+    setSquad(res.updatedSeniorSquad);
+    setMessages(nextMessages);
+    setHasUnsavedChanges(true);
+
+    persistCareer({
+      youthAcademy: res.updatedAcademy,
+      squad: res.updatedSeniorSquad,
+      messages: nextMessages,
+    });
+  };
+
+  const handleReleaseYouthPlayer = (playerId: string) => {
+    const nextAcademy = releaseYouthPlayerFromAcademy({
+      academy: youthAcademy,
+      playerId,
+    });
+    setYouthAcademy(nextAcademy);
+    setHasUnsavedChanges(true);
+    persistCareer({ youthAcademy: nextAcademy });
+  };
+
+  const handleTogglePlayerMarketListing = (
+    playerId: string,
+    mode: 'TRANSFER' | 'LOAN'
+  ) => {
+    const updatedSquad = squad.map((p) => {
+      if (p.id !== playerId || p.contractType === 'EMPRESTADO') return p;
+      if (mode === 'TRANSFER') {
+        return { ...p, isTransferListed: !p.isTransferListed };
+      }
+      return { ...p, isLoanListed: !p.isLoanListed };
+    });
+
+    const target = updatedSquad.find((p) => p.id === playerId);
+    setSquad(updatedSquad);
+    setHasUnsavedChanges(true);
+
+    if (target) {
+      const statusParts: string[] = [];
+      if (target.isTransferListed) statusParts.push('Venda');
+      if (target.isLoanListed) statusParts.push('Empréstimo');
+      setMarketFeedback({
+        type: 'success',
+        title:
+          statusParts.length > 0
+            ? `${target.name} disponibilizado para ${statusParts.join(' e ')}`
+            : `${target.name} retirado da lista de transferências`,
+        detail:
+          statusParts.length > 0
+            ? 'Clubes da IA que precisam desta posição enviarão propostas com maior frequência e melhores condições.'
+            : 'O atleta voltou ao status normal de permanência no elenco.',
+      });
+    }
+
+    persistCareer({ squad: updatedSquad });
+  };
+
+  const handleSolicitOfferForPlayer = (playerId: string) => {
+    const targetPlayer = squad.find((p) => p.id === playerId);
+    if (!targetPlayer) return;
+
+    const existingOffer = pendingOffers.find(
+      (o) => o.playerId === playerId && o.status === 'PENDING'
+    );
+    if (existingOffer) {
+      setMarketFeedback({
+        type: 'error',
+        title: `Já existe proposta ativa por ${targetPlayer.name}`,
+        detail: `Confira a oferta de ${existingOffer.fromClubName} no topo da tela de Mercado ou na Inbox.`,
+      });
+      return;
+    }
+
+    const newOffer = maybeGenerateIncomingOfferForUser({
+      clubs,
+      userClub,
+      userSquad: squad,
+      pendingOffers,
+      dayOffset,
+      seasonYear: currentYear,
+      aiSquads,
+      specificPlayerId: playerId,
+    });
+
+    if (!newOffer) {
+      setMarketFeedback({
+        type: 'rejected',
+        title: `Nenhuma proposta imediata por ${targetPlayer.name}`,
+        detail:
+          'Os clubes sondados não têm orçamento disponível neste momento. O atleta segue listado para a próxima rodada.',
+      });
+      return;
+    }
+
+    const updatedPendingOffers = [newOffer, ...pendingOffers].slice(0, 15);
+    const offerMsg = createOfferInboxMessage(newOffer, userClub);
+    const updatedMessages = [offerMsg, ...messages].slice(0, 80);
+
+    setPendingOffers(updatedPendingOffers);
+    setMessages(updatedMessages);
+    setMarketFeedback({
+      type: 'success',
+      title: `Nova proposta recebida de ${newOffer.fromClubName}!`,
+      detail: `${newOffer.fromClubName} enviou proposta de ${
+        newOffer.dealType === 'BUY' ? 'Compra Definitiva' : 'Empréstimo'
+      } (${formatCompactBRL(newOffer.offeredFee)}) por ${targetPlayer.name}.`,
+    });
+
+    persistCareer({
+      pendingOffers: updatedPendingOffers,
+      messages: updatedMessages,
+    });
+  };
 
   // Calendar & Multi-Competition Progression
   const [seasonStepIndex, setSeasonStepIndex] = useState<number>(
@@ -480,6 +674,11 @@ export default function App() {
           override?.seasonEndReport !== undefined
             ? override.seasonEndReport
             : seasonEndReport,
+        youthAcademy: override?.youthAcademy ?? youthAcademy,
+        midSeasonEvolutionProcessedYear:
+          override?.midSeasonEvolutionProcessedYear !== undefined
+            ? override.midSeasonEvolutionProcessedYear
+            : midSeasonEvolutionProcessedYear,
       };
 
       saveCareerToSlot(payload);
@@ -516,6 +715,8 @@ export default function App() {
       financeLedger,
       seasonHistory,
       seasonEndReport,
+      youthAcademy,
+      midSeasonEvolutionProcessedYear,
     ]
   );
 
@@ -558,9 +759,19 @@ export default function App() {
     setFinanceLedger(
       save.financeLedger || createInitialFinanceLedger(saveClub, save.squad, year)
     );
+    setYouthAcademy(
+      save.youthAcademy ||
+        createInitialYouthAcademy(
+          saveClub.id,
+          saveClub.reputation,
+          saveClub.division,
+          year
+        )
+    );
     setSeasonHistory(save.seasonHistory || []);
     setSeasonEndReport(save.seasonEndReport || null);
     setIsSeasonEndModalOpen(Boolean(save.seasonEndReport));
+    setMidSeasonEvolutionProcessedYear(save.midSeasonEvolutionProcessedYear);
     setMarketFeedback(null);
     setCurrentRound(save.currentRound);
     setSeasonStepIndex(save.seasonStepIndex ?? 0);
@@ -819,7 +1030,11 @@ export default function App() {
         );
       }
 
-      const confidenceDelta = userAdvanced
+      const isCupAdvance =
+        (comp === 'COPA_DO_BRASIL' || comp === 'LIBERTADORES') && userAdvanced;
+      const confidenceDelta = isCupAdvance
+        ? 8
+        : userAdvanced
         ? 4
         : userDrew90 && !matchState.isKnockout
         ? 1
@@ -867,9 +1082,17 @@ export default function App() {
         const nextAvg = Number(
           ((p.seasonStats.avgRating * prevM + (tok.rating || 6.7)) / nextM).toFixed(2)
         );
+        const condAfterMatch = isCupAdvance
+          ? Math.min(100, Math.round(tok.condition) + 8)
+          : Math.max(55, Math.round(tok.condition));
+        const moraleAfterMatch = isCupAdvance
+          ? (p.morale === 'Exuberante' ? 'Exuberante' : 'Muito Alta')
+          : p.morale;
+
         return {
           ...p,
-          condition: Math.max(55, Math.round(tok.condition)),
+          morale: moraleAfterMatch as Player['morale'],
+          condition: condAfterMatch,
           seasonStats: {
             ...p.seasonStats,
             matches: nextM,
@@ -912,14 +1135,22 @@ export default function App() {
         }
       }
 
-      if (seasonStepIndex % 4 === 2 && updatedPendingOffers.filter((o) => o.status === 'PENDING').length < 3) {
+      const hasListedPlayers = updatedSquad.some(
+        (p) => p.isTransferListed || p.isLoanListed
+      );
+      const shouldCheckOffer =
+        updatedPendingOffers.filter((o) => o.status === 'PENDING').length < 4 &&
+        (hasListedPlayers ? seasonStepIndex % 2 === 0 : seasonStepIndex % 4 === 2);
+
+      if (shouldCheckOffer) {
         const freshOffer = maybeGenerateIncomingOfferForUser({
           clubs: updatedClubs,
-          userClubId,
+          userClub: updatedClubs.find((c) => c.id === userClubId) || userClub,
           userSquad: updatedSquad,
           pendingOffers: updatedPendingOffers,
           dayOffset,
           seasonYear: currentYear,
+          aiSquads: updatedAiSquads,
         });
         if (freshOffer) {
           updatedPendingOffers = [freshOffer, ...updatedPendingOffers].slice(0, 15);
@@ -932,6 +1163,29 @@ export default function App() {
         }
       }
 
+      // Semiannual evolution check around July 1st (dayOffset >= 154)
+      let finalSquad = updatedSquad;
+      let finalClubs = updatedClubs;
+      let finalAiSquads = updatedAiSquads;
+      let newMidSeasonProcessedYear = midSeasonEvolutionProcessedYear;
+
+      if (dayOffset >= 154 && midSeasonEvolutionProcessedYear !== currentYear) {
+        const midRes = processMidSeasonEvolution({
+          clubs: finalClubs,
+          userClubId,
+          userSquad: finalSquad,
+          aiSquads: finalAiSquads,
+          loanedOutPlayers,
+          currentYear,
+        });
+        finalClubs = midRes.updatedClubs;
+        finalSquad = midRes.updatedUserSquad;
+        finalAiSquads = midRes.updatedAiSquads;
+        newMidSeasonProcessedYear = currentYear;
+        setMidSeasonEvolutionProcessedYear(currentYear);
+        extraMessages.push(midRes.inboxMessage);
+      }
+
       const userPos =
         newStandings.findIndex((s) => s.clubId === userClubId) + 1;
       const penDetail =
@@ -941,7 +1195,9 @@ export default function App() {
         matchState.awayPenalties !== undefined
           ? ` (Pênaltis: ${matchState.homePenalties} x ${matchState.awayPenalties})`
           : '';
-      const resultLabel = userAdvanced
+      const resultLabel = isCupAdvance
+        ? 'Classificação Conquistada!'
+        : userAdvanced
         ? 'Vitória maiúscula'
         : userDrew90 && !matchState.isKnockout
         ? 'Empate disputado'
@@ -973,7 +1229,9 @@ export default function App() {
         bulletPoints: [
           `Placar: ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName}${penDetail}`,
           `Finalizações: ${matchState.homeShots} (${matchState.homeShotsOnTarget} no gol) vs ${matchState.awayShots} (${matchState.awayShotsOnTarget} no gol)`,
-          comp === 'BRASILEIRAO'
+          isCupAdvance
+            ? `★ DIREITO & RECOMPENSA DE COPA: Classificação na ${comp === 'COPA_DO_BRASIL' ? 'Copa do Brasil' : 'Copa Libertadores'}! Bônus de premiação (${formatCompactBRL(prizeMoney)}), +8% confiança e moral elevado!`
+            : comp === 'BRASILEIRAO'
             ? `Posição na Série ${userClub.division}: ${userPos}º lugar`
             : userAdvanced
             ? `Classificação / resultado positivo garantido em ${compDisplay}`
@@ -989,9 +1247,9 @@ export default function App() {
       );
       const processedMatchState = { ...matchState, roundProcessed: true };
 
-      setClubs(updatedClubs);
-      setSquad(updatedSquad);
-      setAiSquads(updatedAiSquads);
+      setClubs(finalClubs);
+      setSquad(finalSquad);
+      setAiSquads(finalAiSquads);
       setFixtures(updatedFixtures);
       setStandings(newStandings);
       setSecondaryFixtures(updatedSecondaryFixtures);
@@ -1005,9 +1263,9 @@ export default function App() {
       setMatchState(processedMatchState);
 
       persistCareer({
-        clubs: updatedClubs,
-        squad: updatedSquad,
-        aiSquads: updatedAiSquads,
+        clubs: finalClubs,
+        squad: finalSquad,
+        aiSquads: finalAiSquads,
         fixtures: updatedFixtures,
         standings: newStandings,
         secondaryFixtures: updatedSecondaryFixtures,
@@ -1019,6 +1277,7 @@ export default function App() {
         pendingOffers: updatedPendingOffers,
         messages: updatedMessages,
         matchState: processedMatchState,
+        midSeasonEvolutionProcessedYear: newMidSeasonProcessedYear,
       });
     }
   }, [
@@ -1226,6 +1485,24 @@ export default function App() {
     setHasUnsavedChanges(true);
   };
 
+  const handleTriggerMidSeasonEvolution = () => {
+    const midRes = processMidSeasonEvolution({
+      clubs,
+      userClubId,
+      userSquad: squad,
+      aiSquads,
+      loanedOutPlayers,
+      currentYear,
+    });
+    setClubs(midRes.updatedClubs);
+    setSquad(midRes.updatedUserSquad);
+    setAiSquads(midRes.updatedAiSquads);
+    setLoanedOutPlayers(midRes.updatedLoanedOut);
+    setMidSeasonEvolutionProcessedYear(currentYear);
+    setMessages((prev: InboxMessage[]) => [midRes.inboxMessage, ...prev]);
+    setHasUnsavedChanges(true);
+  };
+
   const handleChangeFormation = (formation: FormationType) => {
     const slotsDef = FORMATIONS[formation];
     setClubs((prev) =>
@@ -1422,6 +1699,10 @@ export default function App() {
     if (snap.pendingOffers) setPendingOffers(snap.pendingOffers);
     if (snap.transferHistory) setTransferHistory(snap.transferHistory);
     if (snap.financeLedger) setFinanceLedger(snap.financeLedger);
+    if (snap.youthAcademy) setYouthAcademy(snap.youthAcademy);
+    if (snap.midSeasonEvolutionProcessedYear !== undefined) {
+      setMidSeasonEvolutionProcessedYear(snap.midSeasonEvolutionProcessedYear);
+    }
   }, []);
 
   const finalizeAutoSimSummary = useCallback(
@@ -1513,6 +1794,7 @@ export default function App() {
         pendingOffers: withSummary.pendingOffers,
         transferHistory: withSummary.transferHistory,
         financeLedger: withSummary.financeLedger,
+        youthAcademy: withSummary.youthAcademy,
         seasonEndReport: generatedReport,
       });
     },
@@ -1550,6 +1832,8 @@ export default function App() {
       pendingOffers,
       transferHistory,
       financeLedger,
+      youthAcademy,
+      midSeasonEvolutionProcessedYear,
     };
 
     const { userMatchSteps } = countStepsUntilDayOffset(
@@ -1716,6 +2000,7 @@ export default function App() {
       libertadores,
       seasonHistory,
       managerName,
+      youthAcademy,
     });
 
     const nextHistory = [
@@ -1736,6 +2021,7 @@ export default function App() {
     setCopaDoBrasil(rollover.nextCopaDoBrasil);
     setLibertadores(rollover.nextLibertadores);
     setFinanceLedger(rollover.nextFinanceLedger);
+    setYouthAcademy(rollover.nextYouthAcademy);
     setMatchState(rollover.nextMatchState);
     setMessages(rollover.nextMessages);
     setSeasonHistory(nextHistory);
@@ -1765,6 +2051,7 @@ export default function App() {
       copaDoBrasil: rollover.nextCopaDoBrasil,
       libertadores: rollover.nextLibertadores,
       financeLedger: rollover.nextFinanceLedger,
+      youthAcademy: rollover.nextYouthAcademy,
       matchState: rollover.nextMatchState,
       messages: rollover.nextMessages,
       seasonHistory: nextHistory,
@@ -1904,23 +2191,68 @@ export default function App() {
       (targetStep.dayOffset ?? dayOffset + 4) - 1
     );
 
-    // Check monthly sponsorship payout if month advanced
+    // Check monthly sponsorship payout & youth academy deduction if month advanced
     const prevMonth = dayOffsetToDate(dayOffset, currentYear).getMonth();
     const newMonth = dayOffsetToDate(nextDayOffset, currentYear).getMonth();
     let updatedClubs = clubs;
     let updatedLedger = financeLedger;
+    let updatedYouthAcademy = youthAcademy;
     if (newMonth > prevMonth) {
-      const installment = financeLedger.sponsorshipContract.monthlyInstallment;
+      const monthsElapsed = Math.max(1, newMonth - prevMonth);
+      const installment =
+        financeLedger.sponsorshipContract.monthlyInstallment * monthsElapsed;
+      const youthMonthlySpend = youthAcademy.monthlyCost * monthsElapsed;
       updatedClubs = clubs.map((c) =>
         c.id === userClubId
-          ? { ...c, cashBalance: c.cashBalance + installment }
+          ? {
+              ...c,
+              cashBalance: Math.max(
+                0,
+                c.cashBalance + installment - youthMonthlySpend
+              ),
+            }
           : c
       );
       updatedLedger = {
         ...financeLedger,
         seasonSponsorshipRevenue:
           financeLedger.seasonSponsorshipRevenue + installment,
+        seasonYouthAcademySpend:
+          (financeLedger.seasonYouthAcademySpend || 0) + youthMonthlySpend,
       };
+      updatedYouthAcademy = {
+        ...youthAcademy,
+        accumulatedSeasonInvestment:
+          youthAcademy.accumulatedSeasonInvestment + youthMonthlySpend,
+        monthsInvestedThisSeason: Math.min(
+          12,
+          youthAcademy.monthsInvestedThisSeason + monthsElapsed
+        ),
+      };
+    }
+
+    let finalSquad = recoveredSquad;
+    let finalClubs = updatedClubs;
+    let finalAiSquads = nextAiSquads;
+    let nextMessagesList = messages;
+    let newMidSeasonProcessedYear = midSeasonEvolutionProcessedYear;
+
+    if (nextDayOffset >= 154 && midSeasonEvolutionProcessedYear !== currentYear) {
+      const midRes = processMidSeasonEvolution({
+        clubs: finalClubs,
+        userClubId,
+        userSquad: finalSquad,
+        aiSquads: finalAiSquads,
+        loanedOutPlayers,
+        currentYear,
+      });
+      finalClubs = midRes.updatedClubs;
+      finalSquad = midRes.updatedUserSquad;
+      finalAiSquads = midRes.updatedAiSquads;
+      newMidSeasonProcessedYear = currentYear;
+      setMidSeasonEvolutionProcessedYear(currentYear);
+      nextMessagesList = [midRes.inboxMessage, ...messages];
+      setMessages(nextMessagesList);
     }
 
     const nextMatch = createInitialMatchState(
@@ -1928,16 +2260,17 @@ export default function App() {
       nextFixture,
       nextHome,
       nextAway,
-      recoveredSquad,
+      finalSquad,
       userClubId,
       transferredOutClubPlayerIds,
-      nextAiSquads
+      finalAiSquads
     );
 
-    setClubs(updatedClubs);
+    setClubs(finalClubs);
     setFinanceLedger(updatedLedger);
-    setSquad(recoveredSquad);
-    setAiSquads(nextAiSquads);
+    setYouthAcademy(updatedYouthAcademy);
+    setSquad(finalSquad);
+    setAiSquads(finalAiSquads);
     setCopaDoBrasil(nextCdb);
     setLibertadores(nextLib);
     setSeasonStepIndex(nextIdx);
@@ -1948,18 +2281,21 @@ export default function App() {
     setActiveTab('competitions');
 
     persistCareer({
-      clubs: updatedClubs,
+      clubs: finalClubs,
       financeLedger: updatedLedger,
-      squad: recoveredSquad,
-      aiSquads: nextAiSquads,
+      youthAcademy: updatedYouthAcademy,
+      squad: finalSquad,
+      aiSquads: finalAiSquads,
       copaDoBrasil: nextCdb,
       libertadores: nextLib,
+      messages: nextMessagesList,
       seasonStepIndex: nextIdx,
       activeCompetition: targetStep.competition,
       currentRound: nextLeagueRound,
       dayOffset: nextDayOffset,
       isMatchDay: false,
       matchState: nextMatch,
+      midSeasonEvolutionProcessedYear: newMidSeasonProcessedYear,
     });
   };
 
@@ -2501,6 +2837,16 @@ export default function App() {
           : null,
     },
     {
+      id: 'youth' as const,
+      label: 'Base & Sub-20',
+      mobileLabel: 'Base',
+      icon: GraduationCap,
+      badge:
+        (youthAcademy.youthRoster?.filter((p) => p.age >= 16).length || 0) > 0
+          ? `${youthAcademy.youthRoster?.filter((p) => p.age >= 16).length}`
+          : null,
+    },
+    {
       id: 'calendar' as const,
       label: 'Calendário Anual',
       mobileLabel: 'Agenda',
@@ -2909,6 +3255,8 @@ export default function App() {
               onInspectPlayer={(p) => setInspectedPlayerId(p.id)}
               onSwapPlayers={handleSwapPlayers}
               onAutoPickBestXI={handleAutoPickBestXI}
+              onTogglePlayerMarketListing={handleTogglePlayerMarketListing}
+              onSimulateMidSeasonEvolution={handleTriggerMidSeasonEvolution}
             />
           )}
 
@@ -2946,6 +3294,23 @@ export default function App() {
               }}
               onProposeTransfer={handleProposeTransfer}
               onOutgoingTransfer={handleOutgoingTransfer}
+              onTogglePlayerMarketListing={handleTogglePlayerMarketListing}
+              onSolicitOfferForPlayer={handleSolicitOfferForPlayer}
+            />
+          )}
+
+          {activeTab === 'youth' && (
+            <YouthAcademyView
+              club={userClub}
+              seasonYear={currentYear}
+              academy={youthAcademy}
+              onUpdateAcademySettings={handleUpdateYouthAcademySettings}
+              onInspectPlayer={(p) => {
+                setInspectedPlayerId(null);
+                setInspectedExternalPlayer(p);
+              }}
+              onPromoteYouthPlayer={handlePromoteYouthPlayer}
+              onReleaseYouthPlayer={handleReleaseYouthPlayer}
             />
           )}
 
@@ -3003,7 +3368,7 @@ export default function App() {
       {/* Mobile Bottom Capsule Navigation Bar (< lg) */}
       <nav
         aria-label="Navegação mobile"
-        className="lg:hidden fixed bottom-2 left-1.5 right-1.5 z-40 h-14 bg-[#14171f]/95 border border-white/10 rounded-full grid grid-cols-7 items-center px-1 shadow-2xl select-none"
+        className="lg:hidden fixed bottom-2 left-1.5 right-1.5 z-40 h-14 bg-[#14171f]/95 border border-white/10 rounded-full grid grid-cols-8 items-center px-1 shadow-2xl select-none"
       >
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -3043,6 +3408,9 @@ export default function App() {
           setInspectedExternalPlayer(null);
         }}
         onUpdateRoleDuty={handleUpdateRoleDuty}
+        onTogglePlayerMarketListing={
+          inspectedExternalPlayer ? undefined : handleTogglePlayerMarketListing
+        }
       />
 
       {/* Match-by-Match Calendar Auto-Simulation Modal */}

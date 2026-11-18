@@ -643,16 +643,15 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
                         {res.name}
                       </span>
                     </div>
-                    <div className="text-[10px] font-mono tabular-nums text-zinc-400 mt-0.5">
-                      Cond:{' '}
-                      <span className={cond.text}>
-                        {Math.round(res.condition)}%
-                      </span>{' '}
-                      · OVR{' '}
-                      {calculatePlayerOverall(
-                        res.attributes,
-                        res.position
-                      )}
+                    <div className="text-[10px] font-mono tabular-nums text-zinc-400 mt-0.5 flex items-center gap-1">
+                      <span>Cond: <span className={cond.text}>{Math.round(res.condition)}%</span></span>
+                      <span>·</span>
+                      <span>OVR {calculatePlayerOverall(res.attributes, res.position)}</span>
+                      {res.recentOvrDelta !== undefined && res.recentOvrDelta > 0 ? (
+                        <span className="text-[#b5ff00] font-bold">▲+{res.recentOvrDelta}</span>
+                      ) : res.recentOvrDelta !== undefined && res.recentOvrDelta < 0 ? (
+                        <span className="text-rose-400 font-bold">▼{res.recentOvrDelta}</span>
+                      ) : null}
                     </div>
                   </button>
                 );

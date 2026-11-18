@@ -119,6 +119,7 @@ export interface Player {
   recentOvrDelta?: number;
   exceededExpectations?: boolean;
   breakoutBonusOvr?: number;
+  growthMultiplier?: number;
   developmentStatus?:
     | 'SUPEROU_EXPECTATIVAS'
     | 'EVOLUCAO_NORMAL'
@@ -593,6 +594,8 @@ export interface PlayerEvolutionReportItem {
   potentialStars: PotentialStars;
   reasonNote: string;
   exceededExpectations?: boolean;
+  breakoutBonusOvr?: number;
+  growthMultiplier?: number;
   formerCeiling?: number;
   starsPromoted?: boolean;
   developmentStatus?:

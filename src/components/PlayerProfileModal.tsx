@@ -281,7 +281,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
             <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-amber-950/30 border border-amber-400/40 text-xs text-amber-200">
               <Zap className="w-4 h-4 text-amber-300 shrink-0" />
               <div>
-                <strong className="text-amber-300">⚡ Superou Expectativas:</strong> Atuações excepcionais ({player.seasonStats.matches}j, nota {player.seasonStats.avgRating.toFixed(2)}{player.seasonStats.goals > 0 ? `, ${player.seasonStats.goals}g` : ''}{player.seasonStats.assists > 0 ? `, ${player.seasonStats.assists}a` : ''}) romperam o teto de potencial inicial! O jogador subiu de categoria e ganhou evolução acima do teto.
+                <strong className="text-amber-300">⚡ Superou Expectativas:</strong> Atuações excepcionais ({player.seasonStats.matches}j, nota {player.seasonStats.avgRating.toFixed(2)}{player.growthMultiplier ? `, mult. ${player.growthMultiplier.toFixed(2)}x` : ''}{player.seasonStats.goals > 0 ? `, ${player.seasonStats.goals}g` : ''}{player.seasonStats.assists > 0 ? `, ${player.seasonStats.assists}a` : ''}) romperam o teto de potencial inicial! O jogador subiu de categoria e ganhou evolução acima do teto.
               </div>
             </div>
           )}

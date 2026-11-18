@@ -434,6 +434,11 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
                         <span>
                           {evo.oldAge}→{evo.newAge}a · {evo.potentialStars}★
                         </span>
+                        {evo.growthMultiplier !== undefined && evo.growthMultiplier > 0 && (
+                          <span className="font-mono text-zinc-400 text-[9px]" title={`Multiplicador de desempenho: ${evo.growthMultiplier.toFixed(2)}x`}>
+                            · {evo.growthMultiplier.toFixed(1)}x
+                          </span>
+                        )}
                         {evo.exceededExpectations && (
                           <span className="text-amber-300 font-bold">
                             · Superou Teto

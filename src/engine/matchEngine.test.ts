@@ -1001,15 +1001,28 @@ test('Evolution, Aging, Potential Stars, and Anti-Inflation Valuation work accur
       `Expected 1..5 potential stars for ${p.name}`
     );
   }
-  const capped = calculateBalancedValuationAndWage({
+  const youngWonderkidVal = calculateBalancedValuationAndWage({
     ovr: 78,
     age: 21,
     clubReputation: 88,
     division: 'A',
     potentialStars: 5,
+    position: 'ATA',
   });
-  assert.ok(capped.marketValue <= 62_000_000, 'Expected OVR < 80 cap <= R$ 62M');
-  assert.ok(capped.salary <= 1_150_000, 'Expected OVR < 80 salary cap <= R$ 1.15M');
+  const primeVal = calculateBalancedValuationAndWage({
+    ovr: 78,
+    age: 27,
+    clubReputation: 88,
+    division: 'A',
+    potentialStars: 3.5,
+    position: 'ATA',
+  });
+  assert.ok(youngWonderkidVal.marketValue <= 280_000_000, 'Expected anti-inflation valuation cap');
+  assert.ok(youngWonderkidVal.salary <= 1_500_000, 'Expected anti-inflation salary cap');
+  assert.ok(
+    youngWonderkidVal.marketValue > primeVal.marketValue,
+    'Young 5★ wonderkid should be worth more than 27yo of same OVR'
+  );
 
   const veteranVal = calculateBalancedValuationAndWage({
     ovr: 78,
@@ -1017,8 +1030,10 @@ test('Evolution, Aging, Potential Stars, and Anti-Inflation Valuation work accur
     clubReputation: 88,
     division: 'A',
     potentialStars: 4,
+    position: 'ATA',
   });
-  assert.ok(veteranVal.marketValue < capped.marketValue, 'Veterans should cost less than young stars');
+  assert.ok(veteranVal.marketValue < primeVal.marketValue, 'Veterans should cost less than prime players');
+  assert.ok(veteranVal.marketValue < youngWonderkidVal.marketValue, 'Veterans should cost less than young stars');
 
   // Construct controlled young star & 35yo veteran to test evolution vs physical decline
   const basePlayer = career.squad.find((p) => p.position === 'ATA')!;
@@ -1089,8 +1104,8 @@ test('Living Market runs autonomous AI-to-AI transfers and interactive user offe
     return (seed - 1) / 2147483646;
   };
 
-  // 1. Autonomous AI-to-AI market transfers
-  const aiTick = simulateAiTransferWindowTick({
+  // 0. Closed transfer window must block AI deals and user incoming offers
+  const closedTick = simulateAiTransferWindowTick({
     clubs: career.clubs,
     aiSquads: career.aiSquads!,
     userClubId: career.userClubId,
@@ -1099,7 +1114,19 @@ test('Living Market runs autonomous AI-to-AI transfers and interactive user offe
     maxDeals: 3,
     rng,
   });
-  assert.ok(aiTick.newRecords.length >= 1, 'Expected at least 1 autonomous AI transfer');
+  assert.equal(closedTick.newRecords.length, 0, 'Closed window must not execute AI transfers');
+
+  // 1. Autonomous AI-to-AI market transfers (Open Summer Window: dayOffset <= 38)
+  const aiTick = simulateAiTransferWindowTick({
+    clubs: career.clubs,
+    aiSquads: career.aiSquads!,
+    userClubId: career.userClubId,
+    dayOffset: 15,
+    seasonYear: 2026,
+    maxDeals: 3,
+    rng,
+  });
+  assert.ok(aiTick.newRecords.length >= 1, 'Expected at least 1 autonomous AI transfer during open window');
   assert.equal(aiTick.newRecords[0].isAiTransfer, true);
 
   // 2. Incoming AI offer for a user player & counter-offer acceptance
@@ -1109,7 +1136,7 @@ test('Living Market runs autonomous AI-to-AI transfers and interactive user offe
     userClub,
     userSquad: career.squad,
     pendingOffers: [],
-    dayOffset: 42,
+    dayOffset: 15,
     seasonYear: 2026,
     rng: () => 0.1,
   });
@@ -1123,7 +1150,7 @@ test('Living Market runs autonomous AI-to-AI transfers and interactive user offe
     aiSquads: aiTick.updatedAiSquads,
     loanedOutPlayers: [],
     clubs: aiTick.updatedClubs,
-    dayOffset: 43,
+    dayOffset: 16,
     seasonYear: 2026,
     rng: () => 0.05, // guarantees counter accepted
   });

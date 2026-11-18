@@ -15,6 +15,7 @@ import {
   SlidersHorizontal,
   RotateCcw,
   ArrowDownLeft,
+  Lock,
 } from 'lucide-react';
 import { calculatePlayerOverall } from '../engine/matchEngine';
 import {
@@ -25,6 +26,7 @@ import {
   evaluateTransferNegotiation,
   getEffectivePayroll,
   getPlayerPaidSalary,
+  getTransferWindowStatus,
 } from '../engine/transferEngine';
 import { IncomingOfferAction } from '../engine/aiMarketEngine';
 import {
@@ -59,6 +61,7 @@ interface MarketViewProps {
   transferHistory: TransferRecord[];
   transferredOutClubPlayerIds: string[];
   seasonYear?: number;
+  dayOffset?: number;
   aiSquads?: Record<string, Player[]>;
   pendingOffers?: IncomingTransferOffer[];
   onResolveIncomingOffer?: (
@@ -240,6 +243,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
   transferHistory,
   transferredOutClubPlayerIds,
   seasonYear = 2026,
+  dayOffset = 0,
   aiSquads,
   pendingOffers = [],
   onResolveIncomingOffer,
@@ -251,6 +255,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
   onTogglePlayerMarketListing,
   onSolicitOfferForPlayer,
 }) => {
+  const windowStatus = getTransferWindowStatus(dayOffset, seasonYear);
   const [subTab, setSubTab] = useState<MarketSubTab>('NACIONAL_LIB');
   const [domesticScope, setDomesticScope] =
     useState<DomesticScopeFilter>('ALL');
@@ -959,7 +964,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
               </span>
               <span className="font-mono tabular-nums font-bold text-white">
                 {activeEvaluation.effectiveFee === 0
-                  ? 'R$ 0 (Livre)'
+                  ? `${formatCompactBRL(0)} (Livre)`
                   : formatCompactBRL(activeEvaluation.effectiveFee)}
               </span>
             </div>
@@ -1020,10 +1025,25 @@ export const MarketView: React.FC<MarketViewProps> = ({
             </div>
           )}
 
+          {/* Closed Transfer Window Notice */}
+          {!windowStatus.isOpen && (
+            <div className="rounded-2xl bg-rose-950/35 border border-rose-500/35 p-3 text-xs text-rose-200 flex items-start gap-2">
+              <Lock className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold text-rose-200">
+                  Janela de Transferências Fechada
+                </div>
+                <div className="text-[11px] text-rose-200/80 mt-0.5">
+                  {windowStatus.description}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Action CTA */}
           <button
             type="button"
-            disabled={activeEvaluation.isBlocked}
+            disabled={activeEvaluation.isBlocked || !windowStatus.isOpen}
             onClick={() =>
               onProposeTransfer({
                 listing: selectedListing,
@@ -1034,8 +1054,14 @@ export const MarketView: React.FC<MarketViewProps> = ({
             }
             className="w-full py-3.5 px-5 rounded-full text-xs sm:text-sm font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] disabled:bg-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed text-[#090a0f] transition-colors flex items-center justify-center gap-2 shadow-lg"
           >
-            <Handshake className="w-4 h-4" />
-            {isFree
+            {windowStatus.isOpen ? (
+              <Handshake className="w-4 h-4" />
+            ) : (
+              <Lock className="w-4 h-4" />
+            )}
+            {!windowStatus.isOpen
+              ? 'Janela de Transferências Fechada'
+              : isFree
               ? 'Assinar Contrato Gratuito'
               : isLoan
               ? 'Enviar Proposta de Empréstimo'
@@ -1060,6 +1086,21 @@ export const MarketView: React.FC<MarketViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400 font-mono">
+          <span
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono font-bold border ${
+              windowStatus.isOpen
+                ? 'bg-[#b5ff00]/15 border-[#b5ff00]/45 text-[#b5ff00]'
+                : 'bg-rose-500/15 border-rose-500/35 text-rose-300'
+            }`}
+          >
+            {windowStatus.isOpen ? (
+              <CheckCircle2 className="w-3.5 h-3.5" />
+            ) : (
+              <Lock className="w-3.5 h-3.5" />
+            )}
+            {windowStatus.badgeLabel} · {windowStatus.name}
+          </span>
+          <span>·</span>
           <span>
             Reputação do {userClub.shortName}:{' '}
             <strong className="text-[#b5ff00]">{userClub.reputation}/100</strong>
@@ -1132,6 +1173,19 @@ export const MarketView: React.FC<MarketViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Closed Transfer Window Banner */}
+      {!windowStatus.isOpen && (
+        <div className="rounded-2xl border border-rose-500/35 bg-rose-950/30 px-4 py-3.5 flex items-start gap-3 text-xs text-rose-100">
+          <Lock className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+          <div>
+            <div className="font-bold text-rose-200">
+              {windowStatus.badgeLabel} · Negociações Bloqueadas
+            </div>
+            <div className="text-zinc-300 mt-0.5">{windowStatus.description}</div>
+          </div>
+        </div>
+      )}
 
       {/* Feedback Toast Banner */}
       {lastFeedback && (
@@ -1222,29 +1276,33 @@ export const MarketView: React.FC<MarketViewProps> = ({
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                   <button
                     type="button"
+                    disabled={!windowStatus.isOpen}
                     onClick={() => onResolveIncomingOffer(offer.id, 'ACCEPT')}
-                    className="py-1.5 px-2.5 rounded-xl bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] text-[11px] font-extrabold transition-colors"
+                    className="py-1.5 px-2.5 rounded-xl bg-[#b5ff00] hover:bg-[#c8ff33] disabled:bg-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed text-[#090a0f] text-[11px] font-extrabold transition-colors"
                   >
                     Aceitar
                   </button>
                   <button
                     type="button"
+                    disabled={!windowStatus.isOpen}
                     onClick={() => onResolveIncomingOffer(offer.id, 'COUNTER_15')}
-                    className="py-1.5 px-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] text-white text-[11px] font-bold transition-colors"
+                    className="py-1.5 px-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-bold transition-colors"
                   >
                     Pedir +15%
                   </button>
                   <button
                     type="button"
+                    disabled={!windowStatus.isOpen}
                     onClick={() => onResolveIncomingOffer(offer.id, 'COUNTER_30')}
-                    className="py-1.5 px-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] text-amber-300 text-[11px] font-bold transition-colors"
+                    className="py-1.5 px-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] disabled:opacity-40 disabled:cursor-not-allowed text-amber-300 text-[11px] font-bold transition-colors"
                   >
                     Pedir +30%
                   </button>
                   <button
                     type="button"
+                    disabled={!windowStatus.isOpen}
                     onClick={() => onResolveIncomingOffer(offer.id, 'REJECT')}
-                    className="py-1.5 px-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-[11px] font-bold transition-colors"
+                    className="py-1.5 px-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 disabled:opacity-40 disabled:cursor-not-allowed border border-rose-500/30 text-rose-300 text-[11px] font-bold transition-colors"
                   >
                     Recusar
                   </button>
@@ -1453,11 +1511,16 @@ export const MarketView: React.FC<MarketViewProps> = ({
                                     player.isLoanListed) && (
                                     <button
                                       type="button"
+                                      disabled={!windowStatus.isOpen}
                                       onClick={() =>
                                         onSolicitOfferForPlayer(player.id)
                                       }
-                                      title="Sondar clubes interessados que precisam desta posição para receber uma proposta oficial imediatamente"
-                                      className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-[#b5ff00]/15 hover:bg-[#b5ff00]/25 text-[#b5ff00] border border-[#b5ff00]/40 transition-colors"
+                                      title={
+                                        !windowStatus.isOpen
+                                          ? windowStatus.description
+                                          : 'Sondar clubes interessados que precisam desta posição para receber uma proposta oficial imediatamente'
+                                      }
+                                      className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-[#b5ff00]/15 hover:bg-[#b5ff00]/25 disabled:opacity-40 disabled:cursor-not-allowed text-[#b5ff00] border border-[#b5ff00]/40 transition-colors"
                                     >
                                       Oferecer a Clubes
                                     </button>
@@ -1477,8 +1540,12 @@ export const MarketView: React.FC<MarketViewProps> = ({
                             {player.contractType === 'EMPRESTADO' ? (
                               <button
                                 type="button"
-                                disabled={!ev.canReturnLoan}
-                                title={ev.blockReason || undefined}
+                                disabled={!ev.canReturnLoan || !windowStatus.isOpen}
+                                title={
+                                  !windowStatus.isOpen
+                                    ? windowStatus.description
+                                    : ev.blockReason || undefined
+                                }
                                 onClick={() =>
                                   onOutgoingTransfer({
                                     player,
@@ -1493,14 +1560,16 @@ export const MarketView: React.FC<MarketViewProps> = ({
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   type="button"
-                                  disabled={!ev.canLoanOut}
+                                  disabled={!ev.canLoanOut || !windowStatus.isOpen}
                                   title={
-                                    ev.blockReason ||
-                                    `Recebe ${formatCompactBRL(
-                                      ev.loanOutFee
-                                    )} e economiza ${formatCompactBRL(
-                                      ev.monthlyWageSavedOnLoan
-                                    )}/mês`
+                                    !windowStatus.isOpen
+                                      ? windowStatus.description
+                                      : ev.blockReason ||
+                                        `Recebe ${formatCompactBRL(
+                                          ev.loanOutFee
+                                        )} e economiza ${formatCompactBRL(
+                                          ev.monthlyWageSavedOnLoan
+                                        )}/mês`
                                   }
                                   onClick={() =>
                                     onOutgoingTransfer({
@@ -1514,8 +1583,12 @@ export const MarketView: React.FC<MarketViewProps> = ({
                                 </button>
                                 <button
                                   type="button"
-                                  disabled={!ev.canSell}
-                                  title={ev.blockReason || undefined}
+                                  disabled={!ev.canSell || !windowStatus.isOpen}
+                                  title={
+                                    !windowStatus.isOpen
+                                      ? windowStatus.description
+                                      : ev.blockReason || undefined
+                                  }
                                   onClick={() =>
                                     onOutgoingTransfer({
                                       player,
@@ -1742,7 +1815,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                           </td>
                           <td className="py-3.5 px-3 text-right font-mono tabular-nums font-bold text-white whitespace-nowrap">
                             {rec.feeAmount === 0
-                              ? 'R$ 0 (Livre)'
+                              ? `${formatCompactBRL(0)} (Livre)`
                               : formatCompactBRL(rec.feeAmount)}
                           </td>
                           <td
@@ -1928,10 +2001,14 @@ export const MarketView: React.FC<MarketViewProps> = ({
                     >
                       <option value="ALL">Qualquer Faixa de Preço</option>
                       <option value="FREE_ONLY">Sem Custo (Passe Livre)</option>
-                      <option value="UP_TO_10M">Até R$ 10M</option>
-                      <option value="10M_TO_25M">R$ 10M a R$ 25M</option>
-                      <option value="25M_TO_50M">R$ 25M a R$ 50M</option>
-                      <option value="OVER_50M">Acima de R$ 50M</option>
+                      <option value="UP_TO_10M">Até {formatCompactBRL(10_000_000)}</option>
+                      <option value="10M_TO_25M">
+                        {formatCompactBRL(10_000_000)} a {formatCompactBRL(25_000_000)}
+                      </option>
+                      <option value="25M_TO_50M">
+                        {formatCompactBRL(25_000_000)} a {formatCompactBRL(50_000_000)}
+                      </option>
+                      <option value="OVER_50M">Acima de {formatCompactBRL(50_000_000)}</option>
                     </select>
                   </div>
 
@@ -1952,11 +2029,11 @@ export const MarketView: React.FC<MarketViewProps> = ({
                       className="w-full bg-[#0b0c10] border border-white/10 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-[#b5ff00]"
                     >
                       <option value={0}>Qualquer Salário</option>
-                      <option value={300000}>Até R$ 300 mil/mês</option>
-                      <option value={500000}>Até R$ 500 mil/mês</option>
-                      <option value={800000}>Até R$ 800 mil/mês</option>
-                      <option value={1200000}>Até R$ 1,2M/mês</option>
-                      <option value={1800000}>Até R$ 1,8M/mês</option>
+                      <option value={300000}>Até {formatCompactBRL(300_000)}/mês</option>
+                      <option value={500000}>Até {formatCompactBRL(500_000)}/mês</option>
+                      <option value={800000}>Até {formatCompactBRL(800_000)}/mês</option>
+                      <option value={1200000}>Até {formatCompactBRL(1_200_000)}/mês</option>
+                      <option value={1800000}>Até {formatCompactBRL(1_800_000)}/mês</option>
                     </select>
                   </div>
 

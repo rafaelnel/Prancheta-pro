@@ -262,8 +262,9 @@ export function assignPotentialStars(
 }
 
 /**
- * Healthy market value and monthly salary calculation based on OVR + Age + Club Relevance + Potential Stars,
- * with strict anti-inflation caps per OVR bracket.
+ * Healthy market value and monthly salary calculation based on OVR + Potential Upside + Age +
+ * Club Relevance + Position, using a smooth curve (no discontinuous OVR bracket plateaus).
+ * Base currency is BRL (1 EUR ≈ R$ 6,00).
  */
 export function calculateBalancedValuationAndWage(params: {
   ovr: number;
@@ -271,76 +272,120 @@ export function calculateBalancedValuationAndWage(params: {
   clubReputation: number;
   division: 'A' | 'B' | 'LIB';
   potentialStars: PotentialStars;
+  position?: NaturalPosition;
 }): { marketValue: number; salary: number } {
-  const { ovr, age, clubReputation, division, potentialStars } = params;
+  const { ovr, age, clubReputation, division, potentialStars, position } = params;
 
-  // Exponential base on OVR 60..99, normalized cleanly for Brazilian / CONMEBOL market reality
-  const t = Math.max(0, ovr - 60);
-  let baseVal = 900_000 + Math.pow(t, 2.02) * 185_000;
+  // Blend current OVR with potential upside for younger players so elite U23 prospects
+  // (e.g. Endrick 19yo OVR 78 5★) are worth substantially more than older peak-out players of the same OVR.
+  const ceiling = getPotentialCeilingOvr(potentialStars);
+  const upsideWeight =
+    age <= 19
+      ? 0.34
+      : age <= 21
+      ? 0.26
+      : age <= 23
+      ? 0.16
+      : age <= 24
+      ? 0.08
+      : 0;
+  const upsideBonus =
+    ceiling > ovr && upsideWeight > 0
+      ? Math.min(7.5, (ceiling - ovr) * upsideWeight)
+      : 0;
+  const effectiveOvr = Math.min(99, ovr + upsideBonus);
 
-  // Age multiplier: youngsters with high potential carry premium; 31+ depreciates progressively
+  // Smooth continuous exponential curve on effective OVR 60..99 (no discontinuous step caps)
+  const u = Math.max(0, effectiveOvr - 60);
+  const baseVal = 650_000 + Math.pow(u, 2.38) * 32_000;
+
+  // Smooth age curve: U26 resale value holds premium; 30+ depreciates realistically
   let ageMult = 1.0;
   if (age <= 20) {
-    ageMult = 1.25 + (potentialStars >= 4 ? 0.25 : 0);
+    ageMult = 1.22;
   } else if (age <= 23) {
-    ageMult = 1.15 + (potentialStars >= 4 ? 0.12 : 0);
-  } else if (age <= 27) {
-    ageMult = 1.05;
-  } else if (age <= 30) {
-    ageMult = 0.88;
-  } else if (age <= 33) {
-    ageMult = Math.max(0.42, 0.72 - (age - 31) * 0.12);
+    ageMult = 1.16;
+  } else if (age <= 26) {
+    ageMult = 1.08;
+  } else if (age <= 28) {
+    ageMult = 0.98;
+  } else if (age === 29) {
+    ageMult = 0.90;
+  } else if (age === 30) {
+    ageMult = 0.78;
+  } else if (age === 31) {
+    ageMult = 0.66;
+  } else if (age === 32) {
+    ageMult = 0.54;
+  } else if (age === 33) {
+    ageMult = 0.42;
+  } else if (age === 34) {
+    ageMult = 0.31;
+  } else if (age === 35) {
+    ageMult = 0.22;
+  } else if (age === 36) {
+    ageMult = 0.16;
   } else {
-    ageMult = Math.max(0.22, 0.40 - (age - 34) * 0.05);
+    ageMult = Math.max(0.08, 0.13 - (age - 37) * 0.025);
   }
 
-  // Potential star multiplier for players under 26
-  const potMult =
-    age <= 25
-      ? 0.85 + potentialStars * 0.08
-      : 0.92 + potentialStars * 0.025;
+  // Subtle star aura multiplier (main potential upside is already priced via effectiveOvr)
+  const potMult = 0.94 + potentialStars * 0.024;
+
+  // Position market premium (attackers & creative mids command higher fees than goalkeepers)
+  let posMult = 1.0;
+  if (position === 'GOL') posMult = 0.78;
+  else if (
+    position === 'ZAG' ||
+    position === 'LD' ||
+    position === 'LE' ||
+    position === 'VOL'
+  ) {
+    posMult = 0.92;
+  } else if (position === 'MC' || position === 'MEI') {
+    posMult = 1.02;
+  } else if (position === 'PD' || position === 'PE' || position === 'ATA') {
+    posMult = 1.1;
+  }
 
   // Club relevance & division factor
-  const divMult = division === 'B' ? 0.72 : division === 'LIB' ? 1.02 : 1.0;
-  const repMult = Math.max(0.75, Math.min(1.22, clubReputation / 80));
-
-  // Hard anti-inflation cap per OVR bracket (prevents R$ 500M+ runaway inflation after many seasons)
-  const hardValueCap =
-    ovr < 70
-      ? 12_000_000
-      : ovr < 75
-      ? 28_000_000
-      : ovr < 80
-      ? 62_000_000
-      : ovr < 85
-      ? 115_000_000
-      : 190_000_000;
-
-  const rawValue = baseVal * ageMult * potMult * divMult * repMult;
-  const marketValue = Math.min(
-    hardValueCap,
-    Math.max(450_000, Math.round(rawValue / 250_000) * 250_000)
+  const divMult = division === 'B' ? 0.60 : division === 'LIB' ? 0.96 : 1.0;
+  const repMult = Math.max(
+    0.65,
+    Math.min(1.38, Math.pow(clubReputation / 84, 1.35))
   );
 
-  // Balanced monthly salary aligned with real Série A/B club payrolls (~72-86% of initial wageBudget)
-  const baseSalary = 18_000 + Math.pow(t, 1.95) * 950;
-  const salaryAgeMult = age >= 33 ? 0.82 : age <= 20 ? 0.72 : 1.0;
-  const salaryDivMult = division === 'B' ? 0.68 : 1.0;
+  const rawValue = baseVal * ageMult * potMult * posMult * divMult * repMult;
+  const step = rawValue < 1_500_000 ? 50_000 : 250_000;
+  const marketValue = Math.min(
+    280_000_000,
+    Math.max(300_000, Math.round(rawValue / step) * step)
+  );
+
+  // Balanced monthly salary aligned with real Série A/B/CONMEBOL club payrolls (~65-88% of wageBudget)
+  const t = Math.max(0, ovr - 60);
+  const baseSalary = 15_000 + Math.pow(t, 1.92) * 860;
+  const salaryAgeMult = age >= 34 ? 0.78 : age >= 32 ? 0.88 : age <= 20 ? 0.72 : 1.0;
+  const salaryDivMult = division === 'B' ? 0.65 : division === 'LIB' ? 0.88 : 1.0;
+  const salaryRepMult = Math.max(
+    0.58,
+    Math.min(1.26, Math.pow(clubReputation / 84, 1.3))
+  );
   const hardSalaryCap =
     ovr < 70
-      ? 115_000
+      ? 110_000
       : ovr < 75
-      ? 240_000
+      ? 230_000
       : ovr < 80
-      ? 490_000
+      ? 460_000
       : ovr < 85
-      ? 920_000
-      : 1_550_000;
+      ? 880_000
+      : 1_500_000;
 
-  const rawSalary = baseSalary * salaryAgeMult * salaryDivMult * repMult;
+  const rawSalary = baseSalary * salaryAgeMult * salaryDivMult * salaryRepMult;
   const salary = Math.min(
     hardSalaryCap,
-    Math.max(20_000, Math.round(rawSalary / 5_000) * 5_000)
+    Math.max(15_000, Math.round(rawSalary / 5_000) * 5_000)
   );
 
   return { marketValue, salary };
@@ -384,6 +429,7 @@ export function ensurePlayerDefaults(
       clubReputation,
       division,
       potentialStars,
+      position: player.position,
     });
     return {
       ...player,
@@ -431,6 +477,7 @@ export function ensurePlayerDefaults(
             clubReputation,
             division,
             potentialStars,
+            position: player.position,
           }).marketValue,
   };
 }
@@ -1119,6 +1166,7 @@ export function processSeasonEvolutionAndAging(params: {
       clubReputation: clubRep,
       division,
       potentialStars: growth.promotedStars,
+      position: player.position,
     });
 
     const evolved: Player = {
@@ -1206,6 +1254,7 @@ export function processSeasonEvolutionAndAging(params: {
         clubReputation: 72,
         division: 'A',
         potentialStars: stars,
+        position: res.position,
       });
       return {
         ...res,
@@ -1360,6 +1409,7 @@ export function processMidSeasonEvolution(params: {
       clubReputation: clubRep,
       division,
       potentialStars: growth.promotedStars,
+      position: player.position,
     });
 
     const evolved: Player = {

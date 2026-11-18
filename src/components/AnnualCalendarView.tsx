@@ -14,6 +14,7 @@ import {
   FastForward,
   Sparkles,
   CalendarClock,
+  Lock,
 } from 'lucide-react';
 import { SEASON_CALENDAR } from '../data/cupFactory';
 import {
@@ -23,6 +24,7 @@ import {
   getMaxSeasonDayOffset,
   isoDateToDayOffset,
 } from '../engine/autoTacticsAndSim';
+import { getTransferWindowStatus } from '../engine/transferEngine';
 import { formatCalendarDate } from '../utils/formatters';
 import {
   Club,
@@ -590,11 +592,35 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
             </p>
           </div>
 
-          <div className="text-xs font-mono text-zinc-400 shrink-0 bg-[#0b0c10] border border-white/[0.07] px-3 py-1.5 rounded-full">
-            Data Atual:{' '}
-            <span className="text-[#b5ff00] font-bold">
-              {formatCalendarDate(dayOffset, seasonYear)}
-            </span>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {(() => {
+              const winStatus = getTransferWindowStatus(dayOffset, seasonYear);
+              return (
+                <div
+                  className={`text-[11px] font-mono font-bold px-3 py-1.5 rounded-full border flex items-center gap-1.5 ${
+                    winStatus.isOpen
+                      ? 'bg-[#b5ff00]/15 border-[#b5ff00]/40 text-[#b5ff00]'
+                      : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+                  }`}
+                  title={winStatus.description}
+                >
+                  {winStatus.isOpen ? (
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  ) : (
+                    <Lock className="w-3.5 h-3.5" />
+                  )}
+                  <span>
+                    {winStatus.badgeLabel} · {winStatus.name}
+                  </span>
+                </div>
+              );
+            })()}
+            <div className="text-xs font-mono text-zinc-400 bg-[#0b0c10] border border-white/[0.07] px-3 py-1.5 rounded-full">
+              Data Atual:{' '}
+              <span className="text-[#b5ff00] font-bold">
+                {formatCalendarDate(dayOffset, seasonYear)}
+              </span>
+            </div>
           </div>
         </div>
 

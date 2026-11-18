@@ -1,29 +1,85 @@
 import { MoraleState } from '../types/football';
 
-export function formatBRL(value: number): string {
-  return new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    maximumFractionDigits: 0,
-  }).format(value);
+export type CurrencyCode = 'BRL' | 'EUR';
+export const EUR_TO_BRL_RATE = 6.0;
+const CURRENCY_STORAGE_KEY = 'brasileirao_manager_currency_v1';
+
+function loadInitialCurrency(): CurrencyCode {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const saved = window.localStorage.getItem(CURRENCY_STORAGE_KEY);
+      if (saved === 'EUR' || saved === 'BRL') return saved;
+    }
+  } catch {
+    // ignore storage access issues
+  }
+  return 'BRL';
 }
 
-export function formatCompactBRL(value: number): string {
-  if (Math.abs(value) >= 1_000_000) {
-    const millions = value / 1_000_000;
-    return `R$ ${millions.toLocaleString('pt-BR', {
+let activeCurrency: CurrencyCode = loadInitialCurrency();
+
+export function getActiveCurrency(): CurrencyCode {
+  return activeCurrency;
+}
+
+export function setActiveCurrency(next: CurrencyCode): void {
+  activeCurrency = next;
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(CURRENCY_STORAGE_KEY, next);
+    }
+  } catch {
+    // ignore storage access issues
+  }
+}
+
+export function convertBrlToCurrency(
+  valueBrl: number,
+  currency: CurrencyCode = activeCurrency
+): number {
+  return currency === 'EUR' ? valueBrl / EUR_TO_BRL_RATE : valueBrl;
+}
+
+export function formatBRL(
+  valueBrl: number,
+  currency: CurrencyCode = activeCurrency
+): string {
+  const converted = convertBrlToCurrency(valueBrl, currency);
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 0,
+  }).format(converted);
+}
+
+export function formatCompactBRL(
+  valueBrl: number,
+  currency: CurrencyCode = activeCurrency
+): string {
+  const converted = convertBrlToCurrency(valueBrl, currency);
+  const prefix = currency === 'EUR' ? '€' : 'R$';
+  const sign = converted < 0 ? '-' : '';
+  const abs = Math.abs(converted);
+
+  if (abs === 0) {
+    return `${prefix} 0`;
+  }
+  if (abs >= 1_000_000) {
+    const millions = abs / 1_000_000;
+    return `${sign}${prefix} ${millions.toLocaleString('pt-BR', {
       minimumFractionDigits: 1,
       maximumFractionDigits: 1,
     })}M`;
   }
-  if (Math.abs(value) >= 1_000) {
-    const thousands = value / 1_000;
-    return `R$ ${thousands.toLocaleString('pt-BR', {
-      maximumFractionDigits: 0,
-    })} mil`;
+  if (abs >= 1_000) {
+    const thousands = Math.round(abs / 1_000);
+    return `${sign}${prefix} ${thousands.toLocaleString('pt-BR')} mil`;
   }
-  return formatBRL(value);
+  return formatBRL(valueBrl, currency);
 }
+
+export const formatCurrency = formatBRL;
+export const formatCompactCurrency = formatCompactBRL;
 
 export function getAttributeColorClass(value: number): string {
   if (value >= 16) return 'text-[#b5ff00] font-bold';

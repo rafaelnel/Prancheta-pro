@@ -653,3 +653,64 @@ export function executeOutgoingTransfer(params: {
     promotedStarterName,
   };
 }
+
+/**
+ * Retorna se a janela oficial de transferências está aberta com base no dia do ano (dayOffset):
+ * - Janela de Verão (Início de ano): 28 Jan até 07 Março (dayOffset <= 38)
+ * - Janela de Inverno (Meio de ano): 01 Julho até 02 Setembro (dayOffset >= 154 && dayOffset <= 217)
+ * Fora desses intervalos, a janela está FECHADA (propostas e transferências pausadas).
+ */
+export function isTransferWindowOpen(dayOffset: number): boolean {
+  return dayOffset <= 38 || (dayOffset >= 154 && dayOffset <= 217);
+}
+
+export interface TransferWindowStatus {
+  isOpen: boolean;
+  name: string;
+  badgeLabel: string;
+  description: string;
+  closesInDays?: number;
+  opensInDays?: number;
+}
+
+export function getTransferWindowStatus(
+  dayOffset: number,
+  _seasonYear: number = 2026
+): TransferWindowStatus {
+  if (dayOffset <= 38) {
+    const daysLeft = 38 - dayOffset;
+    return {
+      isOpen: true,
+      name: 'Janela de Verão (Início de Temporada)',
+      badgeLabel: 'Janela Aberta',
+      description: `Aberta até 07 de Março (${daysLeft} dia${daysLeft === 1 ? '' : 's'} restante${daysLeft === 1 ? '' : 's'})`,
+      closesInDays: daysLeft,
+    };
+  }
+  if (dayOffset >= 154 && dayOffset <= 217) {
+    const daysLeft = 217 - dayOffset;
+    return {
+      isOpen: true,
+      name: 'Janela de Inverno (Meio de Temporada)',
+      badgeLabel: 'Janela Aberta',
+      description: `Aberta até 02 de Setembro (${daysLeft} dia${daysLeft === 1 ? '' : 's'} restante${daysLeft === 1 ? '' : 's'})`,
+      closesInDays: daysLeft,
+    };
+  }
+  if (dayOffset < 154) {
+    const daysToOpen = 154 - dayOffset;
+    return {
+      isOpen: false,
+      name: 'Janela Fechada',
+      badgeLabel: 'Janela Fechada',
+      description: `Transferências pausadas. Reabre em 01 de Julho (${daysToOpen} dia${daysToOpen === 1 ? '' : 's'})`,
+      opensInDays: daysToOpen,
+    };
+  }
+  return {
+    isOpen: false,
+    name: 'Janela Fechada',
+    badgeLabel: 'Janela Fechada',
+    description: 'Transferências pausadas até a abertura da próxima temporada.',
+  };
+}

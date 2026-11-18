@@ -26,6 +26,7 @@ import {
   Club,
 } from '../types/football';
 import { formatCompactBRL } from '../utils/formatters';
+import { CurrencyToggle, useCurrency } from '../utils/CurrencyContext';
 import { ClubBadge } from './ClubBadge';
 import {
   CAREER_SLOTS,
@@ -60,6 +61,7 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
   activeCareerSlot,
   onReturnToActiveCareer,
 }) => {
+  useCurrency();
   const savedCareers = useMemo(
     () => slots.filter((s): s is CareerSaveData => s !== null),
     [slots]
@@ -352,6 +354,12 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <div className="hidden sm:flex">
+            <CurrencyToggle />
+          </div>
+          <div className="flex sm:hidden">
+            <CurrencyToggle compact />
+          </div>
           <input
             ref={fileInputRef}
             type="file"

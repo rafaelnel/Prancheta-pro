@@ -333,6 +333,7 @@ function buildSingleYouthProspect(params: {
     clubReputation,
     division,
     potentialStars,
+    position,
   });
 
   // Base Sub-20 scholarship / initial contract is much more affordable (35% of senior wage)
@@ -535,6 +536,7 @@ export function generateYouthRegens(params: {
       clubReputation,
       division,
       potentialStars: stars,
+      position: yp.position,
     });
 
     agedYouthRoster.push({

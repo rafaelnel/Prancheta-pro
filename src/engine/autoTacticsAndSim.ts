@@ -28,6 +28,7 @@ import {
   maybeGenerateIncomingOfferForUser,
   simulateAiTransferWindowTick,
 } from './aiMarketEngine';
+import { isTransferWindowOpen } from './transferEngine';
 import { attributeAiRoundPlayerStats } from './seasonLifecycle';
 import {
   Club,
@@ -609,6 +610,7 @@ export function simulateNextAutoStep(
   done: boolean;
   snapshot: AutoSimCareerSnapshot;
   logEntry: AutoSimMatchLogEntry | null;
+  newOffer?: IncomingTransferOffer | null;
 } {
   let working = { ...snapshot };
 
@@ -640,6 +642,7 @@ export function simulateNextAutoStep(
         squad: restedSquad,
       },
       logEntry: null,
+      newOffer: null,
     };
   }
 
@@ -703,6 +706,7 @@ export function simulateNextAutoStep(
         matchState: nextMatch,
       },
       logEntry: null,
+      newOffer: null,
     };
   }
 
@@ -805,19 +809,80 @@ export function simulateNextAutoStep(
       goalScorers: [],
     };
 
+    let byeClubs = working.clubs;
+    let byeTransferHistory = working.transferHistory || [];
+    let byePendingOffers = working.pendingOffers || [];
+    let byeMessages = working.messages;
+    let byeOffer: IncomingTransferOffer | null = null;
+
+    if (isTransferWindowOpen(stepDayOffset)) {
+      if (Object.keys(nextAiSquads).length > 0 && idx % 2 === 0) {
+        const aiTick = simulateAiTransferWindowTick({
+          clubs: byeClubs,
+          aiSquads: nextAiSquads,
+          userClubId: working.userClubId,
+          dayOffset: stepDayOffset,
+          seasonYear,
+          maxDeals: 1,
+          rng,
+        });
+        byeClubs = aiTick.updatedClubs;
+        nextAiSquads = aiTick.updatedAiSquads;
+        if (aiTick.newRecords.length > 0) {
+          byeTransferHistory = [...aiTick.newRecords, ...byeTransferHistory].slice(0, 80);
+        }
+      }
+
+      const hasListed = recoveredSquad.some(
+        (p) => p.isTransferListed || p.isLoanListed
+      );
+      const shouldTryByeOffer = hasListed ? rng() < 0.72 : idx % 2 === 0 && rng() < 0.48;
+      if (shouldTryByeOffer) {
+        const latestClub =
+          byeClubs.find((c) => c.id === working.userClubId) || userClub;
+        const freshOffer = maybeGenerateIncomingOfferForUser({
+          clubs: byeClubs,
+          userClub: latestClub,
+          userSquad: recoveredSquad,
+          pendingOffers: byePendingOffers,
+          dayOffset: stepDayOffset,
+          seasonYear,
+          aiSquads: nextAiSquads,
+          rng,
+        });
+        if (freshOffer) {
+          byeOffer = freshOffer;
+          byePendingOffers = [freshOffer, ...byePendingOffers];
+          byeMessages = [
+            createOfferInboxMessage(freshOffer, latestClub),
+            ...byeMessages,
+          ].slice(0, 60);
+        }
+      }
+    } else if (byePendingOffers.some((o) => o.status === 'PENDING')) {
+      byePendingOffers = byePendingOffers.map((o) =>
+        o.status === 'PENDING' ? { ...o, status: 'EXPIRED' } : o
+      );
+    }
+
     return {
       done: false,
       snapshot: {
         ...working,
+        clubs: byeClubs,
         aiSquads: nextAiSquads,
         copaDoBrasil: nextCdb,
         libertadores: nextLib,
         squad: recoveredSquad,
+        messages: byeMessages,
+        pendingOffers: byePendingOffers,
+        transferHistory: byeTransferHistory,
         seasonStepIndex: nextIdx,
         dayOffset: Math.max(working.dayOffset, stepDayOffset),
         isMatchDay: false,
       },
       logEntry: byeLog,
+      newOffer: byeOffer,
     };
   }
 
@@ -1191,24 +1256,27 @@ export function simulateNextAutoStep(
     extraMsgs.push(midRes.inboxMessage);
   }
 
-  // Periodic AI Transfer Market activity & incoming user offers during auto-sim
+  // Periodic AI Transfer Market activity & incoming user offers during auto-sim (ONLY while transfer window is open)
   let nextTransferHistory = working.transferHistory || [];
   let nextPendingOffers = working.pendingOffers || [];
+  let generatedOffer: IncomingTransferOffer | null = null;
 
-  if (Object.keys(nextAiSquads).length > 0 && idx % 3 === 0) {
-    const aiTick = simulateAiTransferWindowTick({
-      clubs: nextClubs,
-      aiSquads: nextAiSquads,
-      userClubId: working.userClubId,
-      dayOffset: stepDayOffset,
-      seasonYear,
-      maxDeals: 1,
-      rng,
-    });
-    nextClubs = aiTick.updatedClubs;
-    nextAiSquads = aiTick.updatedAiSquads;
-    if (aiTick.newRecords.length > 0) {
-      nextTransferHistory = [...aiTick.newRecords, ...nextTransferHistory].slice(0, 80);
+  if (isTransferWindowOpen(stepDayOffset)) {
+    if (Object.keys(nextAiSquads).length > 0 && idx % 2 === 0) {
+      const aiTick = simulateAiTransferWindowTick({
+        clubs: nextClubs,
+        aiSquads: nextAiSquads,
+        userClubId: working.userClubId,
+        dayOffset: stepDayOffset,
+        seasonYear,
+        maxDeals: 1,
+        rng,
+      });
+      nextClubs = aiTick.updatedClubs;
+      nextAiSquads = aiTick.updatedAiSquads;
+      if (aiTick.newRecords.length > 0) {
+        nextTransferHistory = [...aiTick.newRecords, ...nextTransferHistory].slice(0, 80);
+      }
     }
 
     const hasListedPlayers = finalSquadAfterMatch.some(
@@ -1216,7 +1284,7 @@ export function simulateNextAutoStep(
     );
     const shouldTryOffer = hasListedPlayers
       ? rng() < 0.78
-      : idx % 6 === 0 && rng() < 0.55;
+      : idx % 2 === 0 && rng() < 0.55;
 
     if (shouldTryOffer) {
       const latestUserClub =
@@ -1232,10 +1300,16 @@ export function simulateNextAutoStep(
         rng,
       });
       if (newOffer) {
+        generatedOffer = newOffer;
         nextPendingOffers = [newOffer, ...nextPendingOffers];
         extraMsgs = [createOfferInboxMessage(newOffer, latestUserClub)];
       }
     }
+  } else if (nextPendingOffers.some((o) => o.status === 'PENDING')) {
+    // Janela fechada: expira propostas pendentes anteriores
+    nextPendingOffers = nextPendingOffers.map((o) =>
+      o.status === 'PENDING' ? { ...o, status: 'EXPIRED' } : o
+    );
   }
 
   const outcome: 'V' | 'E' | 'D' = userAdvanced
@@ -1362,6 +1436,7 @@ export function simulateNextAutoStep(
       midSeasonEvolutionProcessedYear: midSeasonProcessedYear,
     },
     logEntry,
+    newOffer: generatedOffer,
   };
 }
 

@@ -59,6 +59,8 @@ import {
   evaluateTransferNegotiation,
   executeIncomingTransfer,
   executeOutgoingTransfer,
+  getTransferWindowStatus,
+  isTransferWindowOpen,
 } from './engine/transferEngine';
 import {
   CareerSaveData,
@@ -92,6 +94,7 @@ import {
   formatCalendarDate,
   formatCompactBRL,
 } from './utils/formatters';
+import { CurrencyToggle, useCurrency } from './utils/CurrencyContext';
 import { ClubBadge } from './components/ClubBadge';
 import {
   deleteCareerSlot,
@@ -145,6 +148,7 @@ function shouldAutostart(): boolean {
 }
 
 export default function App() {
+  useCurrency();
   const [slots, setSlots] = useState<Array<CareerSaveData | null>>(() =>
     loadAllCareerSlots()
   );
@@ -386,6 +390,15 @@ export default function App() {
   };
 
   const handleSolicitOfferForPlayer = (playerId: string) => {
+    if (!isTransferWindowOpen(dayOffset)) {
+      const windowStatus = getTransferWindowStatus(dayOffset, currentYear);
+      setMarketFeedback({
+        type: 'error',
+        title: 'Janela de Transferências Fechada',
+        detail: windowStatus.description,
+      });
+      return;
+    }
     const targetPlayer = squad.find((p) => p.id === playerId);
     if (!targetPlayer) return;
 
@@ -603,6 +616,10 @@ export default function App() {
     targetDayOffset: number;
     plannedUserMatches: number;
     logs: AutoSimMatchLogEntry[];
+    pausedOffer: IncomingTransferOffer | null;
+    pendingDoneAfterOffer: boolean;
+    resumeInstantMode: boolean;
+    offerResolutionNote: string | null;
   }>({
     isOpen: false,
     isRunning: false,
@@ -614,6 +631,10 @@ export default function App() {
     targetDayOffset: 0,
     plannedUserMatches: 0,
     logs: [],
+    pausedOffer: null,
+    pendingDoneAfterOffer: false,
+    resumeInstantMode: false,
+    offerResolutionNote: null,
   });
 
   const persistCareer = useCallback(
@@ -1111,56 +1132,62 @@ export default function App() {
         lastMatchAttendance: attendance,
       };
 
-      // Living AI Transfer Market & Incoming User Offer Ticks
+      // Living AI Transfer Market & Incoming User Offer Ticks (ONLY when window is open)
       let updatedTransferHistory = transferHistory;
       let updatedPendingOffers = pendingOffers;
       let extraMessages: InboxMessage[] = [];
 
-      if (seasonStepIndex % 3 === 1) {
-        const aiTick = simulateAiTransferWindowTick({
-          clubs: updatedClubs,
-          aiSquads: updatedAiSquads,
-          userClubId,
-          dayOffset,
-          seasonYear: currentYear,
-          maxDeals: 2,
-        });
-        updatedClubs = aiTick.updatedClubs;
-        updatedAiSquads = aiTick.updatedAiSquads;
-        if (aiTick.newRecords.length > 0) {
-          updatedTransferHistory = [
-            ...aiTick.newRecords,
-            ...updatedTransferHistory,
-          ].slice(0, 120);
+      if (isTransferWindowOpen(dayOffset)) {
+        if (seasonStepIndex % 3 === 1) {
+          const aiTick = simulateAiTransferWindowTick({
+            clubs: updatedClubs,
+            aiSquads: updatedAiSquads,
+            userClubId,
+            dayOffset,
+            seasonYear: currentYear,
+            maxDeals: 2,
+          });
+          updatedClubs = aiTick.updatedClubs;
+          updatedAiSquads = aiTick.updatedAiSquads;
+          if (aiTick.newRecords.length > 0) {
+            updatedTransferHistory = [
+              ...aiTick.newRecords,
+              ...updatedTransferHistory,
+            ].slice(0, 120);
+          }
         }
-      }
 
-      const hasListedPlayers = updatedSquad.some(
-        (p) => p.isTransferListed || p.isLoanListed
-      );
-      const shouldCheckOffer =
-        updatedPendingOffers.filter((o) => o.status === 'PENDING').length < 4 &&
-        (hasListedPlayers ? seasonStepIndex % 2 === 0 : seasonStepIndex % 4 === 2);
+        const hasListedPlayers = updatedSquad.some(
+          (p) => p.isTransferListed || p.isLoanListed
+        );
+        const shouldCheckOffer =
+          updatedPendingOffers.filter((o) => o.status === 'PENDING').length < 4 &&
+          (hasListedPlayers ? seasonStepIndex % 2 === 0 : seasonStepIndex % 4 === 2);
 
-      if (shouldCheckOffer) {
-        const freshOffer = maybeGenerateIncomingOfferForUser({
-          clubs: updatedClubs,
-          userClub: updatedClubs.find((c) => c.id === userClubId) || userClub,
-          userSquad: updatedSquad,
-          pendingOffers: updatedPendingOffers,
-          dayOffset,
-          seasonYear: currentYear,
-          aiSquads: updatedAiSquads,
-        });
-        if (freshOffer) {
-          updatedPendingOffers = [freshOffer, ...updatedPendingOffers].slice(0, 15);
-          extraMessages = [
-            createOfferInboxMessage(
-              freshOffer,
-              updatedClubs.find((c) => c.id === userClubId) || userClub
-            ),
-          ];
+        if (shouldCheckOffer) {
+          const freshOffer = maybeGenerateIncomingOfferForUser({
+            clubs: updatedClubs,
+            userClub: updatedClubs.find((c) => c.id === userClubId) || userClub,
+            userSquad: updatedSquad,
+            pendingOffers: updatedPendingOffers,
+            dayOffset,
+            seasonYear: currentYear,
+            aiSquads: updatedAiSquads,
+          });
+          if (freshOffer) {
+            updatedPendingOffers = [freshOffer, ...updatedPendingOffers].slice(0, 15);
+            extraMessages = [
+              createOfferInboxMessage(
+                freshOffer,
+                updatedClubs.find((c) => c.id === userClubId) || userClub
+              ),
+            ];
+          }
         }
+      } else if (updatedPendingOffers.some((o) => o.status === 'PENDING')) {
+        updatedPendingOffers = updatedPendingOffers.map((o) =>
+          o.status === 'PENDING' ? { ...o, status: 'EXPIRED' } : o
+        );
       }
 
       // Semiannual evolution check around July 1st (dayOffset >= 154)
@@ -1853,11 +1880,15 @@ export default function App() {
       targetDayOffset,
       plannedUserMatches: userMatchSteps,
       logs: [],
+      pausedOffer: null,
+      pendingDoneAfterOffer: false,
+      resumeInstantMode: false,
+      offerResolutionNote: null,
     });
   };
 
   const handlePauseAutoSimulation = () => {
-    if (!autoSimUi.isRunning) return;
+    if (!autoSimUi.isRunning && !autoSimUi.pausedOffer) return;
     const snap = autoSimSnapshotRef.current;
     if (snap) {
       finalizeAutoSimSummary(snap, autoSimUi.logs, autoSimUi.targetLabel, true);
@@ -1867,40 +1898,217 @@ export default function App() {
       isRunning: false,
       isDone: false,
       wasStoppedEarly: true,
+      pausedOffer: null,
+      pendingDoneAfterOffer: false,
+      resumeInstantMode: false,
     }));
   };
 
+  const runInstantAutoSimFromSnapshot = useCallback(
+    (
+      startSnap: AutoSimCareerSnapshot,
+      startLogs: AutoSimMatchLogEntry[],
+      targetDayOffset: number,
+      targetLabel: string
+    ) => {
+      let working = startSnap;
+      const collectedLogs = [...startLogs];
+      let guard = 0;
+      let done = false;
+      let pausedOffer: IncomingTransferOffer | null = null;
+
+      while (!done && guard < 120) {
+        guard++;
+        const stepRes = simulateNextAutoStep(working, targetDayOffset);
+        working = stepRes.snapshot;
+        if (stepRes.logEntry) {
+          collectedLogs.push(stepRes.logEntry);
+        }
+        done = stepRes.done;
+        if (stepRes.newOffer) {
+          pausedOffer = stepRes.newOffer;
+          break;
+        }
+      }
+
+      autoSimSnapshotRef.current = working;
+      applyAutoSimSnapshotToState(working);
+
+      if (pausedOffer) {
+        setAutoSimUi((prev) => ({
+          ...prev,
+          isRunning: false,
+          isDone: false,
+          wasStoppedEarly: false,
+          currentDayOffset: working.dayOffset,
+          logs: collectedLogs,
+          pausedOffer,
+          pendingDoneAfterOffer: done,
+          resumeInstantMode: true,
+        }));
+        return;
+      }
+
+      finalizeAutoSimSummary(working, collectedLogs, targetLabel, false);
+      setAutoSimUi((prev) => ({
+        ...prev,
+        isRunning: false,
+        isDone: true,
+        wasStoppedEarly: false,
+        currentDayOffset: working.dayOffset,
+        logs: collectedLogs,
+        pausedOffer: null,
+        pendingDoneAfterOffer: false,
+        resumeInstantMode: false,
+      }));
+    },
+    [applyAutoSimSnapshotToState, finalizeAutoSimSummary]
+  );
+
   const handleFinishAutoSimulationInstant = () => {
     if (!autoSimSnapshotRef.current) return;
-    let working = autoSimSnapshotRef.current;
-    const collectedLogs = [...autoSimUi.logs];
-    let guard = 0;
-    let done = false;
+    runInstantAutoSimFromSnapshot(
+      autoSimSnapshotRef.current,
+      autoSimUi.logs,
+      autoSimUi.targetDayOffset,
+      autoSimUi.targetLabel
+    );
+  };
 
-    while (!done && guard < 120) {
-      guard++;
-      const stepRes = simulateNextAutoStep(working, autoSimUi.targetDayOffset);
-      working = stepRes.snapshot;
-      if (stepRes.logEntry) {
-        collectedLogs.push(stepRes.logEntry);
-      }
-      done = stepRes.done;
+  const handleResolveAutoSimOffer = (
+    offerId: string,
+    action: IncomingOfferAction
+  ) => {
+    const snap = autoSimSnapshotRef.current;
+    if (!snap) return;
+
+    const snapPending = snap.pendingOffers || [];
+    const targetOffer =
+      snapPending.find((o) => o.id === offerId) || autoSimUi.pausedOffer;
+    if (!targetOffer || targetOffer.status !== 'PENDING') return;
+
+    const snapUserClub =
+      snap.clubs.find((c) => c.id === snap.userClubId) || userClub;
+    const snapYear = snap.seasonYear ?? currentYear;
+
+    const res = resolveIncomingOfferAction({
+      offer: targetOffer,
+      action,
+      userClub: snapUserClub,
+      userSquad: snap.squad,
+      aiSquads: snap.aiSquads || aiSquads,
+      loanedOutPlayers,
+      clubs: snap.clubs,
+      dayOffset: snap.dayOffset,
+      seasonYear: snapYear,
+    });
+
+    const updatedPendingOffers = snapPending.map((o) =>
+      o.id === offerId ? res.updatedOffer : o
+    );
+    const nextHistory = res.transferRecord
+      ? [res.transferRecord, ...(snap.transferHistory || [])].slice(0, 120)
+      : snap.transferHistory || [];
+    const nextLedger: ClubFinanceLedger | undefined =
+      res.outcome === 'ACCEPTED' && snap.financeLedger
+        ? {
+            ...snap.financeLedger,
+            seasonTransferIncome:
+              snap.financeLedger.seasonTransferIncome + res.finalFee,
+          }
+        : snap.financeLedger;
+
+    let nextMatchState = snap.matchState;
+    if (res.outcome === 'ACCEPTED' && snap.matchState.phase === 'PRE_MATCH') {
+      const snapHome =
+        res.updatedClubs.find((c) => c.id === snap.matchState.homeClubId) ||
+        homeClub;
+      const snapAway =
+        res.updatedClubs.find((c) => c.id === snap.matchState.awayClubId) ||
+        awayClub;
+      const { homeTokens, awayTokens } = buildPitchTokens(
+        snapHome,
+        snapAway,
+        res.updatedUserSquad,
+        snap.matchState.isUserHome,
+        snap.transferredOutClubPlayerIds || transferredOutClubPlayerIds,
+        res.updatedAiSquads
+      );
+      nextMatchState = { ...snap.matchState, homeTokens, awayTokens };
     }
 
-    autoSimSnapshotRef.current = working;
-    finalizeAutoSimSummary(
-      working,
-      collectedLogs,
-      autoSimUi.targetLabel,
-      false
-    );
+    const updatedSnap: AutoSimCareerSnapshot = {
+      ...snap,
+      clubs: res.updatedClubs,
+      squad: res.updatedUserSquad,
+      aiSquads: res.updatedAiSquads,
+      pendingOffers: updatedPendingOffers,
+      transferHistory: nextHistory,
+      financeLedger: nextLedger,
+      matchState: nextMatchState,
+    };
+
+    autoSimSnapshotRef.current = updatedSnap;
+    setLoanedOutPlayers(res.updatedLoanedOutPlayers);
+    applyAutoSimSnapshotToState(updatedSnap);
+
+    const resolutionNote =
+      res.outcome === 'ACCEPTED'
+        ? `Proposta aceita: ${targetOffer.playerName} vendido para ${
+            targetOffer.fromClubName
+          } por ${formatCompactBRL(res.finalFee)}.${
+            res.promotedStarterName
+              ? ` ${res.promotedStarterName} assumiu a titularidade.`
+              : ''
+          }`
+        : res.outcome === 'COUNTER_REJECTED'
+        ? `${targetOffer.fromClubName} não aceitou a contraproposta de ${formatCompactBRL(
+            res.finalFee
+          )} por ${targetOffer.playerName}.`
+        : `Proposta de ${targetOffer.fromClubName} por ${targetOffer.playerName} recusada. O atleta permanece no elenco.`;
+
+    if (autoSimUi.pendingDoneAfterOffer) {
+      finalizeAutoSimSummary(
+        updatedSnap,
+        autoSimUi.logs,
+        autoSimUi.targetLabel,
+        false
+      );
+      setAutoSimUi((prev) => ({
+        ...prev,
+        isRunning: false,
+        isDone: true,
+        wasStoppedEarly: false,
+        pausedOffer: null,
+        pendingDoneAfterOffer: false,
+        resumeInstantMode: false,
+        offerResolutionNote: resolutionNote,
+      }));
+      return;
+    }
+
+    if (autoSimUi.resumeInstantMode) {
+      setAutoSimUi((prev) => ({
+        ...prev,
+        pausedOffer: null,
+        pendingDoneAfterOffer: false,
+        offerResolutionNote: resolutionNote,
+      }));
+      runInstantAutoSimFromSnapshot(
+        updatedSnap,
+        autoSimUi.logs,
+        autoSimUi.targetDayOffset,
+        autoSimUi.targetLabel
+      );
+      return;
+    }
+
     setAutoSimUi((prev) => ({
       ...prev,
-      isRunning: false,
-      isDone: true,
-      wasStoppedEarly: false,
-      currentDayOffset: working.dayOffset,
-      logs: collectedLogs,
+      isRunning: true,
+      pausedOffer: null,
+      pendingDoneAfterOffer: false,
+      offerResolutionNote: resolutionNote,
     }));
   };
 
@@ -1920,6 +2128,20 @@ export default function App() {
           ? [...prev.logs, stepRes.logEntry]
           : prev.logs;
 
+        if (stepRes.newOffer) {
+          return {
+            ...prev,
+            isRunning: false,
+            isDone: false,
+            wasStoppedEarly: false,
+            currentDayOffset: stepRes.snapshot.dayOffset,
+            logs: nextLogs,
+            pausedOffer: stepRes.newOffer,
+            pendingDoneAfterOffer: stepRes.done,
+            resumeInstantMode: false,
+          };
+        }
+
         if (stepRes.done) {
           finalizeAutoSimSummary(
             stepRes.snapshot,
@@ -1934,6 +2156,9 @@ export default function App() {
             wasStoppedEarly: false,
             currentDayOffset: stepRes.snapshot.dayOffset,
             logs: nextLogs,
+            pausedOffer: null,
+            pendingDoneAfterOffer: false,
+            resumeInstantMode: false,
           };
         }
 
@@ -2266,6 +2491,12 @@ export default function App() {
       finalAiSquads
     );
 
+    const nextPendingOffers = isTransferWindowOpen(nextDayOffset)
+      ? pendingOffers
+      : pendingOffers.map((o) =>
+          o.status === 'PENDING' ? { ...o, status: 'EXPIRED' as const } : o
+        );
+
     setClubs(finalClubs);
     setFinanceLedger(updatedLedger);
     setYouthAcademy(updatedYouthAcademy);
@@ -2273,6 +2504,7 @@ export default function App() {
     setAiSquads(finalAiSquads);
     setCopaDoBrasil(nextCdb);
     setLibertadores(nextLib);
+    setPendingOffers(nextPendingOffers);
     setSeasonStepIndex(nextIdx);
     setCurrentRound(nextLeagueRound);
     setDayOffset(nextDayOffset);
@@ -2288,6 +2520,7 @@ export default function App() {
       aiSquads: finalAiSquads,
       copaDoBrasil: nextCdb,
       libertadores: nextLib,
+      pendingOffers: nextPendingOffers,
       messages: nextMessagesList,
       seasonStepIndex: nextIdx,
       activeCompetition: targetStep.competition,
@@ -2305,6 +2538,15 @@ export default function App() {
     offerTier: TransferOfferTier;
     loanWageShare: LoanWageShare;
   }) => {
+    if (!isTransferWindowOpen(dayOffset)) {
+      const windowStatus = getTransferWindowStatus(dayOffset, currentYear);
+      setMarketFeedback({
+        type: 'error',
+        title: 'Janela de Transferências Fechada',
+        detail: windowStatus.description,
+      });
+      return;
+    }
     const { listing, dealMode, offerTier, loanWageShare } = params;
     const evaluation = evaluateTransferNegotiation({
       userClub,
@@ -2432,7 +2674,7 @@ export default function App() {
         `${result.signedPlayer.name} fechou com o ${userClub.shortName} (${acceptedRec.note}) vindo de ${counterpartyName}.`,
         `Investimento imediato: ${
           evaluation.effectiveFee === 0
-            ? 'R$ 0 (Passe Livre)'
+            ? `${formatCompactBRL(0)} (Passe Livre)`
             : formatCompactBRL(evaluation.effectiveFee)
         } · Folha adicional: +${formatCompactBRL(evaluation.effectiveSalary)}/mês.`,
       ],
@@ -2486,6 +2728,15 @@ export default function App() {
     player: Player;
     action: 'VENDA' | 'EMPRESTIMO_OUT' | 'DEVOLVER_EMPRESTIMO';
   }) => {
+    if (!isTransferWindowOpen(dayOffset)) {
+      const windowStatus = getTransferWindowStatus(dayOffset, currentYear);
+      setMarketFeedback({
+        type: 'error',
+        title: 'Janela de Transferências Fechada',
+        detail: windowStatus.description,
+      });
+      return;
+    }
     const { player, action } = params;
     const result = executeOutgoingTransfer({
       userClub,
@@ -2588,6 +2839,15 @@ export default function App() {
     offerId: string,
     action: IncomingOfferAction
   ) => {
+    if (!isTransferWindowOpen(dayOffset)) {
+      const windowStatus = getTransferWindowStatus(dayOffset, currentYear);
+      setMarketFeedback({
+        type: 'error',
+        title: 'Janela de Transferências Fechada',
+        detail: windowStatus.description,
+      });
+      return;
+    }
     const targetOffer = pendingOffers.find((o) => o.id === offerId);
     if (!targetOffer || targetOffer.status !== 'PENDING') return;
 
@@ -3168,6 +3428,14 @@ export default function App() {
               </div>
             </div>
 
+            {/* Alternador de Moeda (Real R$ / Euro €) */}
+            <div className="hidden sm:flex items-center">
+              <CurrencyToggle />
+            </div>
+            <div className="flex sm:hidden items-center">
+              <CurrencyToggle compact />
+            </div>
+
             {/* Quick Save Pill */}
             <button
               type="button"
@@ -3245,6 +3513,7 @@ export default function App() {
               onGoToMatch={handleEnterMatchMoment}
               onQuickSimulateMatch={handleQuickSimulateFromOutside}
               pendingOffers={pendingOffers}
+              dayOffset={dayOffset}
               onResolveIncomingOffer={handleResolveIncomingOffer}
             />
           )}
@@ -3283,6 +3552,7 @@ export default function App() {
               transferHistory={transferHistory}
               transferredOutClubPlayerIds={transferredOutClubPlayerIds}
               seasonYear={currentYear}
+              dayOffset={dayOffset}
               aiSquads={aiSquads}
               pendingOffers={pendingOffers}
               onResolveIncomingOffer={handleResolveIncomingOffer}
@@ -3429,6 +3699,9 @@ export default function App() {
         clubs={clubs}
         userRank={userRank}
         seasonYear={currentYear}
+        pausedOffer={autoSimUi.pausedOffer}
+        offerResolutionNote={autoSimUi.offerResolutionNote}
+        onResolveOffer={handleResolveAutoSimOffer}
         onPauseOrStop={handlePauseAutoSimulation}
         onFinishInstant={handleFinishAutoSimulationInstant}
         onClose={() => {

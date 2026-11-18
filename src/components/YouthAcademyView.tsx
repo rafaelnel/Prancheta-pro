@@ -253,7 +253,7 @@ export const YouthAcademyView: React.FC<YouthAcademyViewProps> = ({
                           Nível Inicial (Série B / Acesso):
                         </span>
                         <span>
-                          72% de atletas 1–2,5★ para compor o elenco a custo controlado (R$ 80k/mês).
+                          72% de atletas 1–2,5★ para compor o elenco a custo controlado ({formatCompactBRL(t.monthlyCost)}/mês).
                         </span>
                       </div>
                     )}

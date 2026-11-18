@@ -354,6 +354,7 @@ function buildCatalogPlayer(
     clubReputation: clubRep,
     division: 'A',
     potentialStars,
+    position,
   });
 
   return {

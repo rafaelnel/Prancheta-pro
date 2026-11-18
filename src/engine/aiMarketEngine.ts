@@ -1,7 +1,7 @@
 import { getRealSquadForClub } from '../data/initialDatabase';
 import { calculatePlayerOverall } from './playerOverall';
 import { assignPotentialStars } from './economyAndEvolution';
-import { MIN_GOALKEEPERS, MIN_SQUAD_SIZE } from './transferEngine';
+import { MIN_GOALKEEPERS, MIN_SQUAD_SIZE, isTransferWindowOpen } from './transferEngine';
 import { formatCalendarDate, formatCompactBRL } from '../utils/formatters';
 import {
   Club,
@@ -93,6 +93,15 @@ export function simulateAiTransferWindowTick(params: {
     maxDeals = 2,
     rng = Math.random,
   } = params;
+
+  // Transferências e propostas só ocorrem se a janela de transferências estiver aberta!
+  if (!isTransferWindowOpen(dayOffset)) {
+    return {
+      updatedClubs: clubs,
+      updatedAiSquads: aiSquads,
+      newRecords: [],
+    };
+  }
 
   const workingClubs = clubs.map((c) => ({ ...c }));
   const workingSquads: Record<string, Player[]> = {};
@@ -294,6 +303,9 @@ export function maybeGenerateIncomingOfferForUser(params: {
     specificPlayerId,
     rng = Math.random,
   } = params;
+
+  // Propostas de outros clubes só podem ocorrer enquanto a janela estiver aberta!
+  if (!isTransferWindowOpen(dayOffset)) return null;
 
   const activePending = pendingOffers.filter(
     (o) => o.status === 'PENDING' && o.expiresDayOffset >= dayOffset
@@ -534,6 +546,19 @@ export function resolveIncomingOfferAction(params: {
   } = params;
 
   const dateLabel = formatCalendarDate(dayOffset, seasonYear);
+
+  if (!isTransferWindowOpen(dayOffset)) {
+    return {
+      outcome: 'REJECTED_BY_USER',
+      finalFee: 0,
+      updatedClubs: clubs,
+      updatedUserSquad: userSquad,
+      updatedAiSquads: aiSquads,
+      updatedLoanedOutPlayers: loanedOutPlayers,
+      updatedOffer: { ...offer, status: 'EXPIRED' },
+      transferRecord: null,
+    };
+  }
 
   if (action === 'REJECT') {
     return {

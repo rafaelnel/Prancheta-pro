@@ -157,6 +157,7 @@ export function buildPlayersFromSeeds(
       clubReputation: club.reputation,
       division: club.division,
       potentialStars,
+      position,
     });
 
     const condition = isFatiguedStarter

@@ -73,7 +73,7 @@ export interface TacticalRoleDefinition {
   secondaryAttributes: AttributeKey[];
 }
 
-export type PotentialStars = 1 | 2 | 3 | 4 | 5;
+export type PotentialStars = 1 | 1.5 | 2 | 2.5 | 3 | 3.5 | 4 | 4.5 | 5;
 
 export interface PlayerSeasonStats {
   matches: number;
@@ -96,6 +96,8 @@ export interface Player {
   marketValue: number; // in BRL
   salary: number; // monthly in BRL
   potentialStars?: PotentialStars;
+  basePotentialOvr?: number;
+  dynamicCeilingOvr?: number;
   attributes: PlayerAttributes;
   isStarter: boolean;
   slotIndex: number | null; // 0..10 for starters, null for bench
@@ -115,6 +117,14 @@ export interface Player {
   isTransferListed?: boolean;
   isLoanListed?: boolean;
   recentOvrDelta?: number;
+  exceededExpectations?: boolean;
+  breakoutBonusOvr?: number;
+  developmentStatus?:
+    | 'SUPEROU_EXPECTATIVAS'
+    | 'EVOLUCAO_NORMAL'
+    | 'ESTAGNADO'
+    | 'DECLINIO_TECNICO'
+    | 'REGRESSAO_FISICA';
 }
 
 export interface FormationSlot {
@@ -500,6 +510,8 @@ export interface YouthRegenReportItem {
   sector: PositionSector;
   ovr: number;
   potentialStars: PotentialStars;
+  basePotentialOvr?: number;
+  dynamicCeilingOvr?: number;
   marketValue: number;
   salary: number;
   highlightNote: string;
@@ -580,6 +592,15 @@ export interface PlayerEvolutionReportItem {
   deltaOvr: number;
   potentialStars: PotentialStars;
   reasonNote: string;
+  exceededExpectations?: boolean;
+  formerCeiling?: number;
+  starsPromoted?: boolean;
+  developmentStatus?:
+    | 'SUPEROU_EXPECTATIVAS'
+    | 'EVOLUCAO_NORMAL'
+    | 'ESTAGNADO'
+    | 'DECLINIO_TECNICO'
+    | 'REGRESSAO_FISICA';
 }
 
 export interface SeasonEndReport {

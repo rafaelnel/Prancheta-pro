@@ -647,7 +647,9 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
                       <span>Cond: <span className={cond.text}>{Math.round(res.condition)}%</span></span>
                       <span>·</span>
                       <span>OVR {calculatePlayerOverall(res.attributes, res.position)}</span>
-                      {res.recentOvrDelta !== undefined && res.recentOvrDelta > 0 ? (
+                      {res.exceededExpectations ? (
+                        <span className="text-amber-300 font-bold" title="Superou o teto de potencial inicial!">⚡+{res.recentOvrDelta ?? 0}</span>
+                      ) : res.recentOvrDelta !== undefined && res.recentOvrDelta > 0 ? (
                         <span className="text-[#b5ff00] font-bold">▲+{res.recentOvrDelta}</span>
                       ) : res.recentOvrDelta !== undefined && res.recentOvrDelta < 0 ? (
                         <span className="text-rose-400 font-bold">▼{res.recentOvrDelta}</span>

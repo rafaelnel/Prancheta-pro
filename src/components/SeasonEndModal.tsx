@@ -11,6 +11,7 @@ import {
   X,
   ArrowRight,
   Star,
+  Zap,
 } from 'lucide-react';
 import { Club, SeasonEndReport } from '../types/football';
 import { formatCompactBRL } from '../utils/formatters';
@@ -412,28 +413,60 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
                 {report.userEvolutionHighlights.slice(0, 6).map((evo) => (
                   <div
                     key={evo.playerId}
-                    className="bg-[#0b0c10] border border-white/[0.06] rounded-xl px-3 py-2 flex items-center justify-between text-xs"
+                    className={`rounded-xl px-3 py-2 flex items-center justify-between text-xs transition-colors border ${
+                      evo.exceededExpectations
+                        ? 'bg-amber-950/25 border-amber-400/40'
+                        : evo.developmentStatus === 'DECLINIO_TECNICO'
+                        ? 'bg-rose-950/20 border-rose-500/30'
+                        : 'bg-[#0b0c10] border-white/[0.06]'
+                    }`}
+                    title={evo.reasonNote}
                   >
-                    <div className="min-w-0">
-                      <div className="font-semibold text-white truncate">
-                        {evo.playerName} ({evo.position})
+                    <div className="min-w-0 pr-1.5">
+                      <div className="font-semibold text-white truncate flex items-center gap-1">
+                        {evo.exceededExpectations && (
+                          <Zap className="w-3 h-3 text-amber-300 shrink-0" />
+                        )}
+                        <span className="truncate">{evo.playerName}</span>
+                        <span className="text-zinc-400 font-mono text-[10px]">({evo.position})</span>
                       </div>
-                      <div className="text-[10px] text-zinc-400 truncate">
-                        {evo.oldAge}→{evo.newAge} anos · {evo.potentialStars}★
+                      <div className="text-[10px] text-zinc-400 truncate flex items-center gap-1">
+                        <span>
+                          {evo.oldAge}→{evo.newAge}a · {evo.potentialStars}★
+                        </span>
+                        {evo.exceededExpectations && (
+                          <span className="text-amber-300 font-bold">
+                            · Superou Teto
+                          </span>
+                        )}
+                        {evo.developmentStatus === 'ESTAGNADO' && evo.deltaOvr === 0 && (
+                          <span className="text-zinc-500">
+                            · Sem minutos
+                          </span>
+                        )}
                       </div>
                     </div>
                     <span
-                      className={`font-mono font-extrabold tabular-nums flex items-center gap-0.5 ml-2 ${
-                        evo.deltaOvr >= 0 ? 'text-[#b5ff00]' : 'text-rose-400'
+                      className={`font-mono font-extrabold tabular-nums flex items-center gap-0.5 ml-2 shrink-0 ${
+                        evo.exceededExpectations
+                          ? 'text-amber-300'
+                          : evo.deltaOvr > 0
+                          ? 'text-[#b5ff00]'
+                          : evo.deltaOvr < 0
+                          ? 'text-rose-400'
+                          : 'text-zinc-400'
                       }`}
                     >
-                      {evo.deltaOvr >= 0 ? (
+                      {evo.exceededExpectations ? (
+                        <Zap className="w-3 h-3 text-amber-300" />
+                      ) : evo.deltaOvr > 0 ? (
                         <TrendingUp className="w-3 h-3" />
-                      ) : (
+                      ) : evo.deltaOvr < 0 ? (
                         <TrendingDown className="w-3 h-3" />
+                      ) : (
+                        <span className="text-zinc-500">▬</span>
                       )}
-                      {evo.deltaOvr >= 0 ? `+${evo.deltaOvr}` : evo.deltaOvr} (
-                      {evo.newOvr})
+                      {evo.deltaOvr > 0 ? `+${evo.deltaOvr}` : evo.deltaOvr} ({evo.newOvr})
                     </span>
                   </div>
                 ))}

@@ -9,6 +9,8 @@ import {
   UserMinus,
   Clock,
   Sparkles,
+  Zap,
+  TrendingDown,
 } from 'lucide-react';
 import {
   Club,
@@ -20,6 +22,10 @@ import {
 } from '../types/football';
 import { YOUTH_TIERS } from '../engine/youthAcademyEngine';
 import { calculatePlayerOverall } from '../engine/playerOverall';
+import {
+  getDynamicPotentialProfile,
+  getPotentialCeilingOvr,
+} from '../engine/economyAndEvolution';
 import { formatCompactBRL, formatBRL } from '../utils/formatters';
 import { StarRating } from './StarRating';
 
@@ -203,32 +209,54 @@ export const YouthAcademyView: React.FC<YouthAcademyViewProps> = ({
                     {t.description}
                   </p>
 
-                  {/* Realistic Star Probability Breakdown Bar */}
-                  <div className="bg-[#14171f]/90 border border-white/[0.06] rounded-xl p-2.5 space-y-1.5">
+                  {/* Visual Breakdown dos 4 Badges de Probabilidades */}
+                  <div className="bg-[#14171f]/95 border border-white/[0.06] rounded-xl p-2.5 space-y-2">
                     <div className="flex items-center justify-between text-[10px] font-mono text-zinc-400">
-                      <span>CHANCE REAL POR SAFRA:</span>
+                      <span>SAFRA ESTIMADA:</span>
                       <span className="text-white font-bold">
                         {t.minRegens} a {t.maxRegens} jovens · OVR {t.minOvr}–{t.maxOvr}
                       </span>
                     </div>
+
                     <div className="grid grid-cols-4 gap-1 text-center font-mono text-[10px]">
-                      <div className="bg-[#0b0c10] rounded-lg py-1 px-1 text-zinc-400">
-                        <div className="text-[9px] text-zinc-500">1–2★ Base</div>
-                        <div className="font-bold text-zinc-300">{probs.star1_2}%</div>
+                      <div className="bg-[#0b0c10] border border-white/[0.05] rounded-lg py-1.5 px-1 text-zinc-400">
+                        <div className="text-[9px] text-zinc-500 font-bold">1–2,5★</div>
+                        <div className="font-extrabold text-zinc-300 mt-0.5">{probs.star1_2_5}%</div>
                       </div>
-                      <div className="bg-[#0b0c10] rounded-lg py-1 px-1 text-zinc-200">
-                        <div className="text-[9px] text-zinc-400">3★ Útil</div>
-                        <div className="font-bold text-white">{probs.star3}%</div>
+                      <div className="bg-[#0b0c10] border border-white/[0.05] rounded-lg py-1.5 px-1 text-zinc-200">
+                        <div className="text-[9px] text-zinc-400 font-bold">3–3,5★</div>
+                        <div className="font-extrabold text-white mt-0.5">{probs.star3_3_5}%</div>
                       </div>
-                      <div className="bg-[#0b0c10] rounded-lg py-1 px-1 text-amber-300">
-                        <div className="text-[9px] text-amber-400/80">4★ Destaque</div>
-                        <div className="font-bold">{probs.star4}%</div>
+                      <div className="bg-[#0b0c10] border border-amber-500/25 rounded-lg py-1.5 px-1 text-amber-300">
+                        <div className="text-[9px] text-amber-400/90 font-bold">4–4,5★</div>
+                        <div className="font-extrabold text-amber-300 mt-0.5">{probs.star4_4_5}%</div>
                       </div>
-                      <div className="bg-[#0b0c10] rounded-lg py-1 px-1 text-[#b5ff00]">
-                        <div className="text-[9px] text-[#b5ff00]/80">5★ Joia</div>
-                        <div className="font-bold">{probs.star5}%</div>
+                      <div className="bg-[#0b0c10] border border-[#b5ff00]/30 rounded-lg py-1.5 px-1 text-[#b5ff00]">
+                        <div className="text-[9px] text-[#b5ff00]/90 font-bold">5★</div>
+                        <div className="font-extrabold text-[#b5ff00] mt-0.5">{probs.star5}%</div>
                       </div>
                     </div>
+
+                    {/* Multiplicador de Investimento e Progressão */}
+                    {t.progressionNote ? (
+                      <div className="bg-[#b5ff00]/10 border border-[#b5ff00]/30 rounded-lg p-2 text-[10px] text-zinc-300">
+                        <span className="font-bold text-[#b5ff00] block mb-0.5">
+                          {t.progressionNote.fromTierLabel}:
+                        </span>
+                        <span className="text-zinc-300 leading-snug">
+                          {t.progressionNote.detail}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="bg-white/[0.03] border border-white/[0.06] rounded-lg p-2 text-[10px] text-zinc-400 leading-snug">
+                        <span className="font-bold text-zinc-300 block mb-0.5">
+                          Nível Inicial (Série B / Acesso):
+                        </span>
+                        <span>
+                          72% de atletas 1–2,5★ para compor o elenco a custo controlado (R$ 80k/mês).
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </button>
               );
@@ -310,6 +338,130 @@ export const YouthAcademyView: React.FC<YouthAcademyViewProps> = ({
                 Salários de base são ~65% menores que contratos seniores, ajudando no controle da folha salarial.
               </li>
             </ul>
+          </div>
+        </div>
+      </div>
+
+      {/* Dynamic Potential & Performance Ceiling Explanation Panel */}
+      <div className="bg-[#14171f] border border-white/[0.07] rounded-[28px] p-5 sm:p-6 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/[0.06] pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-[#b5ff00]/15 border border-[#b5ff00]/40 flex items-center justify-center text-[#b5ff00]">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white">
+                Mecânica de Potencial Dinâmico (Teto por Desempenho)
+              </h3>
+              <p className="text-xs text-zinc-400">
+                Para que o jogador 5★ só atinja 99 se render em campo, o potencial gerado na base opera entre o teto da estrela anterior e o teto da estrela atual:
+              </p>
+            </div>
+          </div>
+          <span className="text-[11px] font-mono text-zinc-400 bg-[#0b0c10] px-3 py-1.5 rounded-full border border-white/[0.08] shrink-0">
+            Desbloqueio: Minutagem + Nota Média ≥ 7.15
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          {[
+            {
+              stars: '3,0★',
+              title: 'Útil / Regular',
+              baseRange: '76–78 OVR',
+              dynamicCeiling: '80 OVR',
+              borderCls: 'border-white/10',
+              accentCls: 'text-zinc-200',
+              desc: 'Composição de elenco e suplente confiável.',
+            },
+            {
+              stars: '3,5★',
+              title: 'Bom Titular',
+              baseRange: '81–83 OVR',
+              dynamicCeiling: '85 OVR',
+              borderCls: 'border-sky-500/30',
+              accentCls: 'text-sky-300',
+              desc: 'Titular de Série A com regularidade e consistência.',
+            },
+            {
+              stars: '4,0★',
+              title: 'Destaque Nacional',
+              baseRange: '86–88 OVR',
+              dynamicCeiling: '90 OVR',
+              borderCls: 'border-amber-500/40',
+              accentCls: 'text-amber-300',
+              desc: 'Protagonista de mata-matas e postulante a Seleção.',
+            },
+            {
+              stars: '4,5★',
+              title: 'Craque de Elite',
+              baseRange: '91–93 OVR',
+              dynamicCeiling: '95 OVR',
+              borderCls: 'border-emerald-500/40',
+              accentCls: 'text-emerald-300',
+              desc: 'Ídolo continental e jogador com nível de futebol europeu.',
+            },
+            {
+              stars: '5,0★',
+              title: 'Joia Geracional',
+              baseRange: '95–96 OVR',
+              dynamicCeiling: '99 OVR',
+              borderCls: 'border-[#b5ff00]/60 ring-1 ring-[#b5ff00]/40',
+              accentCls: 'text-[#b5ff00]',
+              desc: 'Fenômeno mundial. Só alcança 99 se jogar e render em campo.',
+            },
+          ].map((item) => (
+            <div
+              key={item.stars}
+              className={`bg-[#0b0c10] border ${item.borderCls} rounded-2xl p-3.5 flex flex-col justify-between space-y-2.5`}
+            >
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className={`font-display text-lg font-extrabold ${item.accentCls}`}>
+                    {item.stars}
+                  </span>
+                  <span className="text-[10px] font-mono text-zinc-400 uppercase">
+                    {item.title}
+                  </span>
+                </div>
+                <div className="mt-2 space-y-1 font-mono text-[11px]">
+                  <div className="flex items-center justify-between text-zinc-400">
+                    <span>Potencial Base:</span>
+                    <strong className="text-white font-bold">{item.baseRange}</strong>
+                  </div>
+                  <div className="flex items-center justify-between text-zinc-400">
+                    <span>Teto Dinâmico:</span>
+                    <strong className={item.accentCls}>{item.dynamicCeiling}</strong>
+                  </div>
+                </div>
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-snug pt-1 border-t border-white/[0.05]">
+                {item.desc}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        {/* Realism Rules: Performance Overrides Theoretical Potential */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+          <div className="bg-amber-950/25 border border-amber-400/35 rounded-2xl p-3.5 space-y-1.5">
+            <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
+              <Zap className="w-4 h-4 text-amber-300 shrink-0" />
+              <span>Rompimento de Teto: Superou Expectativas</span>
+            </div>
+            <p className="text-[11px] text-zinc-300 leading-relaxed">
+              Jogadores que alcançam estatísticas fora da curva (minutagem sólida + nota média ≥ 7.22 ou alta participação direta em gols/assistências) <strong className="text-amber-200">rompem o teto dinâmico de potencial</strong> da sua estrela atual. Eles recebem bônus de OVR além do limite anterior e são promovidos para uma categoria de estrelas superior (ex: 3.5★ evolui para 4.0★).
+            </p>
+          </div>
+
+          <div className="bg-zinc-900/70 border border-white/10 rounded-2xl p-3.5 space-y-1.5">
+            <div className="flex items-center gap-2 text-xs font-bold text-zinc-200">
+              <TrendingDown className="w-4 h-4 text-rose-400 shrink-0" />
+              <span>O Potencial Não Protege Sem Minutagem ou Rendimento</span>
+            </div>
+            <p className="text-[11px] text-zinc-300 leading-relaxed">
+              Uma joia de 4★ ou 5★ <strong className="text-white">não evolui automaticamente</strong> se ficar sem minutos no time principal (&lt; 7 jogos) ou se atuar com notas baixas (&lt; 6.62). Sem minutagem, o jogador estagna (+0 OVR); com atuações ruins, sofre declínio técnico (-1 OVR) e tem suas estrelas de potencial rebaixadas.
+            </p>
           </div>
         </div>
       </div>
@@ -429,14 +581,18 @@ export const YouthAcademyView: React.FC<YouthAcademyViewProps> = ({
                       <td className="py-3 px-3">
                         <div className="flex items-center gap-1.5">
                           <StarRating
+                            stars={player.potentialStars}
                             player={player}
                             ovr={ovr}
                             clubReputation={club.reputation}
                             size="xs"
                           />
-                          <span className="text-[11px] font-mono text-zinc-400">
-                            ({player.potentialStars ?? 3}★)
+                          <span className="text-[11px] font-mono text-amber-300 font-bold">
+                            {player.potentialStars ?? 3}★
                           </span>
+                        </div>
+                        <div className="text-[10px] font-mono text-zinc-400 mt-0.5">
+                          Base {player.basePotentialOvr ?? getDynamicPotentialProfile(player.potentialStars ?? 3).basePotentialOvr} · Teto {player.dynamicCeilingOvr ?? getDynamicPotentialProfile(player.potentialStars ?? 3).dynamicCeilingOvr}
                         </div>
                       </td>
 

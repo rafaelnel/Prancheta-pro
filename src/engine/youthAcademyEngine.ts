@@ -14,15 +14,26 @@ import {
   calculateBalancedValuationAndWage,
   calibrateAttributesToTargetOvr,
   getMaxRealisticOvrForAgeAndPotential,
+  getDynamicPotentialProfile,
 } from './economyAndEvolution';
 import { generateAttributesFromSeed } from '../data/squadBuilder';
 import { getDefaultFormationRoleForPosition } from '../data/transferCatalog';
 
 export interface YouthStarProbabilities {
-  star1_2: number; // % chance of 1★ or 2★ (composição / regional)
-  star3: number;   // % chance of 3★ (bom jogador útil para o elenco)
-  star4: number;   // % chance of 4★ (destaque / titular de alto nível)
-  star5: number;   // % chance of 5★ (joia rara / craque geracional)
+  star1_2_5: number; // % chance of 1–2,5★
+  star3_3_5: number; // % chance of 3–3,5★
+  star4_4_5: number; // % chance of 4–4,5★
+  star5: number;     // % chance of 5★
+  // Legacy aliases for backward compatibility
+  star1_2?: number;
+  star3?: number;
+  star4?: number;
+}
+
+export interface YouthTierProgressionNote {
+  fromTierLabel: string;
+  badgeSummary: string;
+  detail: string;
 }
 
 export interface YouthTierDefinition {
@@ -36,6 +47,7 @@ export interface YouthTierDefinition {
   minOvr: number;
   maxOvr: number;
   starProbabilities: YouthStarProbabilities;
+  progressionNote?: YouthTierProgressionNote;
   description: string;
 }
 
@@ -49,15 +61,18 @@ export const YOUTH_TIERS: YouthTierDefinition[] = [
     minRegens: 2,
     maxRegens: 3,
     minOvr: 60,
-    maxOvr: 64,
+    maxOvr: 63,
     starProbabilities: {
-      star1_2: 68,
-      star3: 27,
-      star4: 4.5,
-      star5: 0.5,
+      star1_2_5: 72,
+      star3_3_5: 25.5,
+      star4_4_5: 2.4,
+      star5: 0.1,
+      star1_2: 72,
+      star3: 25.5,
+      star4: 2.4,
     },
     description:
-      'Peneiras locais e parceria com escolinhas da região. Revela jovens em início de formação (OVR 60–64) e raríssimas joias.',
+      'Peneiras locais e escolinhas conveniadas. Foco em formação inicial a baixo custo com 72% de atletas para composição.',
   },
   {
     tier: 'ESTRUTURADO',
@@ -68,15 +83,24 @@ export const YOUTH_TIERS: YouthTierDefinition[] = [
     minRegens: 3,
     maxRegens: 4,
     minOvr: 60,
-    maxOvr: 66,
+    maxOvr: 65,
     starProbabilities: {
-      star1_2: 44,
-      star3: 42,
-      star4: 12,
-      star5: 2,
+      star1_2_5: 48,
+      star3_3_5: 43.5,
+      star4_4_5: 8.0,
+      star5: 0.5,
+      star1_2: 48,
+      star3: 43.5,
+      star4: 8.0,
+    },
+    progressionNote: {
+      fromTierLabel: 'Básico → Estruturado',
+      badgeSummary: '+70% em 3–3,5★ · 3,3x mais 4–4,5★ · 5x mais 5★',
+      detail:
+        '+70% de chance na faixa 3–3,5★, 3,3x mais chances de 4–4,5★ e 5x mais chances de 5★.',
     },
     description:
-      'CT oficial de base com comissão Sub-17 e Sub-20 dedicada. Boa regularidade de jogadores 3★ (OVR inicial 60–66) para desenvolver.',
+      'CT oficial com comissão Sub-17 e Sub-20 dedicada. Grande salto de regularidade na faixa 3–3,5★ (43,5%) e 8% em 4–4,5★.',
   },
   {
     tier: 'AVANCADO',
@@ -87,19 +111,28 @@ export const YOUTH_TIERS: YouthTierDefinition[] = [
     minRegens: 4,
     maxRegens: 5,
     minOvr: 61,
-    maxOvr: 68,
+    maxOvr: 67,
     starProbabilities: {
-      star1_2: 24,
-      star3: 50,
-      star4: 21,
-      star5: 5,
+      star1_2_5: 25,
+      star3_3_5: 57.0,
+      star4_4_5: 16.8,
+      star5: 1.2,
+      star1_2: 25,
+      star3: 57.0,
+      star4: 16.8,
+    },
+    progressionNote: {
+      fromTierLabel: 'Estruturado → Avançado',
+      badgeSummary: '+31% em 3–3,5★ · 2,1x mais 4–4,5★ · 2,4x mais 5★',
+      detail:
+        '+31% na faixa 3–3,5★, 2,1x mais chances de 4–4,5★ e 2,4x mais chances de 5★.',
     },
     description:
-      'Olheiros pelo país e fisiologia integrada no Sub-20. Eleva a chance de talentos 4★ (21%) e joias 5★ (5%) com base sólida (OVR 61–68).',
+      'Rede de olheiros por todo o Brasil e fisiologia de ponta. Mais da metade da safra em 3–3,5★ (57%) e 16,8% de promessas 4–4,5★.',
   },
   {
     tier: 'ELITE',
-    label: 'Elite Sul-Americana (Padrão Referência)',
+    label: 'Elite (Padrão Internacional)',
     shortLabel: 'Elite',
     monthlyCost: 1_250_000,
     annualEstimate: 15_000_000,
@@ -108,13 +141,23 @@ export const YOUTH_TIERS: YouthTierDefinition[] = [
     minOvr: 62,
     maxOvr: 70,
     starProbabilities: {
+      star1_2_5: 12,
+      star3_3_5: 56.0,
+      star4_4_5: 29.0,
+      star5: 3.0,
       star1_2: 12,
-      star3: 46,
-      star4: 33,
-      star5: 9,
+      star3: 56.0,
+      star4: 29.0,
+    },
+    progressionNote: {
+      fromTierLabel: 'Avançado → Elite',
+      badgeSummary:
+        'Base sólida 3–3,5★ · +72% em 4–4,5★ (1 em 3) · 2,5x em 5★ (30x do Básico)',
+      detail:
+        'Mantém a base sólida de 3–3,5★, aumenta em +72% a geração de 4–4,5★ (quase 1 em cada 3 jovens) e multiplica por 2,5x a chance de 5★ (30x maior que no nível Básico).',
     },
     description:
-      'Padrão internacional de captação e formação. Revela promessas 3★/4★ bem trabalhadas (OVR 62–70) e 9% de chance real de fenômenos 5★.',
+      'Estrutura padrão mundial de captação e formação. Quase 1 em cada 3 jovens é 4–4,5★ (29%) e 30x mais chance de joias 5★ (3,0%) que o Básico.',
   },
 ];
 
@@ -169,24 +212,31 @@ function rollRealisticPotentialStars(params: {
 
   const baseProbs = YOUTH_TIERS[0].starProbabilities;
   const targetProbs = tierConfig.starProbabilities;
-  const blend = Math.max(0.25, Math.min(1, investmentConsistencyRatio));
+  const blend = Math.max(0.3, Math.min(1, investmentConsistencyRatio));
 
   let p5 = baseProbs.star5 + (targetProbs.star5 - baseProbs.star5) * blend;
-  let p4 = baseProbs.star4 + (targetProbs.star4 - baseProbs.star4) * blend;
-  let p3 = baseProbs.star3 + (targetProbs.star3 - baseProbs.star3) * blend;
+  let p4 = baseProbs.star4_4_5 + (targetProbs.star4_4_5 - baseProbs.star4_4_5) * blend;
+  let p3 = baseProbs.star3_3_5 + (targetProbs.star3_3_5 - baseProbs.star3_3_5) * blend;
 
-  // Prevent flooding the team with multiple 5★ phenomena in the same batch
-  if (alreadyHasFiveStarInBatch) {
-    p4 += p5 * 0.65;
-    p3 += p5 * 0.35;
+  // Prevent multiple 5★ phenomena in the same batch
+  if (alreadyHasFiveStarInBatch && p5 > 0) {
+    p4 += p5;
     p5 = 0;
   }
 
   const roll = rng() * 100;
   if (roll < p5) return 5;
-  if (roll < p5 + p4) return 4;
-  if (roll < p5 + p4 + p3) return 3;
-  return 2;
+  if (roll < p5 + p4) {
+    return rng() < 0.4 ? 4.5 : 4;
+  }
+  if (roll < p5 + p4 + p3) {
+    return rng() < 0.45 ? 3.5 : 3;
+  }
+  const subRoll = rng();
+  if (subRoll < 0.45) return 2.5;
+  if (subRoll < 0.8) return 2;
+  if (subRoll < 0.95) return 1.5;
+  return 1;
 }
 
 function buildSingleYouthProspect(params: {
@@ -291,6 +341,8 @@ function buildSingleYouthProspect(params: {
     Math.round((salary * 0.35) / 5_000) * 5_000
   );
 
+  const dynProfile = getDynamicPotentialProfile(potentialStars, rng);
+
   const regenPlayer: Player = {
     id: playerId,
     number: 40 + index,
@@ -304,6 +356,8 @@ function buildSingleYouthProspect(params: {
     marketValue,
     salary: youthSalary,
     potentialStars,
+    basePotentialOvr: dynProfile.basePotentialOvr,
+    dynamicCeilingOvr: dynProfile.dynamicCeilingOvr,
     attributes,
     isStarter: false,
     slotIndex: null,
@@ -335,9 +389,11 @@ function buildSingleYouthProspect(params: {
     sector: chosenSector,
     ovr,
     potentialStars,
+    basePotentialOvr: dynProfile.basePotentialOvr,
+    dynamicCeilingOvr: dynProfile.dynamicCeilingOvr,
     marketValue,
     salary: youthSalary,
-    highlightNote: `${potentialStars}★ pot. · OVR ${ovr} · ${statusTag}`,
+    highlightNote: `${potentialStars}★ · OVR ${ovr} · Pot. Base ${dynProfile.basePotentialOvr} (Teto Dinâmico: ${dynProfile.dynamicCeilingOvr}) · ${statusTag}`,
   };
 
   return { player: regenPlayer, reportItem };
@@ -359,11 +415,11 @@ export function createInitialYouthAcademy(
   // Include 15-year-olds (Sub-17, waiting to turn 16) and 16-18 year-olds (ready for promotion)
   const initialAges = [17, 16, 16, 15, 15];
   const initialStars: PotentialStars[] = [
-    clubReputation >= 80 ? 4 : 3,
+    clubReputation >= 80 ? 4 : 3.5,
+    3.5,
     3,
-    3,
-    clubReputation >= 76 ? 4 : 3,
-    2,
+    clubReputation >= 76 ? 3.5 : 3,
+    2.5,
   ];
 
   const usedNames = new Set<string>();

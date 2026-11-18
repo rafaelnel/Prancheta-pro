@@ -1386,7 +1386,11 @@ export const MarketView: React.FC<MarketViewProps> = ({
                           <td className="py-3 px-2 text-right font-mono tabular-nums font-bold text-[#b5ff00]">
                             <div className="inline-flex items-center justify-end gap-1">
                               <span>{ovr}</span>
-                              {player.recentOvrDelta !== undefined && player.recentOvrDelta > 0 ? (
+                              {player.exceededExpectations ? (
+                                <span className="text-[10px] text-amber-300 font-bold" title={`⚡ Superou expectativas! Rompeu o teto (+${player.recentOvrDelta} OVR)`}>
+                                  ⚡+{player.recentOvrDelta}
+                                </span>
+                              ) : player.recentOvrDelta !== undefined && player.recentOvrDelta > 0 ? (
                                 <span className="text-[10px] text-[#b5ff00] font-bold" title={`Evolução: +${player.recentOvrDelta} OVR`}>
                                   ▲+{player.recentOvrDelta}
                                 </span>

@@ -22,54 +22,141 @@ function hashStr(input: string): number {
   return h >>> 0;
 }
 
+export interface DynamicPotentialProfile {
+  stars: PotentialStars;
+  basePotentialMin: number;
+  basePotentialMax: number;
+  basePotentialOvr: number;
+  dynamicCeilingOvr: number;
+}
+
 /**
- * Maps Potential Stars (1..5) to the maximum realistic OVR ceiling (60..99 scale).
- * Only a rare 5★ generational superstar can ever cross 83+ OVR in their prime.
+ * Dynamic Potential Mechanism (Performance Ceiling):
+ * 3.0★: Base Potential 76–78 (Dynamic Ceiling: 80)
+ * 3.5★: Base Potential 81–83 (Dynamic Ceiling: 85)
+ * 4.0★: Base Potential 86–88 (Dynamic Ceiling: 90)
+ * 4.5★: Base Potential 91–93 (Dynamic Ceiling: 95)
+ * 5.0★: Base Potential 95–96 (Dynamic Ceiling: 99)
+ */
+export function getDynamicPotentialProfile(
+  stars: PotentialStars,
+  rng: () => number = Math.random
+): DynamicPotentialProfile {
+  if (stars >= 5) {
+    return {
+      stars: 5,
+      basePotentialMin: 95,
+      basePotentialMax: 96,
+      basePotentialOvr: rng() < 0.5 ? 95 : 96,
+      dynamicCeilingOvr: 99,
+    };
+  }
+  if (stars >= 4.5) {
+    return {
+      stars: 4.5,
+      basePotentialMin: 91,
+      basePotentialMax: 93,
+      basePotentialOvr: 91 + Math.floor(rng() * 3),
+      dynamicCeilingOvr: 95,
+    };
+  }
+  if (stars >= 4) {
+    return {
+      stars: 4,
+      basePotentialMin: 86,
+      basePotentialMax: 88,
+      basePotentialOvr: 86 + Math.floor(rng() * 3),
+      dynamicCeilingOvr: 90,
+    };
+  }
+  if (stars >= 3.5) {
+    return {
+      stars: 3.5,
+      basePotentialMin: 81,
+      basePotentialMax: 83,
+      basePotentialOvr: 81 + Math.floor(rng() * 3),
+      dynamicCeilingOvr: 85,
+    };
+  }
+  if (stars >= 3) {
+    return {
+      stars: 3,
+      basePotentialMin: 76,
+      basePotentialMax: 78,
+      basePotentialOvr: 76 + Math.floor(rng() * 3),
+      dynamicCeilingOvr: 80,
+    };
+  }
+  if (stars >= 2.5) {
+    return {
+      stars: 2.5,
+      basePotentialMin: 70,
+      basePotentialMax: 72,
+      basePotentialOvr: 70 + Math.floor(rng() * 3),
+      dynamicCeilingOvr: 75,
+    };
+  }
+  if (stars >= 2) {
+    return {
+      stars: 2,
+      basePotentialMin: 67,
+      basePotentialMax: 69,
+      basePotentialOvr: 67 + Math.floor(rng() * 3),
+      dynamicCeilingOvr: 72,
+    };
+  }
+  return {
+    stars: stars ?? 1,
+    basePotentialMin: 63,
+    basePotentialMax: 66,
+    basePotentialOvr: 63 + Math.floor(rng() * 4),
+    dynamicCeilingOvr: 68,
+  };
+}
+
+/**
+ * Maps Potential Stars (1..5, with half-stars) to the maximum realistic dynamic OVR ceiling (60..99 scale).
  */
 export function getPotentialCeilingOvr(stars: PotentialStars): number {
-  switch (stars) {
-    case 5:
-      return 89;
-    case 4:
-      return 82;
-    case 3:
-      return 77;
-    case 2:
-      return 72;
-    case 1:
-    default:
-      return 67;
-  }
+  if (stars >= 5) return 99;
+  if (stars >= 4.5) return 95;
+  if (stars >= 4) return 90;
+  if (stars >= 3.5) return 85;
+  if (stars >= 3) return 80;
+  if (stars >= 2.5) return 75;
+  if (stars >= 2) return 72;
+  return 68;
 }
 
 /**
  * Returns the maximum realistic OVR a player can have at a given age and star potential.
- * Prevents young players (15–22) from having exaggerated 80+ or 90+ OVRs unless they are
- * an extraordinary 5★ phenomenon already reaching 20–22 years old.
+ * Young players (15–20) scale naturally and only reach peak 90+ in their twenties if they perform on pitch.
  */
 export function getMaxRealisticOvrForAgeAndPotential(
   age: number,
-  stars: PotentialStars
+  stars: PotentialStars,
+  player?: { basePotentialOvr?: number; dynamicCeilingOvr?: number }
 ): number {
-  const careerCeiling = getPotentialCeilingOvr(stars);
-  let ageCap = careerCeiling;
+  const profile = getDynamicPotentialProfile(stars);
+  const careerCeiling = player?.dynamicCeilingOvr ?? profile.dynamicCeilingOvr;
 
+  let ageCap = careerCeiling;
   if (age <= 15) {
-    ageCap = stars === 5 ? 66 : stars === 4 ? 64 : 62;
+    ageCap = stars >= 5 ? 67 : stars >= 4 ? 64 : 62;
   } else if (age === 16) {
-    ageCap = stars === 5 ? 69 : stars === 4 ? 66 : 64;
+    ageCap = stars >= 5 ? 70 : stars >= 4 ? 66 : 64;
   } else if (age === 17) {
-    ageCap = stars === 5 ? 72 : stars === 4 ? 69 : 66;
+    ageCap = stars >= 5 ? 73 : stars >= 4 ? 69 : 66;
   } else if (age === 18) {
-    ageCap = stars === 5 ? 74 : stars === 4 ? 71 : 68;
+    ageCap = stars >= 5 ? 76 : stars >= 4 ? 72 : 68;
   } else if (age === 19) {
-    ageCap = stars === 5 ? 77 : stars === 4 ? 74 : 70;
+    ageCap = stars >= 5 ? 80 : stars >= 4 ? 76 : 71;
   } else if (age === 20) {
-    ageCap = stars === 5 ? 80 : stars === 4 ? 76 : 72;
+    ageCap = stars >= 5 ? 84 : stars >= 4 ? 80 : 74;
   } else if (age === 21) {
-    ageCap = stars === 5 ? 82 : stars === 4 ? 78 : 74;
+    ageCap = stars >= 5 ? 88 : stars >= 4 ? 84 : 77;
   } else if (age === 22) {
-    ageCap = stars === 5 ? 84 : stars === 4 ? 80 : 76;
+    ageCap = stars >= 5 ? 92 : stars >= 4 ? 87 : 80;
   }
 
   return Math.min(careerCeiling, ageCap);
@@ -153,24 +240,24 @@ export function assignPotentialStars(
   const roll = (hashStr(playerId) % 100) / 100;
   let score = 2.4;
 
-  if (ovr >= 84) score = 4.7;
-  else if (ovr >= 80) score = 4.1;
-  else if (ovr >= 76) score = 3.5;
-  else if (ovr >= 71) score = 2.9;
-  else if (ovr >= 66) score = 2.3;
-  else score = 1.8;
+  if (ovr >= 85) score = 4.8;
+  else if (ovr >= 81) score = 4.2;
+  else if (ovr >= 77) score = 3.6;
+  else if (ovr >= 72) score = 3.1;
+  else if (ovr >= 67) score = 2.6;
+  else score = 1.9;
 
-  // Controlled youth upside: only top-roll youngsters reach 4★ or rare 5★
+  // Controlled youth upside
   if (age <= 20) {
-    score += 0.55 + (clubReputation >= 82 ? 0.2 : 0) + (roll > 0.88 ? 0.55 : roll > 0.65 ? 0.25 : 0);
+    score += 0.55 + (clubReputation >= 82 ? 0.2 : 0) + (roll > 0.88 ? 0.6 : roll > 0.65 ? 0.3 : 0);
   } else if (age <= 23) {
     score += 0.35 + (roll > 0.82 ? 0.35 : 0);
   } else if (age >= 32) {
-    // Veterans' ceiling reflects remaining peak capacity, never exceeding current tier
-    score = Math.min(score, ovr >= 82 ? 4 : ovr >= 76 ? 3 : 2);
+    score = Math.min(score, ovr >= 82 ? 4 : ovr >= 76 ? 3.5 : 2.5);
   }
 
-  const clamped = Math.max(1, Math.min(5, Math.round(score))) as PotentialStars;
+  const roundedHalf = Math.round(score * 2) / 2;
+  const clamped = Math.max(1, Math.min(5, roundedHalf)) as PotentialStars;
   return clamped;
 }
 
@@ -302,12 +389,18 @@ export function ensurePlayerDefaults(
       ...player,
       attributes,
       potentialStars,
+      basePotentialOvr: player.basePotentialOvr ?? getDynamicPotentialProfile(potentialStars).basePotentialOvr,
+      dynamicCeilingOvr: player.dynamicCeilingOvr ?? getDynamicPotentialProfile(potentialStars).dynamicCeilingOvr,
       marketValue: recalc.marketValue,
       salary: player.isRegen
         ? Math.max(15_000, Math.round((recalc.salary * 0.45) / 5_000) * 5_000)
         : recalc.salary,
     };
   }
+
+  const dynProfile = getDynamicPotentialProfile(potentialStars);
+  const basePotentialOvr = player.basePotentialOvr ?? dynProfile.basePotentialOvr;
+  const dynamicCeilingOvr = player.dynamicCeilingOvr ?? dynProfile.dynamicCeilingOvr;
 
   const initialOvrDelta =
     player.recentOvrDelta !== undefined
@@ -326,6 +419,8 @@ export function ensurePlayerDefaults(
     ...player,
     attributes,
     potentialStars,
+    basePotentialOvr,
+    dynamicCeilingOvr,
     recentOvrDelta: initialOvrDelta,
     marketValue:
       player.marketValue > 0
@@ -749,7 +844,9 @@ export function processSeasonEvolutionAndAging(params: {
     const stars =
       player.potentialStars ??
       assignPotentialStars(oldOvr, oldAge, clubRep, player.id);
-    const ceiling = getMaxRealisticOvrForAgeAndPotential(newAge, stars);
+    const dynProfile = getDynamicPotentialProfile(stars);
+    const basePot = player.basePotentialOvr ?? dynProfile.basePotentialOvr;
+    const dynCeiling = player.dynamicCeilingOvr ?? dynProfile.dynamicCeilingOvr;
 
     const grp = getPositionGroup(player.position);
     const perfScore = computePositionPerformanceScore(player);
@@ -757,60 +854,113 @@ export function processSeasonEvolutionAndAging(params: {
     const relativePerf = perfScore - peerAvg; // >0 = outperformed same-position peers
     const matches = player.seasonStats.matches;
 
+    // A player only unlocks the dynamic ceiling beyond base potential if they render in matches
+    const hasRenderedInMatches =
+      matches >= 16 && (player.seasonStats.avgRating >= 7.15 || relativePerf >= 0.25);
+    const effectiveCeiling = hasRenderedInMatches ? dynCeiling : basePot;
+    const ceiling = Math.min(
+      effectiveCeiling,
+      getMaxRealisticOvrForAgeAndPotential(newAge, stars, {
+        basePotentialOvr: basePot,
+        dynamicCeilingOvr: effectiveCeiling,
+      })
+    );
+
+    const goalsAndAssists = player.seasonStats.goals + player.seasonStats.assists;
+    const isAttackerOrMid = ['ATA', 'PD', 'PE', 'MEI', 'MC'].includes(player.position);
+    const hasStandoutGnA = isAttackerOrMid && (goalsAndAssists >= 12 || player.seasonStats.goals >= 10);
+
+    // Exceptional season: high minutes + high rating, or high relative perf, or outstanding goals/assists
+    const isExceptionalSeason =
+      matches >= 16 &&
+      (player.seasonStats.avgRating >= 7.22 || relativePerf >= 0.55 || hasStandoutGnA);
+
+    // Performance deficiency: potential does NOT grant future OVR if performance is poor or absent
+    const hasLowMinutes = matches < 7;
+    const hasPoorPerformance =
+      matches >= 7 && (player.seasonStats.avgRating < 6.62 || relativePerf < -0.35);
+
+    let isBreakoutSeason = false;
+    let starsPromoted = false;
+    let nextStars = stars;
+    let effectiveMaxOvr = ceiling;
     let desiredDelta = 0;
     let isPhysicalDecline = false;
-    let reasonNote = 'Temporada estável';
+    let reasonNote = 'Temporada regular';
+    let developmentStatus:
+      | 'SUPEROU_EXPECTATIVAS'
+      | 'EVOLUCAO_NORMAL'
+      | 'ESTAGNADO'
+      | 'DECLINIO_TECNICO'
+      | 'REGRESSAO_FISICA' = 'EVOLUCAO_NORMAL';
 
-    if (oldAge <= 22) {
-      // Jovens (16-22): evolução controlada (+1 a +3 OVR) se minutagem + bom desempenho até atingir o limite da idade/estrelas
-      const highOvrDamping = oldOvr >= 76 ? 1 : 0;
+    if (isExceptionalSeason) {
+      // ⚡ SUPEROU EXPECTATIVAS: Rompe o teto de potencial teórico!
+      isBreakoutSeason = true;
+      developmentStatus = 'SUPEROU_EXPECTATIVAS';
+      const breakoutBonus =
+        relativePerf >= 0.85 || player.seasonStats.avgRating >= 7.35 || goalsAndAssists >= 15 ? 3 : 2;
+      effectiveMaxOvr = Math.min(99, Math.max(oldOvr + 2, ceiling + breakoutBonus));
+
+      desiredDelta = Math.min(
+        4,
+        Math.max(2, Math.round(2.0 + (relativePerf > 0 ? relativePerf * 0.9 : 0.4)))
+      );
+
+      if (stars < 5) {
+        nextStars = Math.min(5, stars + (stars <= 3 ? 1 : 0.5)) as PotentialStars;
+        starsPromoted = nextStars > stars;
+      }
+
+      reasonNote = `⚡ Superou expectativas! Temporada estelar (${matches}j, nota ${player.seasonStats.avgRating.toFixed(1)}${player.seasonStats.goals > 0 ? `, ${player.seasonStats.goals}g` : ''}${player.seasonStats.assists > 0 ? `, ${player.seasonStats.assists}a` : ''}) rompeu o teto de potencial (+${desiredDelta} OVR)!`;
+    } else if (hasPoorPerformance) {
+      // Jogou mas atuou mal: potencial não protege contra queda técnica
+      desiredDelta = -1;
+      developmentStatus = 'DECLINIO_TECNICO';
+      if (stars >= 3.5 && matches >= 12 && player.seasonStats.avgRating < 6.5) {
+        nextStars = Math.max(1, stars - 0.5) as PotentialStars;
+      }
+      reasonNote = `Baixo rendimento em campo (${matches}j, nota ${player.seasonStats.avgRating.toFixed(1)}) provocou estagnação e queda de nível técnico (-1 OVR).`;
+    } else if (hasLowMinutes) {
+      // Poucos minutos: potencial não evolui sem minutagem
+      desiredDelta = 0;
+      developmentStatus = 'ESTAGNADO';
+      reasonNote = `Falta de minutagem em campo (${matches}j) impediu o desenvolvimento do potencial.`;
+    } else if (oldAge <= 22) {
+      // Jovens (16-22) com desempenho regular
       if (oldOvr >= ceiling) {
         desiredDelta = 0;
-        reasonNote = 'Atingiu o limite de evolução para a faixa de idade/potencial';
-      } else if (matches >= 18 && relativePerf >= 0.35) {
-        const rawBoost = Math.min(3, Math.max(1, Math.round(1.6 + relativePerf * 0.8) - highOvrDamping));
-        desiredDelta = rawBoost;
-        reasonNote = `Destaque jovem (${matches}j, nota ${player.seasonStats.avgRating.toFixed(1)})`;
-      } else if (matches >= 8 && relativePerf >= -0.25) {
-        desiredDelta = oldOvr >= 75 ? (rng() > 0.5 ? 1 : 0) : 1 + (rng() > 0.65 && stars >= 4 ? 1 : 0);
-        reasonNote = 'Evolução natural com minutagem';
-      } else if (matches >= 4) {
-        desiredDelta = rng() > 0.5 ? 1 : 0;
-        reasonNote = 'Desenvolvimento gradual';
+        reasonNote = 'Desempenho estável dentro do teto regular da categoria';
       } else {
-        desiredDelta = 0;
-        reasonNote = 'Poucos minutos em campo';
+        desiredDelta = oldOvr >= 75 ? (rng() > 0.5 ? 1 : 0) : 1;
+        reasonNote = `Evolução gradual compatível com o desempenho na temporada (${matches}j, nota ${player.seasonStats.avgRating.toFixed(1)})`;
       }
       desiredDelta = Math.min(desiredDelta, Math.max(0, ceiling - oldOvr));
+      developmentStatus = desiredDelta > 0 ? 'EVOLUCAO_NORMAL' : 'ESTAGNADO';
     } else if (oldAge <= 28) {
-      // Auge (23-28): +1 a +2 se excelente temporada, 0 normal, -1 se mal
-      if (matches >= 20 && relativePerf >= 0.45 && oldOvr < ceiling) {
-        desiredDelta =
-          relativePerf >= 1.1 && oldOvr < 80 && oldOvr + 2 <= ceiling ? 2 : 1;
-        reasonNote = `Grande temporada no auge (nota ${player.seasonStats.avgRating.toFixed(1)})`;
-      } else if (matches >= 10 && relativePerf < -0.55) {
-        desiredDelta = -1;
-        reasonNote = 'Queda técnica por baixo rendimento';
-      } else {
-        desiredDelta = 0;
-        reasonNote = 'Manutenção de nível no auge';
-      }
+      // Auge (23-28) com desempenho regular
+      desiredDelta = 0;
+      developmentStatus = 'EVOLUCAO_NORMAL';
+      reasonNote = 'Manutenção de nível regular no auge da carreira';
     } else if (oldAge <= 32) {
-      // Veteranos (29-32): mantém técnico/mental se jogar bem, leve queda física
-      if (matches >= 18 && relativePerf >= 0.3) {
+      // Veteranos (29-32)
+      if (matches >= 18 && relativePerf >= 0.25) {
         desiredDelta = 0;
-        reasonNote = 'Experiência mantém alto nível';
+        developmentStatus = 'EVOLUCAO_NORMAL';
+        reasonNote = 'Experiência manteve o alto nível regular';
       } else {
         desiredDelta = -1;
         isPhysicalDecline = true;
-        reasonNote = 'Início de desgaste físico natural';
+        developmentStatus = 'REGRESSAO_FISICA';
+        reasonNote = 'Início de desgaste físico natural com a idade';
       }
     } else {
-      // Fim de carreira (33+): regressão natural (-1 a -4 OVR) focada em atributos físicos
+      // 33+
       const ageSeverity = newAge >= 37 ? 3 : newAge >= 35 ? 2 : 1;
       const perfMitigation = matches >= 20 && relativePerf >= 0.45 ? 0 : 1;
       desiredDelta = -Math.min(4, ageSeverity + perfMitigation);
       isPhysicalDecline = true;
+      developmentStatus = 'REGRESSAO_FISICA';
       reasonNote = 'Declínio físico natural pela idade';
     }
 
@@ -818,28 +968,34 @@ export function processSeasonEvolutionAndAging(params: {
       player.attributes,
       player.position,
       desiredDelta,
-      ceiling,
+      effectiveMaxOvr,
       isPhysicalDecline,
       rng
     );
     const newOvr = calculatePlayerOverall(updatedAttrs, player.position);
+    const breakoutBonusOvr = isBreakoutSeason ? Math.max(0, newOvr - ceiling) : 0;
+    const newDynamicCeiling = Math.max(dynCeiling, newOvr);
 
     const { marketValue, salary } = calculateBalancedValuationAndWage({
       ovr: newOvr,
       age: newAge,
       clubReputation: clubRep,
       division,
-      potentialStars: stars,
+      potentialStars: nextStars,
     });
 
     const evolved: Player = {
       ...player,
       age: newAge,
-      potentialStars: stars,
+      potentialStars: nextStars,
+      dynamicCeilingOvr: newDynamicCeiling,
       attributes: updatedAttrs,
       marketValue,
       salary,
       recentOvrDelta: newOvr - oldOvr,
+      exceededExpectations: isBreakoutSeason,
+      breakoutBonusOvr,
+      developmentStatus,
       condition: 94,
       injured: false,
       injuryNote: undefined,
@@ -863,8 +1019,12 @@ export function processSeasonEvolutionAndAging(params: {
         oldOvr,
         newOvr,
         deltaOvr: newOvr - oldOvr,
-        potentialStars: stars,
+        potentialStars: nextStars,
         reasonNote,
+        exceededExpectations: isBreakoutSeason,
+        formerCeiling: ceiling,
+        starsPromoted,
+        developmentStatus,
       },
     };
   };
@@ -1023,7 +1183,9 @@ export function processMidSeasonEvolution(params: {
     const stars =
       player.potentialStars ??
       assignPotentialStars(oldOvr, oldAge, clubRep, player.id);
-    const ceiling = getMaxRealisticOvrForAgeAndPotential(oldAge, stars);
+    const dynProfile = getDynamicPotentialProfile(stars);
+    const basePot = player.basePotentialOvr ?? dynProfile.basePotentialOvr;
+    const dynCeiling = player.dynamicCeilingOvr ?? dynProfile.dynamicCeilingOvr;
 
     const grp = getPositionGroup(player.position);
     const perfScore = computePositionPerformanceScore(player);
@@ -1031,37 +1193,102 @@ export function processMidSeasonEvolution(params: {
     const relativePerf = perfScore - peerAvg;
     const matches = player.seasonStats.matches;
 
+    const hasRenderedInMatches =
+      matches >= 8 && (player.seasonStats.avgRating >= 7.1 || relativePerf >= 0.2);
+    const effectiveCeiling = hasRenderedInMatches ? dynCeiling : basePot;
+    const ceiling = Math.min(
+      effectiveCeiling,
+      getMaxRealisticOvrForAgeAndPotential(oldAge, stars, {
+        basePotentialOvr: basePot,
+        dynamicCeilingOvr: effectiveCeiling,
+      })
+    );
+
+    const goalsAndAssists = player.seasonStats.goals + player.seasonStats.assists;
+    const isAttackerOrMid = ['ATA', 'PD', 'PE', 'MEI', 'MC'].includes(player.position);
+    const hasStandoutGnA = isAttackerOrMid && (goalsAndAssists >= 8 || player.seasonStats.goals >= 7);
+
+    // Destaque extraordinário de 1º turno: minutagem sólida + nota alta ou participação direta
+    const isExceptionalMidSeason =
+      matches >= 10 &&
+      (player.seasonStats.avgRating >= 7.25 || relativePerf >= 0.50 || hasStandoutGnA);
+
+    // Deficiência de rendimento: potencial não garante OVR sem estatísticas
+    const hasLowMinutesMidSeason = matches < 4;
+    const hasPoorPerformanceMidSeason =
+      matches >= 6 && (player.seasonStats.avgRating < 6.55 || relativePerf < -0.40);
+
+    let isBreakoutSeason = false;
+    let starsPromoted = false;
+    let nextStars = stars;
+    let effectiveMaxOvr = ceiling;
     let desiredDelta = 0;
     let isPhysicalDecline = false;
-    let reasonNote = 'Primeiro turno estável';
+    let reasonNote = 'Primeiro turno regular';
+    let developmentStatus:
+      | 'SUPEROU_EXPECTATIVAS'
+      | 'EVOLUCAO_NORMAL'
+      | 'ESTAGNADO'
+      | 'DECLINIO_TECNICO'
+      | 'REGRESSAO_FISICA' = 'EVOLUCAO_NORMAL';
 
-    if (oldAge <= 22) {
+    if (isExceptionalMidSeason) {
+      // ⚡ SUPEROU EXPECTATIVAS NO MEIO DA TEMPORADA
+      isBreakoutSeason = true;
+      developmentStatus = 'SUPEROU_EXPECTATIVAS';
+      const breakoutBonus =
+        relativePerf >= 0.70 || player.seasonStats.avgRating >= 7.35 || goalsAndAssists >= 10 ? 2 : 1;
+      effectiveMaxOvr = Math.min(99, Math.max(oldOvr + 1, ceiling + breakoutBonus));
+      desiredDelta = Math.min(2, Math.max(1, Math.round(1.0 + (relativePerf > 0.4 ? 0.5 : 0))));
+
+      if (stars < 5 && (relativePerf >= 0.55 || player.seasonStats.avgRating >= 7.30)) {
+        nextStars = Math.min(5, stars + 0.5) as PotentialStars;
+        starsPromoted = nextStars > stars;
+      }
+
+      reasonNote = `⚡ Superou expectativas no 1º turno! Estatísticas estelares (${matches}j, nota ${player.seasonStats.avgRating.toFixed(1)}${player.seasonStats.goals > 0 ? `, ${player.seasonStats.goals}g` : ''}${player.seasonStats.assists > 0 ? `, ${player.seasonStats.assists}a` : ''}) romperam o teto de potencial (+${desiredDelta} OVR)!`;
+    } else if (hasPoorPerformanceMidSeason) {
+      desiredDelta = -1;
+      developmentStatus = 'DECLINIO_TECNICO';
+      reasonNote = `Baixo rendimento em campo (${matches}j, nota ${player.seasonStats.avgRating.toFixed(1)}) gerou declínio técnico no 1º turno (-1 OVR).`;
+    } else if (oldAge <= 22 && hasLowMinutesMidSeason) {
+      desiredDelta = 0;
+      developmentStatus = 'ESTAGNADO';
+      reasonNote = `Falta de minutagem no 1º turno (${matches}j) estagnou o desenvolvimento do potencial.`;
+    } else if (oldAge <= 22) {
       if (oldOvr < ceiling && matches >= 6 && relativePerf >= 0.15) {
         desiredDelta = 1;
-        reasonNote = `Destaque jovem no 1º turno (${matches}j)`;
+        developmentStatus = 'EVOLUCAO_NORMAL';
+        reasonNote = `Destaque jovem no 1º turno (${matches}j, nota ${player.seasonStats.avgRating.toFixed(1)})`;
       } else {
         desiredDelta = 0;
-        reasonNote = 'Evolução em andamento';
+        developmentStatus = 'ESTAGNADO';
+        reasonNote = 'Evolução em andamento no primeiro turno';
       }
     } else if (oldAge <= 28) {
       if (matches >= 8 && relativePerf >= 0.35 && oldOvr < ceiling) {
         desiredDelta = 1;
+        developmentStatus = 'EVOLUCAO_NORMAL';
         reasonNote = `Excelente 1º turno (nota ${player.seasonStats.avgRating.toFixed(1)})`;
-      } else if (matches >= 8 && relativePerf < -0.5) {
+      } else if (matches >= 8 && relativePerf < -0.45) {
         desiredDelta = -1;
-        reasonNote = 'Queda de rendimento no 1º turno';
+        developmentStatus = 'DECLINIO_TECNICO';
+        reasonNote = 'Queda de rendimento técnico no 1º turno';
       } else {
         desiredDelta = 0;
-        reasonNote = 'Desempenho mantido';
+        developmentStatus = 'EVOLUCAO_NORMAL';
+        reasonNote = 'Desempenho estável no 1º turno';
       }
     } else if (oldAge >= 32) {
       if (matches >= 8 && relativePerf < -0.3) {
         desiredDelta = -1;
         isPhysicalDecline = true;
-        reasonNote = 'Desgaste físico de meio de temporada';
+        developmentStatus = 'REGRESSAO_FISICA';
+        reasonNote = 'Desgaste físico no 1º turno';
       } else {
         desiredDelta = 0;
-        reasonNote = 'Experiência mantém nível';
+        developmentStatus = 'EVOLUCAO_NORMAL';
+        reasonNote = 'Experiência mantém regularidade';
       }
     }
 
@@ -1069,28 +1296,34 @@ export function processMidSeasonEvolution(params: {
       player.attributes,
       player.position,
       desiredDelta,
-      ceiling,
+      effectiveMaxOvr,
       isPhysicalDecline,
       rng
     );
     const newOvr = calculatePlayerOverall(updatedAttrs, player.position);
     const deltaOvr = newOvr - oldOvr;
+    const breakoutBonusOvr = isBreakoutSeason ? Math.max(0, newOvr - ceiling) : 0;
+    const newDynamicCeiling = Math.max(dynCeiling, newOvr);
 
     const { marketValue, salary } = calculateBalancedValuationAndWage({
       ovr: newOvr,
       age: oldAge,
       clubReputation: clubRep,
       division,
-      potentialStars: stars,
+      potentialStars: nextStars,
     });
 
     const evolved: Player = {
       ...player,
-      potentialStars: stars,
+      potentialStars: nextStars,
+      dynamicCeilingOvr: newDynamicCeiling,
       attributes: updatedAttrs,
       marketValue,
       salary,
       recentOvrDelta: deltaOvr,
+      exceededExpectations: isBreakoutSeason,
+      breakoutBonusOvr,
+      developmentStatus,
     };
 
     return {
@@ -1104,8 +1337,12 @@ export function processMidSeasonEvolution(params: {
         oldOvr,
         newOvr,
         deltaOvr,
-        potentialStars: stars,
+        potentialStars: nextStars,
         reasonNote,
+        exceededExpectations: isBreakoutSeason,
+        formerCeiling: ceiling,
+        starsPromoted,
+        developmentStatus,
       },
     };
   };

@@ -46,16 +46,40 @@ export const StarRating: React.FC<StarRatingProps> = ({
       title={`Potencial: ${value} de 5 estrelas`}
       aria-label={`Potencial ${value} de 5 estrelas`}
     >
-      {[1, 2, 3, 4, 5].map((idx) => (
-        <Star
-          key={idx}
-          className={`${iconCls} ${
-            idx <= value
-              ? 'text-amber-400 fill-amber-400'
-              : 'text-zinc-600'
-          }`}
-        />
-      ))}
+      {[1, 2, 3, 4, 5].map((idx) => {
+        const isFull = idx <= value;
+        const isHalf = !isFull && idx - 0.5 <= value;
+        if (isFull) {
+          return (
+            <Star
+              key={idx}
+              className={`${iconCls} text-amber-400 fill-amber-400 shrink-0`}
+            />
+          );
+        }
+        if (isHalf) {
+          return (
+            <span
+              key={idx}
+              className={`relative inline-flex items-center justify-center ${iconCls} shrink-0`}
+            >
+              <Star className={`${iconCls} text-zinc-600`} />
+              <span
+                className="absolute inset-0 overflow-hidden"
+                style={{ width: '50%' }}
+              >
+                <Star className={`${iconCls} text-amber-400 fill-amber-400`} />
+              </span>
+            </span>
+          );
+        }
+        return (
+          <Star
+            key={idx}
+            className={`${iconCls} text-zinc-600 shrink-0`}
+          />
+        );
+      })}
       {showNumeric && (
         <span className="ml-1 text-[10px] font-mono font-bold text-amber-300 tabular-nums">
           {value}★

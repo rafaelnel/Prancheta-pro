@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, AlertTriangle } from 'lucide-react';
+import { X, AlertTriangle, Zap, AlertCircle, TrendingDown } from 'lucide-react';
 import {
   ATTRIBUTE_LABELS,
   MENTAL_KEYS,
@@ -20,6 +20,7 @@ import {
   getMoraleColor,
 } from '../utils/formatters';
 import { StarRating, resolvePlayerStars } from './StarRating';
+import { getDynamicPotentialProfile } from '../engine/economyAndEvolution';
 
 interface PlayerProfileModalProps {
   player: Player | null;
@@ -202,7 +203,14 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                   {overall}
                 </div>
                 <div className="flex flex-col items-end">
-                  {player.recentOvrDelta !== undefined && player.recentOvrDelta > 0 ? (
+                  {player.exceededExpectations ? (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-400/25 text-amber-300 border border-amber-400/60 text-xs font-mono font-extrabold shadow-sm"
+                      title="Superou o teto de potencial inicial devido a atuações estelares!"
+                    >
+                      ⚡ +{player.recentOvrDelta ?? 0} Superou Teto
+                    </span>
+                  ) : player.recentOvrDelta !== undefined && player.recentOvrDelta > 0 ? (
                     <span
                       className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-emerald-500/20 text-[#b5ff00] border border-[#b5ff00]/50 text-xs font-mono font-extrabold shadow-sm"
                       title="Evolução semestral de OVR"
@@ -212,14 +220,22 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                   ) : player.recentOvrDelta !== undefined && player.recentOvrDelta < 0 ? (
                     <span
                       className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/50 text-xs font-mono font-extrabold shadow-sm"
-                      title="Regressão semestral de OVR"
+                      title={
+                        player.developmentStatus === 'DECLINIO_TECNICO'
+                          ? 'Declínio técnico por baixo rendimento'
+                          : 'Regressão semestral de OVR'
+                      }
                     >
                       ▼ {player.recentOvrDelta}
                     </span>
                   ) : (
                     <span
                       className="inline-flex items-center px-1.5 py-0.5 rounded bg-white/[0.05] text-zinc-400 border border-white/10 text-[10px] font-mono"
-                      title="OVR estável no semestre"
+                      title={
+                        player.developmentStatus === 'ESTAGNADO'
+                          ? 'Potencial estagnado por falta de minutagem'
+                          : 'OVR estável no semestre'
+                      }
                     >
                       ▬ 0 Estável
                     </span>
@@ -227,12 +243,26 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                   <span className="text-[9px] text-zinc-400 font-medium">Evolução 6m</span>
                 </div>
               </div>
-              <div className="mt-1 flex items-center justify-end gap-1">
-                <span className="text-[10px] text-zinc-500 font-mono">POT</span>
-                <StarRating
-                  stars={resolvePlayerStars(player, overall, 78)}
-                  size="xs"
-                />
+              <div className="mt-1 flex flex-col items-end">
+                <div className="flex items-center justify-end gap-1.5">
+                  <span className="text-[10px] text-zinc-500 font-mono">POT</span>
+                  <StarRating
+                    stars={resolvePlayerStars(player, overall, 78)}
+                    size="xs"
+                    showNumeric
+                  />
+                </div>
+                {player.age <= 23 && (
+                  <span
+                    className={`text-[9px] font-mono mt-0.5 ${
+                      player.exceededExpectations ? 'text-amber-300 font-bold' : 'text-zinc-400'
+                    }`}
+                    title="Potencial Base e Teto Dinâmico por desempenho em campo"
+                  >
+                    Base {player.basePotentialOvr ?? getDynamicPotentialProfile(resolvePlayerStars(player, overall, 78)).basePotentialOvr} · Teto {player.dynamicCeilingOvr ?? getDynamicPotentialProfile(resolvePlayerStars(player, overall, 78)).dynamicCeilingOvr}
+                    {player.exceededExpectations && ' (Rompeu Teto!)'}
+                  </span>
+                )}
               </div>
             </div>
             <button
@@ -246,6 +276,34 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
         </div>
 
         <div className="p-5 sm:p-6 space-y-5">
+          {/* Dynamic Development & Performance Callouts */}
+          {player.exceededExpectations && (
+            <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-amber-950/30 border border-amber-400/40 text-xs text-amber-200">
+              <Zap className="w-4 h-4 text-amber-300 shrink-0" />
+              <div>
+                <strong className="text-amber-300">⚡ Superou Expectativas:</strong> Atuações excepcionais ({player.seasonStats.matches}j, nota {player.seasonStats.avgRating.toFixed(2)}{player.seasonStats.goals > 0 ? `, ${player.seasonStats.goals}g` : ''}{player.seasonStats.assists > 0 ? `, ${player.seasonStats.assists}a` : ''}) romperam o teto de potencial inicial! O jogador subiu de categoria e ganhou evolução acima do teto.
+              </div>
+            </div>
+          )}
+
+          {player.developmentStatus === 'ESTAGNADO' && player.age <= 22 && player.seasonStats.matches < 7 && (
+            <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-zinc-900/60 border border-white/10 text-xs text-zinc-300">
+              <AlertCircle className="w-4 h-4 text-zinc-400 shrink-0" />
+              <div>
+                <strong className="text-white">Potencial Estagnado por Pouca Minutagem:</strong> O atleta disputou apenas {player.seasonStats.matches} jogos. Jovens com alto potencial não evoluem OVR automaticamente se ficarem sem minutagem no time principal ou empréstimo.
+              </div>
+            </div>
+          )}
+
+          {player.developmentStatus === 'DECLINIO_TECNICO' && (
+            <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-rose-950/30 border border-rose-500/30 text-xs text-rose-200">
+              <TrendingDown className="w-4 h-4 text-rose-400 shrink-0" />
+              <div>
+                <strong className="text-rose-300">Declínio Técnico por Desempenho Fraco:</strong> O atleta registrou nota média {player.seasonStats.avgRating.toFixed(2)} em {player.seasonStats.matches} jogos. O potencial não impede quedas de OVR caso as estatísticas sejam deficientes.
+              </div>
+            </div>
+          )}
+
           {player.injured && player.injuryNote && (
             <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-200">
               <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />

@@ -165,7 +165,10 @@ export const SquadView: React.FC<SquadViewProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-bold text-white flex items-center gap-1.5 whitespace-nowrap">
             <TrendingUp className="w-4 h-4 text-[#b5ff00]" />
-            Setas de Evolução Semestral (a cada 6 meses):
+            Setas de Evolução Semestral:
+          </span>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-400/20 text-amber-300 font-mono font-bold border border-amber-400/40">
+            ⚡ +X (Superou Teto)
           </span>
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/20 text-[#b5ff00] font-mono font-bold border border-[#b5ff00]/40">
             ▲ +X (Evolução)
@@ -174,7 +177,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
             ▼ -X (Regressão)
           </span>
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white/[0.05] text-zinc-400 font-mono border border-white/10">
-            ▬ 0 (Estável)
+            ▬ 0 (Estável / Sem Minutos)
           </span>
         </div>
         {onSimulateMidSeasonEvolution && (
@@ -344,6 +347,22 @@ export const SquadView: React.FC<SquadViewProps> = ({
                             · [DISP. EMPRÉSTIMO]
                           </span>
                         )}
+                        {player.exceededExpectations && (
+                          <span
+                            className="text-amber-300 font-mono font-bold text-[10px]"
+                            title="Superou o teto de potencial inicial graças a estatísticas de alto impacto"
+                          >
+                            · ⚡ Superou Teto
+                          </span>
+                        )}
+                        {player.developmentStatus === 'ESTAGNADO' && player.age <= 22 && (
+                          <span
+                            className="text-zinc-500 font-mono text-[10px]"
+                            title="Sem minutagem suficiente para converter potencial em OVR"
+                          >
+                            · [Pouca Minutagem]
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="py-2.5 px-2 font-mono font-bold text-white">
@@ -427,7 +446,14 @@ export const SquadView: React.FC<SquadViewProps> = ({
                         <span className="font-bold text-[#b5ff00] text-xs sm:text-sm">
                           {ovr}
                         </span>
-                        {player.recentOvrDelta !== undefined && player.recentOvrDelta > 0 ? (
+                        {player.exceededExpectations ? (
+                          <span
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-400/25 text-amber-300 font-mono text-[11px] font-extrabold border border-amber-400/50 shadow-sm"
+                            title={`⚡ Superou expectativas! Rompeu o teto de potencial teórico (+${player.recentOvrDelta ?? 0} OVR)`}
+                          >
+                            ⚡+{player.recentOvrDelta ?? 0}
+                          </span>
+                        ) : player.recentOvrDelta !== undefined && player.recentOvrDelta > 0 ? (
                           <span
                             className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-500/20 text-[#b5ff00] font-mono text-[11px] font-extrabold border border-[#b5ff00]/40 shadow-sm"
                             title={`Evolução semestral: +${player.recentOvrDelta} OVR`}
@@ -437,14 +463,22 @@ export const SquadView: React.FC<SquadViewProps> = ({
                         ) : player.recentOvrDelta !== undefined && player.recentOvrDelta < 0 ? (
                           <span
                             className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono text-[11px] font-extrabold border border-rose-500/40 shadow-sm"
-                            title={`Regressão semestral: ${player.recentOvrDelta} OVR`}
+                            title={
+                              player.developmentStatus === 'DECLINIO_TECNICO'
+                                ? `Declínio técnico por baixo rendimento (${player.recentOvrDelta} OVR)`
+                                : `Regressão semestral: ${player.recentOvrDelta} OVR`
+                            }
                           >
                             ▼{player.recentOvrDelta}
                           </span>
                         ) : (
                           <span
                             className="inline-flex items-center px-1.5 py-0.5 rounded bg-white/[0.04] text-zinc-500 font-mono text-[10px] border border-white/[0.06]"
-                            title="OVR estável no semestre"
+                            title={
+                              player.developmentStatus === 'ESTAGNADO'
+                                ? 'Potencial estagnado por falta de minutagem ou rendimento regular'
+                                : 'OVR estável no semestre'
+                            }
                           >
                             ▬ 0
                           </span>

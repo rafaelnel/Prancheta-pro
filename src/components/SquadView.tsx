@@ -161,33 +161,33 @@ export const SquadView: React.FC<SquadViewProps> = ({
       </div>
 
       {/* Visual Legend & Semiannual Evolution Guide */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 bg-[#0b0c10]/80 border border-white/[0.08] rounded-2xl text-xs">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 px-3.5 py-2.5 bg-[#0b0c10]/80 border border-white/[0.08] rounded-2xl text-xs">
+        <div className="flex flex-wrap items-center gap-1.5">
           <span className="font-bold text-white flex items-center gap-1.5 whitespace-nowrap">
-            <TrendingUp className="w-4 h-4 text-[#b5ff00]" />
-            Setas de Evolução Semestral:
+            <TrendingUp className="w-3.5 h-3.5 text-[#b5ff00]" />
+            Evolução:
           </span>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-400/20 text-amber-300 font-mono font-bold border border-amber-400/40">
-            ⚡ +X (Superou Teto)
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-400/20 text-amber-300 font-mono text-[11px] font-bold border border-amber-400/40">
+            ⚡ Superou Teto
           </span>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/20 text-[#b5ff00] font-mono font-bold border border-[#b5ff00]/40">
-            ▲ +X (Evolução)
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/20 text-[#b5ff00] font-mono text-[11px] font-bold border border-[#b5ff00]/40">
+            ▲ +OVR
           </span>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono font-bold border border-rose-500/40">
-            ▼ -X (Regressão)
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 font-mono text-[11px] font-bold border border-rose-500/40">
+            ▼ -OVR
           </span>
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white/[0.05] text-zinc-400 font-mono border border-white/10">
-            ▬ 0 (Estável / Sem Minutos)
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white/[0.05] text-zinc-400 font-mono text-[11px] border border-white/10">
+            ▬ Estável
           </span>
         </div>
         {onSimulateMidSeasonEvolution && (
           <button
             onClick={onSimulateMidSeasonEvolution}
-            className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-[#14171f] hover:bg-white/[0.08] text-[#b5ff00] border border-[#b5ff00]/40 hover:border-[#b5ff00] transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shadow-sm"
+            className="px-3 py-1.5 rounded-full text-[11px] font-bold bg-[#14171f] hover:bg-white/[0.08] text-[#b5ff00] border border-[#b5ff00]/40 hover:border-[#b5ff00] transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shadow-sm"
             title="Recalcula a evolução semestral dos jogadores com base no desempenho e minutagem no 1º turno"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Recalcular Evolução Semestral Agora
+            <RefreshCw className="w-3 h-3" />
+            Recalcular Evolução
           </button>
         )}
       </div>
@@ -200,19 +200,162 @@ export const SquadView: React.FC<SquadViewProps> = ({
               #{selectedSwapPlayer.number} {selectedSwapPlayer.name} (
               {selectedSwapPlayer.position})
             </strong>
-            . Clique em &quot;Confirmar&quot; em outro atleta para alternar a vaga.
+            . Toque em &quot;Confirmar&quot; em outro atleta para alternar a vaga.
           </span>
           <button
             onClick={() => setSelectedForSwapId(null)}
-            className="text-xs font-bold text-[#b5ff00] hover:underline"
+            className="text-xs font-bold text-[#b5ff00] hover:underline ml-2 shrink-0"
           >
-            Cancelar troca
+            Cancelar
           </button>
         </div>
       )}
 
-      {/* High-Density Analytical Table */}
-      <div className="bg-[#14171f] border border-white/[0.07] rounded-[28px] overflow-hidden">
+      {/* Mobile Compact Player List (< md) — Zero Horizontal Scroll */}
+      <div className="md:hidden space-y-2">
+        {filteredPlayers.map((player) => {
+          const role = getRoleById(player.assignedRole);
+          const ovr = calculatePlayerOverall(player.attributes, player.position);
+          const cond = getConditionColor(player.condition);
+          const isSelectedSwap = selectedForSwapId === player.id;
+
+          return (
+            <div
+              key={player.id}
+              className={`rounded-2xl border p-3 transition-colors ${
+                isSelectedSwap
+                  ? 'bg-[#b5ff00]/15 border-[#b5ff00]/60'
+                  : player.isStarter
+                  ? 'bg-[#14171f] border-white/[0.08]'
+                  : 'bg-[#0b0c10]/70 border-white/[0.05]'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-extrabold ${
+                        player.isStarter
+                          ? 'bg-[#b5ff00] text-[#090a0f]'
+                          : 'bg-white/[0.07] text-zinc-400'
+                      }`}
+                    >
+                      {player.isStarter ? 'TIT' : 'RES'}
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded bg-white/[0.06] text-white font-mono text-[10px] font-bold">
+                      {player.position}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onInspectPlayer(player)}
+                      className="font-bold text-sm text-white hover:text-[#b5ff00] truncate text-left"
+                    >
+                      #{player.number} {player.name}
+                    </button>
+                    {player.injured && (
+                      <span className="text-rose-400 flex items-center gap-0.5 text-[10px] font-mono font-bold">
+                        <AlertTriangle className="w-3 h-3" />
+                        DM
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-zinc-400 mt-1">
+                    <span>{player.age}a</span>
+                    <StarRating player={player} ovr={ovr} size="xs" />
+                    <span className="text-zinc-500">·</span>
+                    <span className="truncate">
+                      {role.name} ({player.assignedDuty})
+                    </span>
+                  </div>
+                </div>
+
+                {/* Right OVR + Evolution Badge */}
+                <div className="text-right shrink-0 font-mono tabular-nums">
+                  <div className="inline-flex items-center gap-1">
+                    <span className="text-base font-extrabold text-[#b5ff00]">
+                      {ovr}
+                    </span>
+                    {player.exceededExpectations ? (
+                      <span className="px-1 py-0.5 rounded bg-amber-400/25 text-amber-300 text-[10px] font-extrabold border border-amber-400/50">
+                        ⚡+{player.recentOvrDelta ?? 0}
+                      </span>
+                    ) : player.recentOvrDelta !== undefined &&
+                      player.recentOvrDelta > 0 ? (
+                      <span className="px-1 py-0.5 rounded bg-emerald-500/20 text-[#b5ff00] text-[10px] font-extrabold border border-[#b5ff00]/40">
+                        ▲+{player.recentOvrDelta}
+                      </span>
+                    ) : player.recentOvrDelta !== undefined &&
+                      player.recentOvrDelta < 0 ? (
+                      <span className="px-1 py-0.5 rounded bg-rose-500/20 text-rose-400 text-[10px] font-extrabold border border-rose-500/40">
+                        ▼{player.recentOvrDelta}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div className="text-[10px] text-zinc-400 mt-0.5">
+                    {formatCompactBRL(player.marketValue)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-2.5 pt-2 border-t border-white/[0.06] flex items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-3 font-mono text-[11px]">
+                  <span className={cond.text}>
+                    Fís: {Math.round(player.condition)}%
+                  </span>
+                  <span className={getMoraleColor(player.morale)}>
+                    {player.morale}
+                  </span>
+                  {player.isTransferListed && (
+                    <span className="text-sky-300 font-bold text-[10px]">
+                      [À Venda]
+                    </span>
+                  )}
+                  {player.isLoanListed && (
+                    <span className="text-indigo-300 font-bold text-[10px]">
+                      [Emprést.]
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => onInspectPlayer(player)}
+                    className="px-3 py-1.5 rounded-full bg-white/[0.08] text-white text-[11px] font-semibold flex items-center gap-1"
+                  >
+                    <Eye className="w-3 h-3 text-[#b5ff00]" />
+                    <span>Ficha</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSwapClick(player.id)}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1 ${
+                      isSelectedSwap
+                        ? 'bg-[#b5ff00] text-[#090a0f]'
+                        : selectedForSwapId
+                        ? 'bg-amber-400 text-[#090a0f]'
+                        : 'bg-[#0b0c10] text-zinc-200 border border-white/10'
+                    }`}
+                  >
+                    <ArrowLeftRight className="w-3 h-3" />
+                    <span>
+                      {isSelectedSwap
+                        ? 'Selecionado'
+                        : selectedForSwapId
+                        ? 'Confirmar'
+                        : 'Trocar'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* High-Density Analytical Table (Desktop & Tablet md+) */}
+      <div className="hidden md:block bg-[#14171f] border border-white/[0.07] rounded-[28px] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>

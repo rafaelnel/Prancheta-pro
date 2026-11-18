@@ -14,8 +14,11 @@ import {
   TrendingUp,
   SlidersHorizontal,
   RotateCcw,
-  ArrowDownLeft,
   Lock,
+  Bookmark,
+  BookmarkCheck,
+  TrendingDown,
+  Trash2,
 } from 'lucide-react';
 import { calculatePlayerOverall } from '../engine/matchEngine';
 import {
@@ -28,7 +31,12 @@ import {
   getPlayerPaidSalary,
   getTransferWindowStatus,
 } from '../engine/transferEngine';
-import { IncomingOfferAction } from '../engine/aiMarketEngine';
+import { getRealSquadForClub } from '../data/initialDatabase';
+import {
+  IncomingOfferAction,
+  analyzeAiClubMarketProfile,
+  evaluateAiClubSquadAndListings,
+} from '../engine/aiMarketEngine';
 import {
   Club,
   IncomingTransferOffer,
@@ -41,8 +49,10 @@ import {
   TransferDifficultyLevel,
   TransferOfferTier,
   TransferRecord,
+  WatchedPlayerEntry,
 } from '../types/football';
 import { formatCompactBRL } from '../utils/formatters';
+import { CurrencyToggle } from '../utils/CurrencyContext';
 import { ClubBadge } from './ClubBadge';
 import { StarRating } from './StarRating';
 
@@ -60,6 +70,7 @@ interface MarketViewProps {
   loanedOutPlayers: Player[];
   transferHistory: TransferRecord[];
   transferredOutClubPlayerIds: string[];
+  watchedPlayers?: WatchedPlayerEntry[];
   seasonYear?: number;
   dayOffset?: number;
   aiSquads?: Record<string, Player[]>;
@@ -70,7 +81,9 @@ interface MarketViewProps {
   ) => void;
   lastFeedback: MarketFeedback;
   onClearFeedback: () => void;
-  onInspectPlayer: (player: Player) => void;
+  onInspectPlayer: (player: Player, listing?: MarketPlayerListing) => void;
+  onToggleWatchPlayer?: (listing: MarketPlayerListing) => void;
+  onRemoveWatchedPlayer?: (playerId: string) => void;
   onProposeTransfer: (params: {
     listing: MarketPlayerListing;
     dealMode: TransferDealMode;
@@ -93,10 +106,25 @@ type MarketSubTab =
   | 'INTERNACIONAL'
   | 'LIVRES'
   | 'EMPRESTIMOS'
+  | 'OBSERVADOS'
   | 'MEU_ELENCO'
   | 'HISTORICO';
 
+type WatchlistFilter =
+  | 'TODOS'
+  | 'VALORIZADOS'
+  | 'DESVALORIZADOS'
+  | 'MUDANCA_STATUS'
+  | 'DISPONIVEIS';
+type WatchlistSortKey =
+  | 'RECENT'
+  | 'VALUE_DELTA_DESC'
+  | 'OVR_DELTA_DESC'
+  | 'OVR_DESC'
+  | 'VALUE_ASC';
+
 type DomesticScopeFilter = 'ALL' | 'SERIE_A' | 'SERIE_B' | 'LIBERTADORES';
+type ClubListingFilter = 'ALL' | 'LISTED_ANY' | 'LISTED_BUY' | 'LISTED_LOAN';
 type PriceRangeFilter =
   | 'ALL'
   | 'FREE_ONLY'
@@ -242,6 +270,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
   loanedOutPlayers,
   transferHistory,
   transferredOutClubPlayerIds,
+  watchedPlayers = [],
   seasonYear = 2026,
   dayOffset = 0,
   aiSquads,
@@ -250,6 +279,8 @@ export const MarketView: React.FC<MarketViewProps> = ({
   lastFeedback,
   onClearFeedback,
   onInspectPlayer,
+  onToggleWatchPlayer,
+  onRemoveWatchedPlayer,
   onProposeTransfer,
   onOutgoingTransfer,
   onTogglePlayerMarketListing,
@@ -259,6 +290,9 @@ export const MarketView: React.FC<MarketViewProps> = ({
   const [subTab, setSubTab] = useState<MarketSubTab>('NACIONAL_LIB');
   const [domesticScope, setDomesticScope] =
     useState<DomesticScopeFilter>('ALL');
+  const [clubListingFilter, setClubListingFilter] =
+    useState<ClubListingFilter>('ALL');
+  const [showClubRadar, setShowClubRadar] = useState<boolean>(false);
   const [sectorFilter, setSectorFilter] = useState<'ALL' | PositionSector>('ALL');
   const [positionFilter, setPositionFilter] = useState<'ALL' | NaturalPosition>(
     'ALL'
@@ -286,6 +320,14 @@ export const MarketView: React.FC<MarketViewProps> = ({
   const [historyTypeFilter, setHistoryTypeFilter] =
     useState<HistoryTypeFilter>('ALL');
   const [historySearch, setHistorySearch] = useState('');
+
+  // Watchlist tab filters & selection
+  const [watchlistFilter, setWatchlistFilter] =
+    useState<WatchlistFilter>('TODOS');
+  const [watchlistSort, setWatchlistSort] =
+    useState<WatchlistSortKey>('RECENT');
+  const [watchlistSearch, setWatchlistSearch] = useState('');
+  const [selectedWatchedId, setSelectedWatchedId] = useState<string | null>(null);
 
   // Selected listing for desktop & mobile drawer
   const [selectedListingId, setSelectedListingId] = useState<string | null>(null);
@@ -325,9 +367,15 @@ export const MarketView: React.FC<MarketViewProps> = ({
     [clubs, userClub.id, freeAgents, transferredOutClubPlayerIds, aiSquads]
   );
 
+  const watchedIdsSet = useMemo(
+    () => new Set(watchedPlayers.map((w) => w.playerId)),
+    [watchedPlayers]
+  );
+
   // Count active advanced filters
   const activeAdvancedFilterCount = useMemo(() => {
     let count = 0;
+    if (clubListingFilter !== 'ALL') count++;
     if (positionFilter !== 'ALL') count++;
     if (priceRangeFilter !== 'ALL') count++;
     if (maxSalaryFilter > 0) count++;
@@ -338,6 +386,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
     if (onlyAffordable) count++;
     return count;
   }, [
+    clubListingFilter,
     positionFilter,
     priceRangeFilter,
     maxSalaryFilter,
@@ -351,6 +400,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
 
   const handleResetFilters = () => {
     setDomesticScope('ALL');
+    setClubListingFilter('ALL');
     setSectorFilter('ALL');
     setPositionFilter('ALL');
     setPriceRangeFilter('ALL');
@@ -365,6 +415,72 @@ export const MarketView: React.FC<MarketViewProps> = ({
     setOnlyAffordable(false);
     setSortBy('OVR_DESC');
   };
+
+  // Counts of club-listed players within the current subTab scope
+  const clubListingCounts = useMemo(() => {
+    let listedAny = 0;
+    let listedBuy = 0;
+    let listedLoan = 0;
+
+    for (const item of allListings) {
+      if (subTab === 'NACIONAL_LIB') {
+        if (
+          item.scope !== 'SERIE_A' &&
+          item.scope !== 'SERIE_B' &&
+          item.scope !== 'LIBERTADORES'
+        ) {
+          continue;
+        }
+        if (domesticScope !== 'ALL' && item.scope !== domesticScope) continue;
+      } else if (subTab === 'INTERNACIONAL') {
+        if (item.scope !== 'INTERNACIONAL') continue;
+      } else if (subTab === 'LIVRES') {
+        continue;
+      } else if (subTab === 'EMPRESTIMOS') {
+        if (item.scope === 'LIVRES' || !item.loanAvailable) continue;
+      }
+
+      if (item.isTransferListed) listedBuy++;
+      if (item.isLoanListed) listedLoan++;
+      if (item.isTransferListed || item.isLoanListed) listedAny++;
+    }
+
+    return { listedAny, listedBuy, listedLoan };
+  }, [allListings, subTab, domesticScope]);
+
+  // Strategic Market Profiles for all opponent clubs (needs, purchases, sales, loans)
+  const aiClubProfilesMap = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        club: Club;
+        profile: ReturnType<typeof analyzeAiClubMarketProfile>;
+        listedBuyPlayers: Player[];
+        listedLoanPlayers: Player[];
+      }
+    >();
+    for (const c of clubs) {
+      if (c.id === userClub.id) continue;
+      const rawSquad =
+        aiSquads && aiSquads[c.id] && aiSquads[c.id].length > 0
+          ? aiSquads[c.id]
+          : getRealSquadForClub(c);
+      const hasListings = rawSquad.some(
+        (p) => p.isTransferListed || p.isLoanListed
+      );
+      const evaluatedSquad = hasListings
+        ? rawSquad
+        : evaluateAiClubSquadAndListings(c, rawSquad);
+      const profile = analyzeAiClubMarketProfile(c, evaluatedSquad);
+      map.set(c.id, {
+        club: c,
+        profile,
+        listedBuyPlayers: evaluatedSquad.filter((p) => p.isTransferListed),
+        listedLoanPlayers: evaluatedSquad.filter((p) => p.isLoanListed),
+      });
+    }
+    return map;
+  }, [clubs, userClub.id, aiSquads]);
 
   // Reset limit & deal mode smoothly when switching tabs
   useEffect(() => {
@@ -433,6 +549,15 @@ export const MarketView: React.FC<MarketViewProps> = ({
           if (item.scope !== 'LIVRES') return false;
         } else if (subTab === 'EMPRESTIMOS') {
           if (item.scope === 'LIVRES' || !item.loanAvailable) return false;
+        }
+
+        // Club availability filter (placed for purchase or loan by opponent clubs)
+        if (clubListingFilter === 'LISTED_ANY') {
+          if (!item.isTransferListed && !item.isLoanListed) return false;
+        } else if (clubListingFilter === 'LISTED_BUY') {
+          if (!item.isTransferListed) return false;
+        } else if (clubListingFilter === 'LISTED_LOAN') {
+          if (!item.isLoanListed) return false;
         }
 
         if (sectorFilter !== 'ALL' && item.player.sector !== sectorFilter) {
@@ -563,6 +688,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
     allListings,
     subTab,
     domesticScope,
+    clubListingFilter,
     sectorFilter,
     positionFilter,
     minOvrFilter,
@@ -655,6 +781,200 @@ export const MarketView: React.FC<MarketViewProps> = ({
     });
   }, [transferHistory, historyTypeFilter, historySearch]);
 
+  // Watchlist live enrichment (tracks status, OVR, value, salary, and club changes over time)
+  const listingByIdMap = useMemo(() => {
+    const map = new Map<string, MarketPlayerListing>();
+    for (const item of allListings) {
+      map.set(item.player.id, item);
+    }
+    return map;
+  }, [allListings]);
+
+  const watchlistItems = useMemo(() => {
+    return watchedPlayers.map((entry) => {
+      const listing = listingByIdMap.get(entry.playerId) || null;
+      const squadPlayer =
+        squad.find(
+          (p) =>
+            p.id === entry.playerId || p.id.endsWith(`-signed-${entry.playerId}`)
+        ) || null;
+      const loanedOutPlayer =
+        loanedOutPlayers.find(
+          (p) =>
+            p.id === entry.playerId || p.id.endsWith(`-signed-${entry.playerId}`)
+        ) || null;
+
+      const statusType:
+        | 'AVAILABLE_MARKET'
+        | 'IN_USER_SQUAD'
+        | 'LOANED_OUT'
+        | 'UNAVAILABLE' = listing
+        ? 'AVAILABLE_MARKET'
+        : squadPlayer
+        ? 'IN_USER_SQUAD'
+        : loanedOutPlayer
+        ? 'LOANED_OUT'
+        : 'UNAVAILABLE';
+
+      const currentPlayer =
+        listing?.player || squadPlayer || loanedOutPlayer || null;
+      const currentOvr =
+        listing?.ovr ??
+        (currentPlayer
+          ? calculatePlayerOverall(currentPlayer.attributes, currentPlayer.position)
+          : entry.addedOvr);
+      const currentMarketValue = currentPlayer
+        ? currentPlayer.marketValue
+        : entry.addedMarketValue;
+      const currentSalary = currentPlayer
+        ? currentPlayer.salary
+        : entry.addedSalary;
+      const currentAge = currentPlayer ? currentPlayer.age : entry.addedAge;
+      const currentClubName =
+        statusType === 'IN_USER_SQUAD'
+          ? userClub.shortName
+          : statusType === 'LOANED_OUT'
+          ? loanedOutPlayer?.loanDestinationClubName || 'Emprestado'
+          : listing
+          ? listing.originClub?.shortName || 'Passe Livre'
+          : 'Fora do mercado';
+
+      const ovrDeltaSinceAdded = currentOvr - entry.addedOvr;
+      const valueDelta = currentMarketValue - entry.addedMarketValue;
+      const valueDeltaPct =
+        entry.addedMarketValue > 0
+          ? Math.round((valueDelta / entry.addedMarketValue) * 100)
+          : 0;
+      const salaryDelta = currentSalary - entry.addedSalary;
+      const ageDelta = currentAge - entry.addedAge;
+      const clubChanged =
+        statusType !== 'UNAVAILABLE' && currentClubName !== entry.addedClubName;
+
+      const evaluation = listing
+        ? evaluatedListMap.get(listing.player.id) ||
+          evaluateTransferNegotiation({
+            userClub,
+            userSquad: squad,
+            loanedOutPlayers,
+            listing,
+            dealMode: listing.scope === 'LIVRES' ? 'FREE' : 'BUY',
+            offerTier: 'PADRAO',
+            loanWageShare: 0.75,
+          })
+        : null;
+
+      return {
+        entry,
+        listing,
+        currentPlayer,
+        statusType,
+        currentOvr,
+        currentMarketValue,
+        currentSalary,
+        currentAge,
+        currentClubName,
+        ovrDeltaSinceAdded,
+        valueDelta,
+        valueDeltaPct,
+        salaryDelta,
+        ageDelta,
+        clubChanged,
+        evaluation,
+      };
+    });
+  }, [
+    watchedPlayers,
+    listingByIdMap,
+    squad,
+    loanedOutPlayers,
+    userClub,
+    evaluatedListMap,
+  ]);
+
+  const watchlistStats = useMemo(() => {
+    let appreciatedCount = 0;
+    let declinedCount = 0;
+    let statusChangesCount = 0;
+    for (const w of watchlistItems) {
+      if (w.valueDelta > 0 || w.ovrDeltaSinceAdded > 0) appreciatedCount++;
+      if (w.valueDelta < 0 || w.ovrDeltaSinceAdded < 0) declinedCount++;
+      if (
+        w.clubChanged ||
+        w.statusType !== 'AVAILABLE_MARKET' ||
+        w.currentPlayer?.injured ||
+        w.listing?.scope === 'LIVRES'
+      ) {
+        statusChangesCount++;
+      }
+    }
+    return {
+      total: watchlistItems.length,
+      appreciatedCount,
+      declinedCount,
+      statusChangesCount,
+    };
+  }, [watchlistItems]);
+
+  const filteredWatchlist = useMemo(() => {
+    const q = watchlistSearch.trim().toLowerCase();
+    const list = watchlistItems.filter((w) => {
+      if (watchlistFilter === 'VALORIZADOS') {
+        if (w.valueDelta <= 0 && w.ovrDeltaSinceAdded <= 0) return false;
+      } else if (watchlistFilter === 'DESVALORIZADOS') {
+        if (w.valueDelta >= 0 && w.ovrDeltaSinceAdded >= 0) return false;
+      } else if (watchlistFilter === 'MUDANCA_STATUS') {
+        if (
+          !w.clubChanged &&
+          w.statusType === 'AVAILABLE_MARKET' &&
+          !w.currentPlayer?.injured &&
+          w.listing?.scope !== 'LIVRES'
+        ) {
+          return false;
+        }
+      } else if (watchlistFilter === 'DISPONIVEIS') {
+        if (!w.listing || !w.evaluation || w.evaluation.isBlocked) return false;
+      }
+
+      if (q) {
+        const hay = `${w.entry.playerName} ${w.entry.position} ${w.currentClubName} ${w.entry.addedClubName}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    if (watchlistSort === 'RECENT') return list;
+
+    return [...list].sort((a, b) => {
+      if (watchlistSort === 'VALUE_DELTA_DESC') {
+        return (
+          b.valueDelta - a.valueDelta ||
+          b.ovrDeltaSinceAdded - a.ovrDeltaSinceAdded
+        );
+      }
+      if (watchlistSort === 'OVR_DELTA_DESC') {
+        return (
+          b.ovrDeltaSinceAdded - a.ovrDeltaSinceAdded ||
+          b.valueDelta - a.valueDelta
+        );
+      }
+      if (watchlistSort === 'OVR_DESC') {
+        return b.currentOvr - a.currentOvr;
+      }
+      if (watchlistSort === 'VALUE_ASC') {
+        return a.currentMarketValue - b.currentMarketValue;
+      }
+      return 0;
+    });
+  }, [watchlistItems, watchlistFilter, watchlistSort, watchlistSearch]);
+
+  const selectedWatchedItem = useMemo(() => {
+    if (filteredWatchlist.length === 0) return null;
+    const found = filteredWatchlist.find(
+      (w) => w.entry.playerId === selectedWatchedId
+    );
+    return found || filteredWatchlist[0];
+  }, [filteredWatchlist, selectedWatchedId]);
+
   // Select first item automatically on desktop when filtered list updates and current selection is missing
   const selectedListing = useMemo(() => {
     if (filteredListings.length === 0) return null;
@@ -664,27 +984,32 @@ export const MarketView: React.FC<MarketViewProps> = ({
     return found || filteredListings[0];
   }, [filteredListings, selectedListingId]);
 
-  const effectiveDealMode: TransferDealMode = !selectedListing
+  const deskListing =
+    subTab === 'OBSERVADOS'
+      ? selectedWatchedItem?.listing || null
+      : selectedListing;
+
+  const effectiveDealMode: TransferDealMode = !deskListing
     ? 'BUY'
-    : selectedListing.scope === 'LIVRES'
+    : deskListing.scope === 'LIVRES'
     ? 'FREE'
     : dealMode === 'FREE'
     ? 'BUY'
     : dealMode;
 
   const activeEvaluation = useMemo(() => {
-    if (!selectedListing) return null;
+    if (!deskListing) return null;
     return evaluateTransferNegotiation({
       userClub,
       userSquad: squad,
       loanedOutPlayers,
-      listing: selectedListing,
+      listing: deskListing,
       dealMode: effectiveDealMode,
       offerTier,
       loanWageShare,
     });
   }, [
-    selectedListing,
+    deskListing,
     userClub,
     squad,
     loanedOutPlayers,
@@ -698,15 +1023,35 @@ export const MarketView: React.FC<MarketViewProps> = ({
     setOfferTier('PADRAO');
     if (item.scope === 'LIVRES') {
       setDealMode('FREE');
-    } else if (subTab === 'EMPRESTIMOS') {
+    } else if (
+      subTab === 'EMPRESTIMOS' ||
+      clubListingFilter === 'LISTED_LOAN' ||
+      (item.isLoanListed && !item.isTransferListed)
+    ) {
       setDealMode('LOAN');
+    } else if (clubListingFilter === 'LISTED_BUY' || item.isTransferListed) {
+      setDealMode('BUY');
+    }
+    setMobileDeskOpen(true);
+    onClearFeedback();
+  };
+
+  const handleSelectWatched = (
+    item: (typeof watchlistItems)[number]
+  ) => {
+    setSelectedWatchedId(item.entry.playerId);
+    setOfferTier('PADRAO');
+    if (item.listing?.scope === 'LIVRES') {
+      setDealMode('FREE');
+    } else {
+      setDealMode('BUY');
     }
     setMobileDeskOpen(true);
     onClearFeedback();
   };
 
   const renderNegotiationDesk = (isMobileModal: boolean) => {
-    if (!selectedListing || !activeEvaluation) {
+    if (!deskListing || !activeEvaluation) {
       return (
         <div className="bg-[#14171f] border border-white/[0.07] rounded-[28px] p-6 text-center text-xs text-zinc-400">
           Nenhum atleta corresponde aos filtros atuais. Ajuste os filtros
@@ -716,9 +1061,10 @@ export const MarketView: React.FC<MarketViewProps> = ({
     }
 
     const diffStyle = DIFFICULTY_STYLES[activeEvaluation.level];
-    const p = selectedListing.player;
-    const isFree = selectedListing.scope === 'LIVRES';
+    const p = deskListing.player;
+    const isFree = deskListing.scope === 'LIVRES';
     const isLoan = effectiveDealMode === 'LOAN';
+    const isWatched = watchedIdsSet.has(p.id);
 
     return (
       <div className="bg-[#14171f] border border-white/[0.08] rounded-[28px] overflow-hidden flex flex-col">
@@ -730,7 +1076,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                 {p.position}
               </span>
               <span className="font-display text-2xl font-extrabold leading-none">
-                {selectedListing.ovr}
+                {deskListing.ovr}
               </span>
             </div>
             <div className="min-w-0">
@@ -740,37 +1086,65 @@ export const MarketView: React.FC<MarketViewProps> = ({
                 </h3>
                 <StarRating
                   player={p}
-                  ovr={selectedListing.ovr}
+                  ovr={deskListing.ovr}
                   clubReputation={
-                    selectedListing.originClub?.reputation ?? userClub.reputation
+                    deskListing.originClub?.reputation ?? userClub.reputation
                   }
                   size="sm"
                 />
               </div>
               <div className="text-xs text-zinc-400 mt-1 flex items-center gap-1.5 truncate">
-                {selectedListing.originClub && (
+                {deskListing.originClub && (
                   <ClubBadge
-                    clubId={selectedListing.originClub.id}
-                    abbr={selectedListing.originClub.abbr}
-                    name={selectedListing.originClub.name}
-                    primaryColor={selectedListing.originClub.primaryColor}
+                    clubId={deskListing.originClub.id}
+                    abbr={deskListing.originClub.abbr}
+                    name={deskListing.originClub.name}
+                    primaryColor={deskListing.originClub.primaryColor}
                     size="xs"
                   />
                 )}
                 <span className="truncate">
                   {p.age} anos · {p.nationality} ·{' '}
-                  {selectedListing.originClub
-                    ? `${selectedListing.originClub.shortName} (${selectedListing.originClub.leagueName})`
+                  {deskListing.originClub
+                    ? `${deskListing.originClub.shortName} (${deskListing.originClub.leagueName})`
                     : `Passe Livre ${seasonYear}`}
                 </span>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+            {onToggleWatchPlayer && (
+              <button
+                type="button"
+                onClick={() => onToggleWatchPlayer(deskListing)}
+                title={
+                  isWatched
+                    ? 'Remover da Lista de Observação'
+                    : 'Adicionar à Lista de Observação'
+                }
+                className={`px-3 py-2 rounded-full text-[11px] font-bold border transition-colors flex items-center gap-1 whitespace-nowrap ${
+                  isWatched
+                    ? 'bg-[#b5ff00]/20 border-[#b5ff00] text-[#b5ff00]'
+                    : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/10 text-zinc-200'
+                }`}
+              >
+                {isWatched ? (
+                  <>
+                    <BookmarkCheck className="w-3.5 h-3.5" />
+                    <span>Observando</span>
+                  </>
+                ) : (
+                  <>
+                    <Bookmark className="w-3.5 h-3.5" />
+                    <span>Observar</span>
+                  </>
+                )}
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => onInspectPlayer(p)}
+              onClick={() => onInspectPlayer(p, deskListing)}
               className="px-3 py-2 rounded-full bg-white/[0.08] hover:bg-white/[0.15] text-white text-[11px] font-semibold flex items-center gap-1 whitespace-nowrap"
             >
               <Eye className="w-3.5 h-3.5 text-[#b5ff00]" />
@@ -822,6 +1196,75 @@ export const MarketView: React.FC<MarketViewProps> = ({
             ))}
           </div>
 
+          {/* Club Listing Status Banner (if placed on market by origin club) */}
+          {(deskListing.isTransferListed || deskListing.isLoanListed) && (
+            <div className="rounded-2xl border border-[#b5ff00]/40 bg-[#b5ff00]/10 p-3 space-y-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {deskListing.isTransferListed && (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-400 text-[#090a0f] text-[10px] font-mono font-extrabold uppercase">
+                    Disponível p/ Compra pelo Clube
+                  </span>
+                )}
+                {deskListing.isLoanListed && (
+                  <span className="px-2 py-0.5 rounded-full bg-sky-400 text-[#090a0f] text-[10px] font-mono font-extrabold uppercase">
+                    Disponível p/ Empréstimo pelo Clube
+                  </span>
+                )}
+              </div>
+              {deskListing.listingReason && (
+                <div className="text-[11px] text-zinc-200 font-medium">
+                  Motivo do clube: <strong className="text-[#b5ff00]">{deskListing.listingReason}</strong>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Opponent Club Strategic Thinking & Needs Box */}
+          {deskListing.originClub &&
+            aiClubProfilesMap.has(deskListing.originClub.id) &&
+            (() => {
+              const clubInfo = aiClubProfilesMap.get(deskListing.originClub.id)!;
+              const prof = clubInfo.profile;
+              return (
+                <div className="rounded-2xl bg-[#0b0c10] border border-white/[0.08] p-3 space-y-1.5 text-[11px]">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono uppercase text-[10px] text-zinc-400 font-bold">
+                      Pensamento do {deskListing.originClub.shortName}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full bg-white/[0.07] text-[#b5ff00] font-mono text-[10px] font-bold">
+                      {prof.postureLabel}
+                    </span>
+                  </div>
+                  <div className="text-zinc-300 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span>
+                      Carências:{' '}
+                      <strong className="text-white font-mono">
+                        {prof.neededPositions.slice(0, 3).join(', ')}
+                      </strong>
+                    </span>
+                    <span>·</span>
+                    <span>
+                      Folha:{' '}
+                      <strong className="text-white font-mono">
+                        {prof.wageUsagePct}%
+                      </strong>
+                    </span>
+                    <span>·</span>
+                    <span>
+                      No mercado:{' '}
+                      <strong className="text-amber-300 font-mono">
+                        {clubInfo.listedBuyPlayers.length} venda
+                      </strong>{' '}
+                      /{' '}
+                      <strong className="text-sky-300 font-mono">
+                        {clubInfo.listedLoanPlayers.length} emprést.
+                      </strong>
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+
           {/* Difficulty Comparison Box (Club x Club & Player x Squad) */}
           <div className={`rounded-2xl border p-3.5 space-y-2.5 ${diffStyle.bg}`}>
             <div className="flex items-center justify-between gap-2">
@@ -847,7 +1290,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
               <div>
                 <span className="text-zinc-400 font-semibold">
                   Clubes ({userClub.shortName} ×{' '}
-                  {selectedListing.originClub?.shortName || 'Livre'}):{' '}
+                  {deskListing.originClub?.shortName || 'Livre'}):{' '}
                 </span>
                 {activeEvaluation.clubGapNote}
               </div>
@@ -1046,7 +1489,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
             disabled={activeEvaluation.isBlocked || !windowStatus.isOpen}
             onClick={() =>
               onProposeTransfer({
-                listing: selectedListing,
+                listing: deskListing,
                 dealMode: effectiveDealMode,
                 offerTier,
                 loanWageShare,
@@ -1085,7 +1528,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
           </h2>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 text-xs text-zinc-400 font-mono">
+        <div className="flex flex-wrap items-center gap-2.5 text-xs text-zinc-400 font-mono">
           <span
             className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono font-bold border ${
               windowStatus.isOpen
@@ -1100,22 +1543,14 @@ export const MarketView: React.FC<MarketViewProps> = ({
             )}
             {windowStatus.badgeLabel} · {windowStatus.name}
           </span>
-          <span>·</span>
+          <span className="hidden sm:inline">·</span>
           <span>
             Reputação do {userClub.shortName}:{' '}
             <strong className="text-[#b5ff00]">{userClub.reputation}/100</strong>
           </span>
-          <span>·</span>
-          <button
-            type="button"
-            onClick={() => setSubTab('HISTORICO')}
-            className="text-[#b5ff00] hover:underline font-bold flex items-center gap-1"
-          >
-            <History className="w-3.5 h-3.5" />
-            <span>
-              Histórico de Transferências ({transferHistory.length})
-            </span>
-          </button>
+          <div className="sm:hidden ml-auto">
+            <CurrencyToggle compact />
+          </div>
         </div>
       </div>
 
@@ -1324,6 +1759,10 @@ export const MarketView: React.FC<MarketViewProps> = ({
               label: `Agentes Livres (${freeAgents.length})`,
             },
             { id: 'EMPRESTIMOS', label: 'Empréstimos' },
+            {
+              id: 'OBSERVADOS',
+              label: `Observados (${watchedPlayers.length})`,
+            },
             {
               id: 'MEU_ELENCO',
               label: `Meu Elenco · Vender (${squad.length})`,
@@ -1844,8 +2283,567 @@ export const MarketView: React.FC<MarketViewProps> = ({
         </div>
       )}
 
+      {/* WATCHLIST / OBSERVADOS TAB */}
+      {subTab === 'OBSERVADOS' && (
+        <div className="space-y-4">
+          {/* Watchlist KPI Strip */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="bg-[#14171f] border border-white/[0.07] rounded-2xl p-4">
+              <div className="text-[10px] font-mono uppercase text-zinc-400">
+                Lista de Observação
+              </div>
+              <div className="font-display text-2xl font-extrabold text-white mt-1">
+                {watchlistStats.total} atleta(s)
+              </div>
+              <div className="text-[11px] font-mono text-zinc-400 mt-1">
+                Monitoramento contínuo de valor e OVR
+              </div>
+            </div>
+
+            <div className="bg-[#14171f] border border-white/[0.07] rounded-2xl p-4">
+              <div className="text-[10px] font-mono uppercase text-zinc-400">
+                Em Valorização / Evolução
+              </div>
+              <div className="font-display text-2xl font-extrabold text-[#b5ff00] mt-1">
+                {watchlistStats.appreciatedCount} em alta
+              </div>
+              <div className="text-[11px] font-mono text-zinc-400 mt-1">
+                Subiram de valor ou OVR desde a inclusão
+              </div>
+            </div>
+
+            <div className="bg-[#14171f] border border-white/[0.07] rounded-2xl p-4">
+              <div className="text-[10px] font-mono uppercase text-zinc-400">
+                Desvalorizados / Queda
+              </div>
+              <div className="font-display text-2xl font-extrabold text-rose-400 mt-1">
+                {watchlistStats.declinedCount} em baixa
+              </div>
+              <div className="text-[11px] font-mono text-zinc-400 mt-1">
+                Queda de valor de mercado ou OVR
+              </div>
+            </div>
+
+            <div className="bg-[#14171f] border border-white/[0.07] rounded-2xl p-4">
+              <div className="text-[10px] font-mono uppercase text-zinc-400">
+                Alertas de Status / Clube
+              </div>
+              <div className="font-display text-2xl font-extrabold text-amber-300 mt-1">
+                {watchlistStats.statusChangesCount} alerta(s)
+              </div>
+              <div className="text-[11px] font-mono text-zinc-400 mt-1">
+                Transferências, passes livres ou lesões
+              </div>
+            </div>
+          </div>
+
+          {/* Filter & Sort Bar */}
+          <div className="bg-[#14171f] border border-white/[0.08] rounded-[24px] p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2 flex-1">
+              <div className="relative flex-1 min-w-[200px] sm:max-w-xs">
+                <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={watchlistSearch}
+                  onChange={(e) => setWatchlistSearch(e.target.value)}
+                  placeholder="Buscar atleta ou clube observado..."
+                  aria-label="Buscar na lista de observação"
+                  className="w-full bg-[#0b0c10] border border-white/[0.08] rounded-full pl-9 pr-4 py-2 text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-[#b5ff00]"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1 bg-[#0b0c10] p-1 rounded-full border border-white/[0.07]">
+                {(
+                  [
+                    ['TODOS', 'Todos'],
+                    ['VALORIZADOS', 'Em Alta'],
+                    ['DESVALORIZADOS', 'Em Queda'],
+                    ['MUDANCA_STATUS', 'Mudança de Status'],
+                    ['DISPONIVEIS', 'Acessíveis'],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setWatchlistFilter(id)}
+                    className={`px-3 py-1 rounded-full text-[11px] font-bold transition-colors ${
+                      watchlistFilter === id
+                        ? 'bg-[#b5ff00] text-[#090a0f]'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <select
+              aria-label="Ordenar observados"
+              value={watchlistSort}
+              onChange={(e) =>
+                setWatchlistSort(e.target.value as WatchlistSortKey)
+              }
+              className="bg-[#0b0c10] border border-white/[0.08] rounded-full px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#b5ff00]"
+            >
+              <option value="RECENT">Adicionados Recentemente</option>
+              <option value="VALUE_DELTA_DESC">Maior Valorização</option>
+              <option value="OVR_DELTA_DESC">Maior Evolução de OVR</option>
+              <option value="OVR_DESC">Maior OVR Atual</option>
+              <option value="VALUE_ASC">Menor Valor Atual</option>
+            </select>
+          </div>
+
+          {watchedPlayers.length === 0 ? (
+            <div className="bg-[#14171f] border border-white/[0.07] rounded-[28px] p-10 text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-[#b5ff00]/15 border border-[#b5ff00]/35 flex items-center justify-center mx-auto text-[#b5ff00]">
+                <Bookmark className="w-6 h-6" />
+              </div>
+              <h3 className="font-display text-2xl font-extrabold uppercase text-white">
+                Nenhum Atleta Observado Ainda
+              </h3>
+              <p className="text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
+                Clique no ícone de marcador em qualquer jogador do mercado ou
+                em &ldquo;Observar&rdquo; na mesa de negociação para acompanhar
+                evolução de OVR, mudanças de clube e variações de valor ao longo
+                das temporadas.
+              </p>
+              <button
+                type="button"
+                onClick={() => setSubTab('NACIONAL_LIB')}
+                className="px-5 py-2 rounded-full bg-[#b5ff00] text-[#090a0f] text-xs font-extrabold"
+              >
+                Explorar Mercado Agora
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
+              {/* Watched Players List */}
+              <div className="xl:col-span-7 bg-[#14171f] border border-white/[0.07] rounded-[28px] overflow-hidden">
+                <div className="px-5 py-3.5 border-b border-white/[0.07] flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2 font-semibold text-white">
+                    <BookmarkCheck className="w-4 h-4 text-[#b5ff00]" />
+                    <span>
+                      {filteredWatchlist.length} atleta(s) monitorado(s)
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-zinc-400">
+                    Compare valor inicial × valor atual
+                  </span>
+                </div>
+
+                {filteredWatchlist.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-zinc-400 space-y-2">
+                    <div>
+                      Nenhum jogador observado corresponde ao filtro atual.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWatchlistFilter('TODOS');
+                        setWatchlistSearch('');
+                      }}
+                      className="px-4 py-1.5 rounded-full bg-[#b5ff00] text-[#090a0f] font-bold text-xs"
+                    >
+                      Mostrar Todos
+                    </button>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-white/[0.05]">
+                    {filteredWatchlist.map((item) => {
+                      const isSelected =
+                        selectedWatchedItem?.entry.playerId ===
+                        item.entry.playerId;
+                      const diffStyle = item.evaluation
+                        ? DIFFICULTY_STYLES[item.evaluation.level]
+                        : null;
+
+                      return (
+                        <div
+                          key={item.entry.playerId}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => handleSelectWatched(item)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              handleSelectWatched(item);
+                            }
+                          }}
+                          className={`w-full text-left px-4 sm:px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer transition-colors ${
+                            isSelected
+                              ? 'bg-[#b5ff00]/10 border-l-2 border-l-[#b5ff00]'
+                              : 'hover:bg-white/[0.03]'
+                          }`}
+                        >
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div className="w-11 h-11 rounded-xl bg-[#0b0c10] border border-white/[0.08] flex flex-col items-center justify-center shrink-0">
+                              <span className="font-mono tabular-nums text-sm font-extrabold text-[#b5ff00] leading-none">
+                                {item.currentOvr}
+                              </span>
+                              <span className="text-[9px] font-mono text-zinc-400 mt-0.5 leading-none">
+                                {item.entry.position}
+                              </span>
+                            </div>
+
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-semibold text-sm text-white truncate">
+                                  {item.entry.playerName}
+                                </span>
+                                {item.currentPlayer && (
+                                  <StarRating
+                                    player={item.currentPlayer}
+                                    ovr={item.currentOvr}
+                                    clubReputation={
+                                      item.listing?.originClub?.reputation ??
+                                      userClub.reputation
+                                    }
+                                    size="xs"
+                                  />
+                                )}
+                                {item.ovrDeltaSinceAdded !== 0 && (
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                                      item.ovrDeltaSinceAdded > 0
+                                        ? 'bg-[#b5ff00]/15 text-[#b5ff00]'
+                                        : 'bg-rose-500/15 text-rose-300'
+                                    }`}
+                                    title={`OVR ao observar: ${item.entry.addedOvr}`}
+                                  >
+                                    {item.ovrDeltaSinceAdded > 0
+                                      ? `▲ +${item.ovrDeltaSinceAdded}`
+                                      : `▼ ${item.ovrDeltaSinceAdded}`}{' '}
+                                    OVR
+                                  </span>
+                                )}
+                                {item.statusType === 'IN_USER_SQUAD' && (
+                                  <span className="px-1.5 py-0.5 rounded bg-[#b5ff00]/20 border border-[#b5ff00]/45 text-[#b5ff00] text-[10px] font-mono font-bold">
+                                    NO SEU ELENCO
+                                  </span>
+                                )}
+                                {item.statusType === 'LOANED_OUT' && (
+                                  <span className="px-1.5 py-0.5 rounded bg-sky-500/15 border border-sky-500/35 text-sky-300 text-[10px] font-mono font-bold">
+                                    EMPRESTADO
+                                  </span>
+                                )}
+                                {item.statusType === 'UNAVAILABLE' && (
+                                  <span className="px-1.5 py-0.5 rounded bg-zinc-700/40 border border-white/10 text-zinc-300 text-[10px] font-mono font-bold">
+                                    INDISPONÍVEL
+                                  </span>
+                                )}
+                                {item.clubChanged && (
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/35 text-amber-300 text-[10px] font-mono font-bold">
+                                    MUDOU DE CLUBE
+                                  </span>
+                                )}
+                                {item.currentPlayer?.injured && (
+                                  <span className="px-1.5 py-0.5 rounded bg-rose-500/15 border border-rose-500/35 text-rose-300 text-[10px] font-mono font-bold">
+                                    LESIONADO
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 flex-wrap">
+                                {item.listing?.originClub && (
+                                  <ClubBadge
+                                    clubId={item.listing.originClub.id}
+                                    abbr={item.listing.originClub.abbr}
+                                    name={item.listing.originClub.name}
+                                    primaryColor={
+                                      item.listing.originClub.primaryColor
+                                    }
+                                    size="xs"
+                                  />
+                                )}
+                                <span>
+                                  {item.currentAge} anos
+                                  {item.ageDelta > 0
+                                    ? ` (+${item.ageDelta}a)`
+                                    : ''}{' '}
+                                  ·{' '}
+                                  {item.clubChanged ? (
+                                    <span className="text-amber-300 font-medium">
+                                      {item.entry.addedClubName} →{' '}
+                                      {item.currentClubName}
+                                    </span>
+                                  ) : (
+                                    item.currentClubName
+                                  )}
+                                </span>
+                                <span className="text-zinc-600">·</span>
+                                <span className="text-zinc-500 font-mono text-[10px]">
+                                  Obs. desde {item.entry.addedAtDate}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pl-14 sm:pl-0">
+                            <div className="text-left sm:text-right">
+                              <div className="font-mono tabular-nums text-xs font-bold text-white flex items-center sm:justify-end gap-1.5">
+                                <span>
+                                  {item.listing?.scope === 'LIVRES'
+                                    ? 'Passe Livre'
+                                    : formatCompactBRL(item.currentMarketValue)}
+                                </span>
+                                {item.valueDelta !== 0 && (
+                                  <span
+                                    className={`text-[10px] font-bold inline-flex items-center gap-0.5 ${
+                                      item.valueDelta > 0
+                                        ? 'text-[#b5ff00]'
+                                        : 'text-rose-400'
+                                    }`}
+                                  >
+                                    {item.valueDelta > 0 ? (
+                                      <TrendingUp className="w-3 h-3" />
+                                    ) : (
+                                      <TrendingDown className="w-3 h-3" />
+                                    )}
+                                    {item.valueDelta > 0 ? '+' : ''}
+                                    {formatCompactBRL(item.valueDelta)}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] font-mono tabular-nums text-zinc-400">
+                                {formatCompactBRL(item.currentSalary)}/mês
+                                {item.salaryDelta !== 0 && (
+                                  <span
+                                    className={`ml-1 text-[10px] ${
+                                      item.salaryDelta > 0
+                                        ? 'text-amber-300'
+                                        : 'text-[#b5ff00]'
+                                    }`}
+                                  >
+                                    ({item.salaryDelta > 0 ? '+' : ''}
+                                    {formatCompactBRL(item.salaryDelta)})
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {item.evaluation && diffStyle && (
+                              <div className="hidden md:block text-right min-w-[74px]">
+                                <div
+                                  className={`text-[11px] font-bold ${diffStyle.text}`}
+                                >
+                                  {item.evaluation.level}
+                                </div>
+                                <div className="text-[10px] font-mono tabular-nums text-zinc-500">
+                                  {item.evaluation.acceptanceChance}% aceite
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="flex items-center gap-1">
+                              {item.currentPlayer && (
+                                <button
+                                  type="button"
+                                  title="Inspecionar 18 atributos"
+                                  aria-label={`Inspecionar ${item.entry.playerName}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onInspectPlayer(
+                                      item.currentPlayer!,
+                                      item.listing || undefined
+                                    );
+                                  }}
+                                  className="p-2 rounded-full bg-white/[0.06] hover:bg-white/[0.14] text-zinc-300 hover:text-[#b5ff00] transition-colors"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                              {onRemoveWatchedPlayer && (
+                                <button
+                                  type="button"
+                                  title="Remover dos observados"
+                                  aria-label={`Remover ${item.entry.playerName} dos observados`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onRemoveWatchedPlayer(item.entry.playerId);
+                                  }}
+                                  className="p-2 rounded-full bg-white/[0.05] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 transition-colors"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Right Column: Monitoring History + Negotiation Desk */}
+              <div className="hidden xl:block xl:col-span-5 xl:sticky xl:top-20 space-y-4">
+                {selectedWatchedItem && (
+                  <>
+                    {/* Baseline vs Live Monitoring Card */}
+                    <div className="bg-[#14171f] border border-white/[0.08] rounded-[24px] p-4 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <BookmarkCheck className="w-4 h-4 text-[#b5ff00]" />
+                          <span className="text-xs font-mono uppercase tracking-wider font-bold text-white">
+                            Histórico de Monitoramento
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-mono text-zinc-400">
+                          Desde {selectedWatchedItem.entry.addedAtDate}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-[#0b0c10] border border-white/[0.06] rounded-xl p-2.5">
+                          <div className="text-[10px] text-zinc-500 font-mono uppercase">
+                            Evolução OVR
+                          </div>
+                          <div className="font-mono font-bold text-white mt-0.5 flex items-center gap-1.5">
+                            <span className="text-zinc-400">
+                              {selectedWatchedItem.entry.addedOvr}
+                            </span>
+                            <span className="text-zinc-600">→</span>
+                            <span className="text-[#b5ff00]">
+                              {selectedWatchedItem.currentOvr}
+                            </span>
+                            {selectedWatchedItem.ovrDeltaSinceAdded !== 0 && (
+                              <span
+                                className={`text-[10px] ${
+                                  selectedWatchedItem.ovrDeltaSinceAdded > 0
+                                    ? 'text-[#b5ff00]'
+                                    : 'text-rose-400'
+                                }`}
+                              >
+                                (
+                                {selectedWatchedItem.ovrDeltaSinceAdded > 0
+                                  ? `+${selectedWatchedItem.ovrDeltaSinceAdded}`
+                                  : selectedWatchedItem.ovrDeltaSinceAdded}
+                                )
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="bg-[#0b0c10] border border-white/[0.06] rounded-xl p-2.5">
+                          <div className="text-[10px] text-zinc-500 font-mono uppercase">
+                            Valor de Mercado
+                          </div>
+                          <div className="font-mono font-bold text-white mt-0.5 flex items-center gap-1 flex-wrap">
+                            <span className="text-zinc-400 text-[11px]">
+                              {formatCompactBRL(
+                                selectedWatchedItem.entry.addedMarketValue
+                              )}
+                            </span>
+                            <span className="text-zinc-600">→</span>
+                            <span>
+                              {formatCompactBRL(
+                                selectedWatchedItem.currentMarketValue
+                              )}
+                            </span>
+                            {selectedWatchedItem.valueDelta !== 0 && (
+                              <span
+                                className={`text-[10px] ${
+                                  selectedWatchedItem.valueDelta > 0
+                                    ? 'text-[#b5ff00]'
+                                    : 'text-rose-400'
+                                }`}
+                              >
+                                ({selectedWatchedItem.valueDeltaPct > 0 ? '+' : ''}
+                                {selectedWatchedItem.valueDeltaPct}%)
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="bg-[#0b0c10] border border-white/[0.06] rounded-xl p-2.5">
+                          <div className="text-[10px] text-zinc-500 font-mono uppercase">
+                            Clube / Vínculo
+                          </div>
+                          <div className="text-[11px] font-semibold text-white mt-0.5 truncate">
+                            {selectedWatchedItem.clubChanged ? (
+                              <span className="text-amber-300">
+                                {selectedWatchedItem.entry.addedClubName} →{' '}
+                                {selectedWatchedItem.currentClubName}
+                              </span>
+                            ) : (
+                              selectedWatchedItem.currentClubName
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="bg-[#0b0c10] border border-white/[0.06] rounded-xl p-2.5">
+                          <div className="text-[10px] text-zinc-500 font-mono uppercase">
+                            Desempenho {seasonYear}
+                          </div>
+                          <div className="font-mono text-[11px] text-zinc-200 mt-0.5">
+                            {selectedWatchedItem.currentPlayer
+                              ? `${selectedWatchedItem.currentPlayer.seasonStats.matches}j · ${selectedWatchedItem.currentPlayer.seasonStats.goals}g · ${selectedWatchedItem.currentPlayer.seasonStats.assists}a · ${selectedWatchedItem.currentPlayer.seasonStats.avgRating.toFixed(1)}`
+                              : 'Sem dados'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {selectedWatchedItem.listing ? (
+                      renderNegotiationDesk(false)
+                    ) : (
+                      <div className="bg-[#14171f] border border-white/[0.08] rounded-[24px] p-5 space-y-3 text-xs">
+                        <div className="font-bold text-white text-sm">
+                          {selectedWatchedItem.statusType === 'IN_USER_SQUAD'
+                            ? `${selectedWatchedItem.entry.playerName} já faz parte do seu elenco`
+                            : selectedWatchedItem.statusType === 'LOANED_OUT'
+                            ? `${selectedWatchedItem.entry.playerName} está cedido por empréstimo`
+                            : `${selectedWatchedItem.entry.playerName} não está disponível no mercado`}
+                        </div>
+                        <p className="text-zinc-400">
+                          {selectedWatchedItem.statusType === 'IN_USER_SQUAD'
+                            ? 'Você já concluiu a contratação deste atleta. Ele pode ser gerenciado na aba Meu Elenco ou removido da lista de observação.'
+                            : 'O atleta não está listado para transferência no momento (aposentadoria ou saída de catálogo).'}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          {selectedWatchedItem.currentPlayer && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onInspectPlayer(
+                                  selectedWatchedItem.currentPlayer!
+                                )
+                              }
+                              className="px-4 py-2 rounded-full bg-white/[0.08] hover:bg-white/[0.15] text-white font-bold flex items-center gap-1.5"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-[#b5ff00]" />
+                              <span>Ver 18 Atributos</span>
+                            </button>
+                          )}
+                          {onRemoveWatchedPlayer && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onRemoveWatchedPlayer(
+                                  selectedWatchedItem.entry.playerId
+                                )
+                              }
+                              className="px-4 py-2 rounded-full bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 font-bold"
+                            >
+                              Remover da Lista
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* INCOMING MARKET WORKSPACE */}
-      {subTab !== 'MEU_ELENCO' && subTab !== 'HISTORICO' && (
+      {subTab !== 'MEU_ELENCO' &&
+        subTab !== 'HISTORICO' &&
+        subTab !== 'OBSERVADOS' && (
         <div className="space-y-4">
           {/* Primary & Advanced Filter Panel */}
           <div className="bg-[#14171f] border border-white/[0.08] rounded-[24px] p-4 space-y-3.5">
@@ -1952,6 +2950,174 @@ export const MarketView: React.FC<MarketViewProps> = ({
                 </select>
               </div>
             </div>
+
+            {/* Club Availability Filter Bar (Placed for Purchase or Loan by Opponent Clubs) + Opponent Club Needs Radar Toggle */}
+            {subTab !== 'LIVRES' && (
+              <div className="pt-2.5 border-t border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mr-1">
+                    Disponibilizados pelos Clubes:
+                  </span>
+                  {(
+                    [
+                      {
+                        id: 'ALL',
+                        label: 'Todos do Mercado',
+                        badgeClass: 'bg-[#b5ff00] text-[#090a0f] border-[#b5ff00]',
+                      },
+                      {
+                        id: 'LISTED_ANY',
+                        label: `Colocados pelos Clubes (${clubListingCounts.listedAny})`,
+                        badgeClass: 'bg-[#b5ff00] text-[#090a0f] border-[#b5ff00]',
+                      },
+                      {
+                        id: 'LISTED_BUY',
+                        label: `Listados p/ Compra (${clubListingCounts.listedBuy})`,
+                        badgeClass: 'bg-amber-400 text-[#090a0f] border-amber-400',
+                      },
+                      {
+                        id: 'LISTED_LOAN',
+                        label: `Listados p/ Empréstimo (${clubListingCounts.listedLoan})`,
+                        badgeClass: 'bg-sky-400 text-[#090a0f] border-sky-400',
+                      },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => {
+                        setClubListingFilter(opt.id);
+                        if (opt.id === 'LISTED_LOAN') setDealMode('LOAN');
+                        if (opt.id === 'LISTED_BUY') setDealMode('BUY');
+                      }}
+                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors whitespace-nowrap ${
+                        clubListingFilter === opt.id
+                          ? opt.badgeClass
+                          : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowClubRadar((v) => !v)}
+                  className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors whitespace-nowrap self-start sm:self-auto ${
+                    showClubRadar
+                      ? 'bg-[#b5ff00]/20 border-[#b5ff00] text-[#b5ff00]'
+                      : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
+                  }`}
+                >
+                  {showClubRadar
+                    ? 'Ocultar Necessidades dos Clubes'
+                    : 'Radar dos Clubes Adversários (Necessidades & Listas)'}
+                </button>
+              </div>
+            )}
+
+            {/* Collapsible Opponent Clubs Strategic Radar (Purchases, Sales, Loans & Positional Needs) */}
+            {showClubRadar && subTab !== 'LIVRES' && (
+              <div className="pt-3 border-t border-white/[0.07] space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-xs font-extrabold uppercase tracking-wider text-white">
+                      Pensamento de Mercado dos Clubes Adversários
+                    </h4>
+                    <p className="text-[11px] text-zinc-400">
+                      Veja o que cada clube busca contratar, sua postura financeira e quantos atletas disponibilizou para venda ou empréstimo. Clique em um clube para filtrar seus jogadores listados.
+                    </p>
+                  </div>
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('');
+                        setClubListingFilter('ALL');
+                      }}
+                      className="text-[11px] font-bold text-[#b5ff00] hover:underline"
+                    >
+                      Limpar filtro de clube
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 max-h-72 overflow-y-auto pr-1">
+                  {Array.from(aiClubProfilesMap.values())
+                    .filter(({ club }) => {
+                      if (subTab === 'NACIONAL_LIB' && domesticScope !== 'ALL') {
+                        if (domesticScope === 'SERIE_A' && club.division !== 'A')
+                          return false;
+                        if (domesticScope === 'SERIE_B' && club.division !== 'B')
+                          return false;
+                        if (
+                          domesticScope === 'LIBERTADORES' &&
+                          club.division !== 'LIB'
+                        )
+                          return false;
+                      }
+                      return true;
+                    })
+                    .map(({ club, profile, listedBuyPlayers, listedLoanPlayers }) => (
+                      <button
+                        key={club.id}
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery(club.name);
+                          setClubListingFilter('LISTED_ANY');
+                        }}
+                        className="text-left bg-[#0b0c10] hover:bg-white/[0.04] border border-white/[0.08] rounded-2xl p-3 space-y-1.5 transition-colors"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <ClubBadge
+                              clubId={club.id}
+                              abbr={club.abbr}
+                              name={club.name}
+                              primaryColor={club.primaryColor}
+                              size="xs"
+                            />
+                            <span className="font-bold text-xs text-white truncate">
+                              {club.shortName}
+                            </span>
+                          </div>
+                          <span className="text-[10px] font-mono text-[#b5ff00] shrink-0">
+                            {profile.posture === 'COMPRADOR'
+                              ? 'Comprador'
+                              : profile.posture === 'VENDEDOR_ALIVIO_FOLHA'
+                              ? 'Alívio Folha'
+                              : profile.posture === 'BUSCA_EMPRESTIMOS'
+                              ? 'Busca Emprést.'
+                              : 'Equilibrado'}
+                          </span>
+                        </div>
+
+                        <div className="text-[11px] text-zinc-300 flex items-center justify-between gap-2">
+                          <span>
+                            Busca:{' '}
+                            <strong className="font-mono text-white">
+                              {profile.neededPositions.slice(0, 3).join(', ')}
+                            </strong>
+                          </span>
+                          <span className="font-mono text-[10px] text-zinc-400">
+                            Folha {profile.wageUsagePct}%
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 pt-0.5 text-[10px] font-mono">
+                          <span className="px-2 py-0.5 rounded bg-amber-400/15 border border-amber-400/30 text-amber-300 font-bold">
+                            {listedBuyPlayers.length} p/ Compra
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-sky-400/15 border border-sky-400/30 text-sky-300 font-bold">
+                            {listedLoanPlayers.length} p/ Empréstimo
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
 
             {/* Expandable Advanced Filters Grid (Position, Price Range, OVR/Skill Level, Specific Attribute, Age, Difficulty) */}
             {showAdvancedFilters && (
@@ -2226,6 +3392,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                     const diffStyle = DIFFICULTY_STYLES[ev.level];
                     const isSelected =
                       selectedListing?.player.id === item.player.id;
+                    const isWatched = watchedIdsSet.has(item.player.id);
                     const feeDisplay =
                       item.scope === 'LIVRES'
                         ? 'Livre'
@@ -2234,11 +3401,18 @@ export const MarketView: React.FC<MarketViewProps> = ({
                         : formatCompactBRL(item.buyFee);
 
                     return (
-                      <button
+                      <div
                         key={item.player.id}
-                        type="button"
+                        role="button"
+                        tabIndex={0}
                         onClick={() => handleSelectListing(item)}
-                        className={`w-full text-left px-4 sm:px-5 py-3.5 flex items-center justify-between gap-3 transition-colors ${
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleSelectListing(item);
+                          }
+                        }}
+                        className={`w-full text-left px-4 sm:px-5 py-3.5 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
                           isSelected
                             ? 'bg-[#b5ff00]/10 border-l-2 border-l-[#b5ff00]'
                             : 'hover:bg-white/[0.03]'
@@ -2255,7 +3429,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                           </div>
 
                           <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="font-semibold text-sm text-white truncate">
                                 {item.player.name}
                               </span>
@@ -2267,6 +3441,28 @@ export const MarketView: React.FC<MarketViewProps> = ({
                                 }
                                 size="xs"
                               />
+                              {item.isTransferListed && (
+                                <span
+                                  title={
+                                    item.listingReason ||
+                                    'Colocado à venda pelo clube de origem'
+                                  }
+                                  className="px-1.5 py-0.5 rounded bg-amber-400/15 border border-amber-400/40 text-amber-300 text-[9px] font-mono font-extrabold shrink-0"
+                                >
+                                  LISTADO P/ COMPRA
+                                </span>
+                              )}
+                              {item.isLoanListed && (
+                                <span
+                                  title={
+                                    item.listingReason ||
+                                    'Disponibilizado para empréstimo pelo clube de origem'
+                                  }
+                                  className="px-1.5 py-0.5 rounded bg-sky-400/15 border border-sky-400/40 text-sky-300 text-[9px] font-mono font-extrabold shrink-0"
+                                >
+                                  LISTADO P/ EMPRÉSTIMO
+                                </span>
+                              )}
                               {keyAttributeFilter !== 'NONE' && (
                                 <span className="px-1.5 py-0.5 rounded bg-[#b5ff00]/15 text-[#b5ff00] text-[10px] font-mono font-bold shrink-0">
                                   {
@@ -2301,12 +3497,13 @@ export const MarketView: React.FC<MarketViewProps> = ({
                                 {item.originClub
                                   ? `${item.originClub.shortName} · ${item.originClub.country}`
                                   : `${item.player.nationality} · Agente Livre`}
+                                {item.listingReason ? ` · ${item.listingReason}` : ''}
                               </span>
                             </div>
                           </div>
                         </div>
 
-                        <div className="text-right shrink-0 flex items-center gap-3">
+                        <div className="text-right shrink-0 flex items-center gap-2.5 sm:gap-3">
                           <div>
                             <div className="font-mono tabular-nums text-xs font-bold text-white">
                               {feeDisplay}
@@ -2332,9 +3529,40 @@ export const MarketView: React.FC<MarketViewProps> = ({
                             </div>
                           </div>
 
+                          {onToggleWatchPlayer && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleWatchPlayer(item);
+                              }}
+                              title={
+                                isWatched
+                                  ? 'Remover da Lista de Observação'
+                                  : 'Observar atleta'
+                              }
+                              aria-label={
+                                isWatched
+                                  ? `Remover ${item.player.name} dos observados`
+                                  : `Observar ${item.player.name}`
+                              }
+                              className={`p-1.5 rounded-full border transition-colors shrink-0 ${
+                                isWatched
+                                  ? 'bg-[#b5ff00]/20 border-[#b5ff00]/60 text-[#b5ff00]'
+                                  : 'bg-white/[0.04] border-white/[0.08] text-zinc-400 hover:text-[#b5ff00] hover:border-[#b5ff00]/40'
+                              }`}
+                            >
+                              {isWatched ? (
+                                <BookmarkCheck className="w-3.5 h-3.5" />
+                              ) : (
+                                <Bookmark className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          )}
+
                           <ArrowUpRight className="w-4 h-4 text-zinc-500 shrink-0" />
                         </div>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -2359,74 +3587,6 @@ export const MarketView: React.FC<MarketViewProps> = ({
               {renderNegotiationDesk(false)}
             </div>
           </div>
-
-          {/* Inline Recent Transfer History Strip (Always accessible while scouting) */}
-          <div className="bg-[#14171f] border border-white/[0.07] rounded-[24px] p-4 sm:p-5 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <History className="w-4 h-4 text-[#b5ff00]" />
-                <h3 className="font-display text-lg font-extrabold uppercase tracking-tight text-white">
-                  Histórico de Transferências da Temporada ({transferHistory.length})
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSubTab('HISTORICO')}
-                className="text-xs font-bold text-[#b5ff00] hover:underline flex items-center gap-1"
-              >
-                <span>Abrir Histórico Completo & Balanço</span>
-                <ArrowUpRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {transferHistory.length === 0 ? (
-              <div className="text-xs text-zinc-400 bg-[#0b0c10] border border-white/[0.05] rounded-2xl p-3.5">
-                Nenhuma transferência registrada ainda em {seasonYear}. Assim que
-                você ou clubes da IA contratarem, venderem ou emprestarem
-                jogadores, o histórico aparecerá aqui.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                {transferHistory.slice(0, 6).map((rec) => {
-                  const badge = formatTransferRecordBadge(rec);
-                  return (
-                    <div
-                      key={rec.id}
-                      className="bg-[#0b0c10] border border-white/[0.07] rounded-2xl p-3 flex items-center justify-between gap-2 text-xs"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <ArrowDownLeft className="w-3 h-3 text-[#b5ff00] shrink-0" />
-                          <span
-                            className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded border ${badge.className}`}
-                          >
-                            {badge.label}
-                          </span>
-                        </div>
-                        <div className="font-bold text-white truncate mt-1">
-                          {rec.playerName} ({rec.position} · OVR {rec.ovr})
-                        </div>
-                        <div className="text-[10px] text-zinc-400 truncate">
-                          {rec.counterpartyClubName} · {rec.date}
-                        </div>
-                      </div>
-                      <div className="text-right font-mono tabular-nums shrink-0">
-                        <div className="font-bold text-white">
-                          {rec.feeAmount === 0
-                            ? 'Livre'
-                            : formatCompactBRL(rec.feeAmount)}
-                        </div>
-                        <div className="text-[10px] text-zinc-400">
-                          {rec.monthlySalaryImpact >= 0 ? '+' : ''}
-                          {formatCompactBRL(rec.monthlySalaryImpact)}/mês
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
         </div>
       )}
 
@@ -2438,8 +3598,31 @@ export const MarketView: React.FC<MarketViewProps> = ({
           aria-modal="true"
           aria-label="Mesa de Negociação"
         >
-          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            {renderNegotiationDesk(true)}
+          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto space-y-3">
+            {subTab === 'OBSERVADOS' && selectedWatchedItem && !selectedWatchedItem.listing ? (
+              <div className="bg-[#14171f] border border-white/[0.08] rounded-[24px] p-5 space-y-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-white text-sm">
+                    {selectedWatchedItem.entry.playerName}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMobileDeskOpen(false)}
+                    aria-label="Fechar painel"
+                    className="p-2 rounded-full bg-white/[0.08] text-zinc-300 hover:text-white"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="text-zinc-400">
+                  {selectedWatchedItem.statusType === 'IN_USER_SQUAD'
+                    ? 'Atleta já integra o elenco principal.'
+                    : 'Atleta indisponível para negociação no momento.'}
+                </p>
+              </div>
+            ) : (
+              renderNegotiationDesk(true)
+            )}
           </div>
         </div>
       )}

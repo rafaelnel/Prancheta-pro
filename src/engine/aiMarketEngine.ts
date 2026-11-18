@@ -1,4 +1,5 @@
 import { getRealSquadForClub } from '../data/initialDatabase';
+import { FORMATIONS } from '../data/tacticsData';
 import { calculatePlayerOverall } from './playerOverall';
 import { assignPotentialStars } from './economyAndEvolution';
 import { MIN_GOALKEEPERS, MIN_SQUAD_SIZE, isTransferWindowOpen } from './transferEngine';
@@ -7,10 +8,318 @@ import {
   Club,
   InboxMessage,
   IncomingTransferOffer,
+  NaturalPosition,
   Player,
   PositionSector,
   TransferRecord,
 } from '../types/football';
+
+export interface AiClubMarketProfile {
+  clubId: string;
+  clubShortName: string;
+  posture:
+    | 'COMPRADOR'
+    | 'EQUILIBRADO'
+    | 'VENDEDOR_ALIVIO_FOLHA'
+    | 'BUSCA_EMPRESTIMOS';
+  postureLabel: string;
+  preferredIncomingMode: 'COMPRA' | 'EMPRESTIMO' | 'AMBOS';
+  neededPositions: NaturalPosition[];
+  neededSectors: PositionSector[];
+  transferListedCount: number;
+  loanListedCount: number;
+  wageUsagePct: number;
+  targetStarterOvr: number;
+  summaryText: string;
+}
+
+/**
+ * Avalia o elenco de um clube da IA (necessidades por posição/setor, folha salarial, caixa e idade)
+ * e define quais jogadores o clube coloca como disponíveis para COMPRA (isTransferListed)
+ * ou EMPRÉSTIMO (isLoanListed), incluindo a justificativa técnica/financeira.
+ */
+export function evaluateAiClubSquadAndListings(
+  club: Club,
+  squad: Player[]
+): Player[] {
+  if (!squad || squad.length === 0) return [];
+
+  const targetStarterOvr = Math.round(
+    (club.overallAttack + club.overallMidfield + club.overallDefense) / 3
+  );
+  const totalPayroll = squad.reduce((acc, p) => acc + p.salary, 0);
+  const wageUsageRatio = totalPayroll / Math.max(1, club.wageBudget);
+  const avgSalary = totalPayroll / Math.max(1, squad.length);
+  const needsCashOrWageRelief =
+    club.cashBalance < 6_500_000 || wageUsageRatio >= 0.86;
+
+  // Group players by natural position sorted by starter status then OVR descending
+  const byPos = new Map<NaturalPosition, { player: Player; ovr: number }[]>();
+  const bySectorCount = new Map<PositionSector, number>();
+
+  for (const p of squad) {
+    const ovr = calculatePlayerOverall(p.attributes, p.position);
+    const list = byPos.get(p.position) || [];
+    list.push({ player: p, ovr });
+    byPos.set(p.position, list);
+    bySectorCount.set(p.sector, (bySectorCount.get(p.sector) || 0) + 1);
+  }
+
+  for (const [, list] of byPos.entries()) {
+    list.sort((a, b) => {
+      if (a.player.isStarter !== b.player.isStarter) {
+        return a.player.isStarter ? -1 : 1;
+      }
+      return b.ovr - a.ovr;
+    });
+  }
+
+  const gkTotal = byPos.get('GOL')?.length || 0;
+
+  return squad.map((player) => {
+    // Players on loan from another club cannot be listed by the borrowing club
+    if (player.contractType === 'EMPRESTADO') {
+      return {
+        ...player,
+        isTransferListed: false,
+        isLoanListed: false,
+        marketListingReason: undefined,
+      };
+    }
+
+    // Never list the only goalkeeper or if squad is at minimum size
+    if (
+      squad.length <= MIN_SQUAD_SIZE ||
+      (player.position === 'GOL' && gkTotal <= MIN_GOALKEEPERS + 1 && player.isStarter)
+    ) {
+      return {
+        ...player,
+        isTransferListed: false,
+        isLoanListed: false,
+        marketListingReason: undefined,
+      };
+    }
+
+    const posGroup = byPos.get(player.position) || [];
+    const rankInPos = posGroup.findIndex((item) => item.player.id === player.id);
+    const posCount = posGroup.length;
+    const sectorCount = bySectorCount.get(player.sector) || 0;
+    const ovr = calculatePlayerOverall(player.attributes, player.position);
+
+    let isTransferListed = false;
+    let isLoanListed = false;
+    let reason: string | undefined;
+
+    if (!player.isStarter) {
+      // 1. Young prospects (<= 23) on the bench -> Loan list for development
+      if (player.age <= 23 && (posCount >= 2 || sectorCount >= 5)) {
+        isLoanListed = true;
+        reason = 'Listado p/ Empréstimo: Jovem para ganhar minutagem';
+        // If 3rd option or club needs cash, also open to sale offers
+        if (rankInPos >= 2 && needsCashOrWageRelief) {
+          isTransferListed = true;
+          reason = 'Disponível p/ Empréstimo ou Compra (Excesso no setor)';
+        }
+      }
+      // 2. High salary reserve when club wants wage relief
+      else if (
+        player.salary >= avgSalary * 1.05 &&
+        (needsCashOrWageRelief || player.age >= 27)
+      ) {
+        isTransferListed = true;
+        reason = 'Listado p/ Compra: Alívio de folha salarial';
+        if (player.age <= 28) {
+          isLoanListed = true;
+        }
+      }
+      // 3. Surplus depth (2nd/3rd reserve in position or crowded sector)
+      else if (rankInPos >= 2 || (rankInPos >= 1 && sectorCount >= 6)) {
+        if (player.age >= 24) {
+          isTransferListed = true;
+          reason = 'Listado p/ Compra: Excesso de opções na posição';
+        }
+        if (player.age <= 26 || ovr <= targetStarterOvr - 2) {
+          isLoanListed = true;
+          if (!reason) {
+            reason = 'Listado p/ Empréstimo: Reserva disponível no elenco';
+          }
+        }
+      }
+      // 4. Veteran or below-level reserve outside tactical plans
+      else if (
+        (player.age >= 29 && ovr <= targetStarterOvr - 2) ||
+        ovr <= targetStarterOvr - 4
+      ) {
+        isTransferListed = true;
+        reason = 'Listado p/ Compra: Fora dos planos titulares';
+      }
+    } else if (
+      // Occasional starter sale if club is desperate for cash and has a solid backup right behind
+      club.cashBalance < 3_800_000 &&
+      posCount >= 2 &&
+      posGroup[1] &&
+      posGroup[1].ovr >= ovr - 2 &&
+      player.marketValue >= 10_000_000
+    ) {
+      isTransferListed = true;
+      reason = 'Listado p/ Compra: Clube precisa fazer caixa';
+    }
+
+    return {
+      ...player,
+      isTransferListed,
+      isLoanListed,
+      marketListingReason: reason,
+    };
+  });
+}
+
+/**
+ * Analisa o pensamento de mercado de um clube adversário:
+ * carências por posição/setor, postura financeira (compra, venda ou empréstimo) e resumo estratégico.
+ */
+export function analyzeAiClubMarketProfile(
+  club: Club,
+  squad: Player[]
+): AiClubMarketProfile {
+  const targetStarterOvr = Math.round(
+    (club.overallAttack + club.overallMidfield + club.overallDefense) / 3
+  );
+  const totalPayroll = squad.reduce((acc, p) => acc + p.salary, 0);
+  const wageUsagePct = Math.round(
+    (totalPayroll / Math.max(1, club.wageBudget)) * 100
+  );
+
+  const formationSlots = FORMATIONS[club.formation] || FORMATIONS['4-2-3-1'];
+  const requiredPosCounts = new Map<NaturalPosition, number>();
+  for (const slot of formationSlots) {
+    requiredPosCounts.set(
+      slot.label,
+      (requiredPosCounts.get(slot.label) || 0) + 1
+    );
+  }
+
+  // Score each position's need urgency
+  const posNeedScores: {
+    pos: NaturalPosition;
+    sector: PositionSector;
+    urgency: number;
+  }[] = [];
+
+  const allPositions: { pos: NaturalPosition; sector: PositionSector }[] = [
+    { pos: 'GOL', sector: 'GOL' },
+    { pos: 'ZAG', sector: 'DEF' },
+    { pos: 'LD', sector: 'DEF' },
+    { pos: 'LE', sector: 'DEF' },
+    { pos: 'VOL', sector: 'MEI' },
+    { pos: 'MC', sector: 'MEI' },
+    { pos: 'MEI', sector: 'MEI' },
+    { pos: 'PD', sector: 'ATA' },
+    { pos: 'PE', sector: 'ATA' },
+    { pos: 'ATA', sector: 'ATA' },
+  ];
+
+  for (const { pos, sector } of allPositions) {
+    const reqStarters = requiredPosCounts.get(pos) || 0;
+    const playersAtPos = squad
+      .filter((p) => p.position === pos)
+      .map((p) => ({
+        player: p,
+        ovr: calculatePlayerOverall(p.attributes, p.position),
+      }))
+      .sort((a, b) => b.ovr - a.ovr);
+
+    let urgency = 0;
+    const desiredDepth = reqStarters > 0 ? reqStarters + 1 : 1;
+    if (playersAtPos.length < desiredDepth) {
+      urgency += (desiredDepth - playersAtPos.length) * 14;
+    }
+    if (reqStarters > 0) {
+      const starterOvr = playersAtPos[0]?.ovr ?? targetStarterOvr - 8;
+      if (starterOvr < targetStarterOvr) {
+        urgency += (targetStarterOvr - starterOvr) * 4;
+      }
+      if (playersAtPos[0]?.player.age >= 33) {
+        urgency += 6;
+      }
+    }
+
+    if (urgency > 0) {
+      posNeedScores.push({ pos, sector, urgency });
+    }
+  }
+
+  posNeedScores.sort((a, b) => b.urgency - a.urgency);
+
+  const neededPositions = posNeedScores.slice(0, 3).map((x) => x.pos);
+  if (neededPositions.length === 0) {
+    const weakestSec = findWeakestSector(squad);
+    const defaultPos: NaturalPosition =
+      weakestSec === 'ATA'
+        ? 'ATA'
+        : weakestSec === 'MEI'
+        ? 'MC'
+        : weakestSec === 'DEF'
+        ? 'ZAG'
+        : 'GOL';
+    neededPositions.push(defaultPos);
+  }
+
+  const neededSectors = Array.from(
+    new Set(
+      posNeedScores.length > 0
+        ? posNeedScores.slice(0, 2).map((x) => x.sector)
+        : [findWeakestSector(squad)]
+    )
+  );
+
+  const transferListedCount = squad.filter((p) => p.isTransferListed).length;
+  const loanListedCount = squad.filter((p) => p.isLoanListed).length;
+
+  let posture: AiClubMarketProfile['posture'] = 'EQUILIBRADO';
+  let postureLabel = 'Equilibrado (Compra & Venda Pontual)';
+  let preferredIncomingMode: AiClubMarketProfile['preferredIncomingMode'] =
+    'AMBOS';
+
+  if (club.cashBalance >= 16_000_000 && wageUsagePct <= 84) {
+    posture = 'COMPRADOR';
+    postureLabel = 'Comprador Ativo (Busca Titulares)';
+    preferredIncomingMode = 'COMPRA';
+  } else if (club.cashBalance < 5_500_000 || wageUsagePct >= 90) {
+    posture = 'VENDEDOR_ALIVIO_FOLHA';
+    postureLabel = 'Vendedor & Alívio de Folha';
+    preferredIncomingMode = 'EMPRESTIMO';
+  } else if (club.cashBalance < 10_000_000) {
+    posture = 'BUSCA_EMPRESTIMOS';
+    postureLabel = 'Foco em Empréstimos & Oportunidades';
+    preferredIncomingMode = 'EMPRESTIMO';
+  }
+
+  const summaryText = `${club.shortName} (${postureLabel}) prioriza reforçar ${neededPositions.join(
+    ', '
+  )} via ${
+    preferredIncomingMode === 'COMPRA'
+      ? 'compra definitiva'
+      : preferredIncomingMode === 'EMPRESTIMO'
+      ? 'empréstimo'
+      : 'compra ou empréstimo'
+  } e disponibilizou ${transferListedCount} atleta(s) p/ venda e ${loanListedCount} p/ empréstimo.`;
+
+  return {
+    clubId: club.id,
+    clubShortName: club.shortName,
+    posture,
+    postureLabel,
+    preferredIncomingMode,
+    neededPositions,
+    neededSectors,
+    transferListedCount,
+    loanListedCount,
+    wageUsagePct,
+    targetStarterOvr,
+    summaryText,
+  };
+}
 
 export function buildInitialAiSquads(
   clubs: Club[],
@@ -19,7 +328,8 @@ export function buildInitialAiSquads(
   const map: Record<string, Player[]> = {};
   for (const club of clubs) {
     if (club.id === userClubId) continue;
-    map[club.id] = getRealSquadForClub(club);
+    const rawSquad = getRealSquadForClub(club);
+    map[club.id] = evaluateAiClubSquadAndListings(club, rawSquad);
   }
   return map;
 }
@@ -68,8 +378,8 @@ function findWeakestSector(squad: Player[]): PositionSector {
 }
 
 /**
- * Simulates autonomous AI-to-AI transfers (purchases and loans) based on cash balance,
- * wage budget, club reputation, and positional squad needs.
+ * Simulates autonomous AI-to-AI transfers (purchases and loans) driven by each club's
+ * positional needs, financial posture, and transfer/loan listed players.
  */
 export function simulateAiTransferWindowTick(params: {
   clubs: Club[];
@@ -106,13 +416,20 @@ export function simulateAiTransferWindowTick(params: {
   const workingClubs = clubs.map((c) => ({ ...c }));
   const workingSquads: Record<string, Player[]> = {};
   for (const [cid, list] of Object.entries(aiSquads)) {
-    workingSquads[cid] = list.map((p) => ({ ...p }));
+    const clubObj = workingClubs.find((c) => c.id === cid);
+    workingSquads[cid] = clubObj
+      ? evaluateAiClubSquadAndListings(clubObj, list.map((p) => ({ ...p })))
+      : list.map((p) => ({ ...p }));
   }
 
   const newRecords: TransferRecord[] = [];
   const aiClubIndices = workingClubs
     .map((c, idx) => ({ club: c, idx }))
-    .filter((item) => item.club.id !== userClubId && workingSquads[item.club.id]?.length >= 16);
+    .filter(
+      (item) =>
+        item.club.id !== userClubId &&
+        workingSquads[item.club.id]?.length >= 16
+    );
 
   if (aiClubIndices.length < 2) {
     return {
@@ -125,13 +442,13 @@ export function simulateAiTransferWindowTick(params: {
   const dateLabel = formatCalendarDate(dayOffset, seasonYear);
 
   for (let d = 0; d < maxDeals; d++) {
-    // Pick a buying club with healthy cash and wage budget headroom
+    // Pick a buying/borrowing club with positional needs and budget headroom
     const buyers = aiClubIndices.filter((item) => {
-      if (item.club.cashBalance < 4_500_000) return false;
+      if (item.club.cashBalance < 1_500_000) return false;
       const sq = workingSquads[item.club.id];
       if (sq.length >= 27) return false;
       const payroll = sq.reduce((s, p) => s + p.salary, 0);
-      return item.club.wageBudget - payroll >= 100_000;
+      return item.club.wageBudget - payroll >= 80_000;
     });
     if (buyers.length === 0) break;
 
@@ -140,54 +457,114 @@ export function simulateAiTransferWindowTick(params: {
     const buyerSquad = workingSquads[buyer.id];
     const buyerPayroll = buyerSquad.reduce((s, p) => s + p.salary, 0);
     const remainingWageRoom = buyer.wageBudget - buyerPayroll;
-    if (remainingWageRoom < 100_000) continue;
+    if (remainingWageRoom < 80_000) continue;
 
-    const neededSector = findWeakestSector(buyerSquad);
+    const buyerProfile = analyzeAiClubMarketProfile(buyer, buyerSquad);
+    const neededPositions = buyerProfile.neededPositions;
+    const neededSector =
+      buyerProfile.neededSectors[0] || findWeakestSector(buyerSquad);
 
-    // Pick candidate sellers
+    // Pick candidate sellers that have depth and players listed or matching buyer's needs
     const candidateSellers = aiClubIndices.filter(
       (item) =>
         item.club.id !== buyer.id &&
         workingSquads[item.club.id].length > MIN_SQUAD_SIZE + 1 &&
-        item.club.reputation <= buyer.reputation + 5
+        item.club.reputation <= buyer.reputation + 8
     );
     if (candidateSellers.length === 0) continue;
 
-    const sellerPick =
-      candidateSellers[Math.floor(rng() * candidateSellers.length)];
+    // Score available targets across candidate sellers
+    const targetPool: {
+      sellerPick: (typeof aiClubIndices)[number];
+      player: Player;
+      ovr: number;
+      isLoanDeal: boolean;
+      score: number;
+    }[] = [];
+
+    for (const sellerPick of candidateSellers) {
+      const seller = sellerPick.club;
+      const sellerSquad = workingSquads[seller.id];
+      const gks = sellerSquad.filter((x) => x.position === 'GOL').length;
+
+      for (const p of sellerSquad) {
+        if (p.contractType === 'EMPRESTADO') continue;
+        if (p.position === 'GOL' && gks <= MIN_GOALKEEPERS + 1) continue;
+
+        const matchesExactPos = neededPositions.includes(p.position);
+        const matchesSector = p.sector === neededSector;
+        const isListed = Boolean(p.isTransferListed || p.isLoanListed);
+
+        if (!matchesExactPos && !matchesSector && !isListed) continue;
+
+        const ovr = calculatePlayerOverall(p.attributes, p.position);
+        if (ovr < 66) continue;
+
+        // Decide if this would be a loan or purchase based on club listing & buyer posture
+        const prefersLoan =
+          buyerProfile.preferredIncomingMode === 'EMPRESTIMO' ||
+          Boolean(p.isLoanListed && !p.isTransferListed) ||
+          (p.age <= 23 && !p.isStarter && seller.reputation > buyer.reputation);
+
+        const estFee = prefersLoan
+          ? Math.max(
+              150_000,
+              Math.round((p.marketValue * 0.1) / 50_000) * 50_000
+            )
+          : Math.max(
+              500_000,
+              Math.round(
+                (p.marketValue * (p.isTransferListed ? 0.88 : 1.0)) / 100_000
+              ) * 100_000
+            );
+
+        const estSalaryForBuyer = prefersLoan
+          ? Math.round(p.salary * 0.8)
+          : p.salary;
+
+        if (estFee > buyer.cashBalance * 0.65) continue;
+        if (estSalaryForBuyer > remainingWageRoom * 1.05) continue;
+
+        let score = ovr;
+        if (matchesExactPos) score += 18;
+        else if (matchesSector) score += 9;
+        if (p.isTransferListed || p.isLoanListed) score += 20;
+        if (!p.isStarter) score += 8;
+
+        targetPool.push({
+          sellerPick,
+          player: p,
+          ovr,
+          isLoanDeal: prefersLoan,
+          score,
+        });
+      }
+    }
+
+    if (targetPool.length === 0) continue;
+
+    targetPool.sort((a, b) => b.score - a.score);
+    const chosen =
+      targetPool[Math.floor(rng() * Math.min(4, targetPool.length))];
+    const sellerPick = chosen.sellerPick;
     const seller = sellerPick.club;
     const sellerSquad = workingSquads[seller.id];
-
-    // Prefer non-starters or players in buyer's needed sector that buyer can afford
-    const candidates = sellerSquad
-      .filter((p) => {
-        if (p.position === 'GOL') {
-          const gks = sellerSquad.filter((x) => x.position === 'GOL').length;
-          if (gks <= MIN_GOALKEEPERS + 1) return false;
-        }
-        return p.sector === neededSector || !p.isStarter;
-      })
-      .map((p) => ({
-        player: p,
-        ovr: calculatePlayerOverall(p.attributes, p.position),
-      }))
-      .filter(
-        ({ player, ovr }) =>
-          ovr >= 66 &&
-          player.salary <= remainingWageRoom * 1.1 &&
-          player.marketValue * 1.05 <= buyer.cashBalance * 0.55
-      );
-
-    if (candidates.length === 0) continue;
-
-    const chosen = candidates[Math.floor(rng() * Math.min(4, candidates.length))];
     const targetPlayer = chosen.player;
-    const isLoan =
-      (targetPlayer.age <= 23 || !targetPlayer.isStarter) && rng() < 0.34;
+    const isLoan = chosen.isLoanDeal;
 
     const fee = isLoan
-      ? Math.max(250_000, Math.round((targetPlayer.marketValue * 0.12) / 50_000) * 50_000)
-      : Math.max(600_000, Math.round((targetPlayer.marketValue * (0.95 + rng() * 0.2)) / 100_000) * 100_000);
+      ? Math.max(
+          150_000,
+          Math.round((targetPlayer.marketValue * 0.1) / 50_000) * 50_000
+        )
+      : Math.max(
+          500_000,
+          Math.round(
+            (targetPlayer.marketValue *
+              (targetPlayer.isTransferListed ? 0.88 : 0.96 + rng() * 0.12)) /
+              100_000
+          ) * 100_000
+        );
 
     if (buyer.cashBalance < fee) continue;
 
@@ -196,24 +573,54 @@ export function simulateAiTransferWindowTick(params: {
       (p) => p.id !== targetPlayer.id
     );
 
+    // Check if new player is better than buyer's current starter at that position
+    const currentStarterAtPos = buyerSquad.find(
+      (p) => p.isStarter && p.position === targetPlayer.position
+    );
+    const currentStarterOvr = currentStarterAtPos
+      ? calculatePlayerOverall(
+          currentStarterAtPos.attributes,
+          currentStarterAtPos.position
+        )
+      : 0;
+    const becomesStarter =
+      Boolean(currentStarterAtPos) && chosen.ovr > currentStarterOvr;
+
+    let updatedBuyerSquad = buyerSquad.map((p) =>
+      becomesStarter && currentStarterAtPos && p.id === currentStarterAtPos.id
+        ? { ...p, isStarter: false, slotIndex: null }
+        : p
+    );
+
     const nextShirtNumber =
-      Math.max(22, ...buyerSquad.map((p) => p.number)) + 1;
+      Math.max(22, ...updatedBuyerSquad.map((p) => p.number)) + 1;
     const movedPlayer: Player = {
       ...targetPlayer,
       number: nextShirtNumber,
-      isStarter: false,
-      slotIndex: null,
+      isStarter: becomesStarter,
+      slotIndex:
+        becomesStarter && currentStarterAtPos
+          ? currentStarterAtPos.slotIndex
+          : null,
       contractType: isLoan ? 'EMPRESTADO' : 'DEFINITIVO',
       loanOriginClubId: isLoan ? seller.id : undefined,
       loanOriginClubName: isLoan ? seller.shortName : undefined,
-      wageSharePaid: isLoan ? 0.85 : 1,
+      wageSharePaid: isLoan ? 0.8 : 1,
+      isTransferListed: false,
+      isLoanListed: false,
+      marketListingReason: undefined,
     };
 
     // Promote seller replacement if starter left
     if (targetPlayer.isStarter && targetPlayer.slotIndex !== null) {
-      const replacement = workingSquads[seller.id].find(
-        (p) => !p.isStarter && p.sector === targetPlayer.sector
-      ) || workingSquads[seller.id].find((p) => !p.isStarter);
+      const replacement =
+        workingSquads[seller.id].find(
+          (p) => !p.isStarter && p.position === targetPlayer.position
+        ) ||
+        workingSquads[seller.id].find(
+          (p) => !p.isStarter && p.sector === targetPlayer.sector
+        ) ||
+        workingSquads[seller.id].find((p) => !p.isStarter);
       if (replacement) {
         workingSquads[seller.id] = workingSquads[seller.id].map((p) =>
           p.id === replacement.id
@@ -227,12 +634,9 @@ export function simulateAiTransferWindowTick(params: {
       }
     }
 
-    workingSquads[buyer.id] = [...buyerSquad, movedPlayer];
+    updatedBuyerSquad = [...updatedBuyerSquad, movedPlayer];
 
-    const buyerRatings = recalculateClubSectorRatings(
-      buyer,
-      workingSquads[buyer.id]
-    );
+    const buyerRatings = recalculateClubSectorRatings(buyer, updatedBuyerSquad);
     const sellerRatings = recalculateClubSectorRatings(
       seller,
       workingSquads[seller.id]
@@ -249,6 +653,22 @@ export function simulateAiTransferWindowTick(params: {
       ...sellerRatings,
     };
 
+    // Re-evaluate transfer & loan listings for both clubs after squad change
+    workingSquads[buyer.id] = evaluateAiClubSquadAndListings(
+      workingClubs[buyerPick.idx],
+      updatedBuyerSquad
+    );
+    workingSquads[seller.id] = evaluateAiClubSquadAndListings(
+      workingClubs[sellerPick.idx],
+      workingSquads[seller.id]
+    );
+
+    const sellerListingNote = targetPlayer.isTransferListed
+      ? 'listado p/ venda pelo clube'
+      : targetPlayer.isLoanListed
+      ? 'disponibilizado p/ empréstimo'
+      : 'negociação direta';
+
     newRecords.push({
       id: `ai-tr-${seasonYear}-${dayOffset}-${d}-${targetPlayer.id}`,
       date: dateLabel,
@@ -261,8 +681,10 @@ export function simulateAiTransferWindowTick(params: {
       feeAmount: fee,
       monthlySalaryImpact: targetPlayer.salary,
       note: isLoan
-        ? `Empréstimo de ${seller.shortName} para ${buyer.shortName}.`
-        : `Transferência entre clubes da liga (${seller.shortName} → ${buyer.shortName}).`,
+        ? `Empréstimo: ${buyer.shortName} tinha carência em ${targetPlayer.position}; ${seller.shortName} cedeu o atleta (${sellerListingNote}).`
+        : `Compra: ${buyer.shortName} buscou reforço para ${targetPlayer.position}${
+            becomesStarter ? ' (assume titularidade)' : ''
+          }; ${seller.shortName} negociou (${sellerListingNote}).`,
       isAiTransfer: true,
       fromClubName: seller.shortName,
       toClubName: buyer.shortName,
@@ -279,7 +701,8 @@ export function simulateAiTransferWindowTick(params: {
 
 /**
  * Generates realistic official purchase or loan offers from AI clubs for standout,
- * young high-potential, or in-form players in the user's squad.
+ * young high-potential, or transfer/loan-listed players in the user's squad,
+ * matching the AI club's actual positional needs and financial posture.
  */
 export function maybeGenerateIncomingOfferForUser(params: {
   clubs: Club[];
@@ -372,7 +795,7 @@ export function maybeGenerateIncomingOfferForUser(params: {
     ? Math.max(60, picked.ovr - 18)
     : Math.max(66, picked.ovr - 12);
 
-  // Pick a plausible interested AI club with cash, prioritizing clubs that need this sector/position
+  // Pick a plausible interested AI club with cash, prioritizing clubs whose strategic profile needs this exact position
   const interestedClubs = clubs.filter(
     (c) =>
       c.id !== userClub.id &&
@@ -385,8 +808,9 @@ export function maybeGenerateIncomingOfferForUser(params: {
     ? interestedClubs.filter((c) => {
         const sq = aiSquads[c.id];
         if (!sq || sq.length === 0) return false;
-        const weakest = findWeakestSector(sq);
-        if (weakest === p.sector) return true;
+        const profile = analyzeAiClubMarketProfile(c, sq);
+        if (profile.neededPositions.includes(p.position)) return true;
+        if (profile.neededSectors.includes(p.sector)) return true;
         const posPlayers = sq.filter((sp) => sp.position === p.position);
         if (posPlayers.length <= 1) return true;
         const bestAtPos = Math.max(
@@ -399,13 +823,18 @@ export function maybeGenerateIncomingOfferForUser(params: {
     : [];
 
   const buyerPool =
-    clubsWithNeed.length > 0 && rng() < 0.85 ? clubsWithNeed : interestedClubs;
+    clubsWithNeed.length > 0 && rng() < 0.88 ? clubsWithNeed : interestedClubs;
   const buyer = buyerPool[Math.floor(rng() * buyerPool.length)];
+  const buyerSq = aiSquads?.[buyer.id] || [];
+  const buyerProfile =
+    buyerSq.length > 0 ? analyzeAiClubMarketProfile(buyer, buyerSq) : null;
 
   const isLoan = forceLoanOnly
     ? true
     : forceBuyOnly
     ? false
+    : buyerProfile?.preferredIncomingMode === 'EMPRESTIMO'
+    ? true
     : (!p.isStarter || p.age <= 22 || p.isLoanListed) && rng() < 0.4;
 
   const feeMultiplier = isListed ? 0.92 + rng() * 0.18 : 0.95 + rng() * 0.22;
@@ -440,6 +869,11 @@ export function maybeGenerateIncomingOfferForUser(params: {
     reasonParts.push(`nível OVR ${picked.ovr} no elenco`);
   }
 
+  const needDetail =
+    buyerProfile && buyerProfile.neededPositions.includes(p.position)
+      ? `identificou carência prioritária na posição (${p.position})`
+      : `busca qualificar o setor de ${p.sector} (${p.position})`;
+
   return {
     id: `offer-${seasonYear}-${dayOffset}-${p.id}-${Math.round(rng() * 9999)}`,
     createdAtDate: formatCalendarDate(dayOffset, seasonYear),
@@ -460,7 +894,9 @@ export function maybeGenerateIncomingOfferForUser(params: {
     expiresDayOffset: dayOffset + 18,
     negotiationStep: 0,
     status: 'PENDING',
-    rationale: `${buyer.shortName} tem carência na posição (${p.position}) e busca fechar negócio (${reasonParts.join(' · ')}).`,
+    rationale: `${buyer.shortName} ${needDetail} e propõe ${
+      isLoan ? 'empréstimo' : 'compra definitiva'
+    } (${reasonParts.join(' · ')}).`,
   };
 }
 

@@ -4,16 +4,14 @@ import {
   MailOpen,
   CheckCircle2,
   ArrowRight,
-  Swords,
+  ArrowLeft,
   Trophy,
   UserCheck,
   MapPin,
   Sliders,
-  Users,
   Play,
   Target,
   AlertTriangle,
-  RefreshCw,
   FastForward,
   Lock,
 } from 'lucide-react';
@@ -94,7 +92,11 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   const [selectedMsgId, setSelectedMsgId] = React.useState<string>(
     messages[0]?.id || ''
   );
-  const [scoutFocusMode, setScoutFocusMode] = React.useState<'ALL' | 'TACTICAL'>('ALL');
+  const [mobileReadingOpen, setMobileReadingOpen] =
+    React.useState<boolean>(false);
+  const [matchCardTab, setMatchCardTab] = React.useState<'PROJECTION' | 'SCOUT'>(
+    'PROJECTION'
+  );
 
   const selectedMessage =
     messages.find((m) => m.id === selectedMsgId) || messages[0];
@@ -102,6 +104,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   const handleSelectMessage = (id: string) => {
     setSelectedMsgId(id);
     onMarkMessageRead(id);
+    setMobileReadingOpen(true);
   };
 
   const userRatings = calculateTeamTacticalRatings(
@@ -178,26 +181,6 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   const drawProb = 24;
   const oppWinProb = Math.max(10, 100 - userWinProb - drawProb);
 
-  // Other featured fixtures of the round for the reference-inspired dual-tone cards
-  const otherClubs = clubs.filter(
-    (c) =>
-      c.id !== userClub.id &&
-      c.id !== opponentClub?.id &&
-      (activeCompetition === 'LIBERTADORES'
-        ? c.division === 'LIB'
-        : c.division === userClub.division)
-  );
-  const otherRoundFixtures =
-    otherClubs.length >= 2
-      ? [
-          {
-            home: otherClubs[0],
-            away: otherClubs[1],
-            time: activeCompetition === 'LIBERTADORES' ? '21:30' : '18:30',
-          },
-        ]
-      : [];
-
   const resolvedCompLabel =
     competitionLabel ||
     `Brasileirão Série ${userClub.division} · ${currentRound}ª Rodada`;
@@ -208,6 +191,8 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
       : activeCompetition === 'LIBERTADORES'
       ? `LIBERTADORES · ${nextFixture?.stageLabel || 'GRUPOS'}`
       : `SÉRIE ${userClub.division} · R${currentRound}`;
+
+  const unreadCount = messages.filter((m) => !m.read).length;
 
   const renderComparisonBar = (
     label: string,
@@ -253,333 +238,389 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   };
 
   return (
-    <div className="space-y-6">
-      {/* Editorial Section Header + Matchday Preparation Stepper */}
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pb-2 border-b border-white/[0.07]">
+    <div className="space-y-5">
+      {/* Clean Editorial Header */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 pb-2 border-b border-white/[0.07]">
         <div>
           <span className="block text-xs sm:text-sm font-normal text-zinc-400 tracking-wide">
-            Explorar comando técnico
+            Comando técnico · Próximo compromisso & comunicação interna
           </span>
           <h2 className="font-display text-3xl sm:text-5xl font-extrabold uppercase tracking-tight text-white leading-[0.95] mt-0.5">
             CENTRAL DO CLUBE
           </h2>
         </div>
 
-        {/* Guided User Workflow Stepper (1. Inbox -> 2. Táticas/Elenco -> 3. Jogo 2D) */}
-        <div
-          className="flex flex-wrap items-center gap-1.5 bg-[#151821] p-1.5 rounded-full border border-white/[0.07]"
-          aria-label="Fluxo de preparação da rodada"
-        >
+        <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => onNavigate('inbox')}
-            className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-[#b5ff00] text-[#090a0f] transition-colors flex items-center gap-1.5 whitespace-nowrap"
-          >
-            <Mail className="w-3.5 h-3.5" />
-            <span>1. Dossiê & Alertas</span>
-          </button>
-          <button
+            type="button"
             onClick={() => onNavigate('tactics')}
-            className="px-3.5 py-1.5 rounded-full text-xs font-semibold text-zinc-300 hover:text-white hover:bg-white/[0.06] transition-colors flex items-center gap-1.5 whitespace-nowrap"
+            className="px-3.5 py-2 rounded-full text-xs font-bold bg-[#14171f] hover:bg-white/[0.08] text-zinc-200 border border-white/10 transition-colors flex items-center gap-1.5 whitespace-nowrap"
           >
             <Sliders className="w-3.5 h-3.5 text-[#b5ff00]" />
-            <span>2. Prancheta ({userClub.formation})</span>
+            <span>Prancheta ({userClub.formation})</span>
           </button>
           <button
-            onClick={() => onNavigate('squad')}
-            className="px-3.5 py-1.5 rounded-full text-xs font-semibold text-zinc-300 hover:text-white hover:bg-white/[0.06] transition-colors flex items-center gap-1.5 whitespace-nowrap"
-          >
-            <Users className="w-3.5 h-3.5 text-[#b5ff00]" />
-            <span>3. Elenco ({squad.length})</span>
-          </button>
-          <button
+            type="button"
             onClick={onGoToMatch}
-            className="px-4 py-1.5 rounded-full text-xs font-bold bg-white text-[#090a0f] hover:bg-[#b5ff00] transition-colors flex items-center gap-1.5 whitespace-nowrap"
+            className="px-4 py-2 rounded-full text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1.5 whitespace-nowrap shadow-sm"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
-            <span>4. Momento de Partida ({currentRound}ªR)</span>
+            <span>Ir para o Jogo ({currentRound}ªR)</span>
           </button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Reference-Inspired Dual-Tone Match Ticket Card + G-6 Standings (5 cols) */}
+        {/* Left Column: Unified Match Ticket + Integrated Opponent Scout + G-6 Standings (5 cols) */}
         <div className="xl:col-span-5 space-y-6">
           {opponentClub && nextFixture && (
-            <div className="space-y-4">
-              {/* Signature Dual-Tone Match Ticket Card (Exact visual motif from reference Screen 1) */}
-              <div className="rounded-[28px] overflow-hidden border border-white/10 shadow-2xl bg-[#14171f]">
-                {/* Upper Half: Electric Lime Gradient Header with Club Badges & Black VS Circle */}
-                <div className="bg-gradient-to-b from-[#b5ff00] to-[#8fd400] px-5 pt-5 pb-6 text-[#090a0f] relative">
-                  <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase tracking-wider text-[#090a0f]/75 mb-3">
-                    <span className="truncate pr-2">{resolvedCompLabel}</span>
-                    <span className="shrink-0">
-                      {isMatchDay ? 'HOJE · DIA DE JOGO' : 'PRÓXIMO CONFRONTO'}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-3 items-center text-center">
-                    {/* User Club */}
-                    <div className="flex flex-col items-center">
-                      <ClubBadge
-                        clubId={userClub.id}
-                        abbr={userClub.abbr}
-                        name={userClub.name}
-                        primaryColor={userClub.primaryColor}
-                        size="lg"
-                        surface="light"
-                      />
-                      <div className="font-display font-extrabold text-base uppercase tracking-tight leading-tight mt-2 text-[#090a0f]">
-                        {userClub.shortName}
-                      </div>
-                      <div className="text-[11px] font-mono font-bold text-[#090a0f]/75">
-                        {userStandingIndex + 1}º · {userClub.formation}
-                      </div>
-                    </div>
-
-                    {/* Center VS Circle */}
-                    <div className="flex flex-col items-center justify-center">
-                      <div className="w-11 h-11 rounded-full bg-[#0b0c10] text-white font-display font-extrabold text-sm flex items-center justify-center shadow-md">
-                        VS
-                      </div>
-                      <div className="text-[11px] font-semibold text-[#090a0f]/80 mt-1.5 flex items-center gap-1">
-                        <MapPin className="w-3 h-3" />
-                        <span>
-                          {nextFixture.homeClubId === userClub.id
-                            ? 'Casa'
-                            : 'Fora'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Opponent Club */}
-                    <div className="flex flex-col items-center">
-                      <ClubBadge
-                        clubId={opponentClub.id}
-                        abbr={opponentClub.abbr}
-                        name={opponentClub.name}
-                        primaryColor={opponentClub.primaryColor}
-                        size="lg"
-                        surface="light"
-                      />
-                      <div className="font-display font-extrabold text-base uppercase tracking-tight leading-tight mt-2 text-[#090a0f]">
-                        {opponentClub.shortName}
-                      </div>
-                      <div className="text-[11px] font-mono font-bold text-[#090a0f]/75">
-                        {opponentClub.countryCode
-                          ? `${opponentClub.countryCode} · ${opponentClub.formation}`
-                          : opponentStandingIndex >= 0
-                          ? `${opponentStandingIndex + 1}º · ${opponentClub.formation}`
-                          : `Série ${opponentClub.division} · ${opponentClub.formation}`}
-                      </div>
-                    </div>
-                  </div>
+            <div className="rounded-[28px] overflow-hidden border border-white/10 shadow-2xl bg-[#14171f]">
+              {/* Upper Half: Electric Lime Gradient Header with Club Badges & Black VS Circle */}
+              <div className="bg-gradient-to-b from-[#b5ff00] to-[#8fd400] px-5 pt-5 pb-6 text-[#090a0f] relative">
+                <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase tracking-wider text-[#090a0f]/75 mb-3">
+                  <span className="truncate pr-2">{resolvedCompLabel}</span>
+                  <span className="shrink-0">
+                    {isMatchDay ? 'HOJE · DIA DE JOGO' : 'PRÓXIMO CONFRONTO'}
+                  </span>
                 </div>
 
-                {/* Lower Half: Crisp Light Ticket Stub with Kickoff Time & Metadata */}
-                <div className="bg-gradient-to-b from-white to-zinc-200 px-5 py-4 text-[#090a0f] flex items-center justify-between">
-                  <div>
-                    <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-semibold">
-                      Competição
+                <div className="grid grid-cols-3 items-center text-center">
+                  {/* User Club */}
+                  <div className="flex flex-col items-center">
+                    <ClubBadge
+                      clubId={userClub.id}
+                      abbr={userClub.abbr}
+                      name={userClub.name}
+                      primaryColor={userClub.primaryColor}
+                      size="lg"
+                      surface="light"
+                    />
+                    <div className="font-display font-extrabold text-base uppercase tracking-tight leading-tight mt-2 text-[#090a0f]">
+                      {userClub.shortName}
                     </div>
-                    <div className="font-display font-extrabold text-base uppercase tracking-tight text-[#090a0f]">
-                      {shortCompLabel}
-                    </div>
-                  </div>
-
-                  <div className="text-center px-3 border-x border-zinc-300/80">
-                    <div className="font-display font-extrabold text-3xl leading-none tracking-tight text-[#090a0f] tabular-nums">
-                      {activeCompetition === 'BRASILEIRAO' ? '16:00' : '21:30'}
-                    </div>
-                    <div className="text-[11px] font-medium text-zinc-600 mt-0.5">
-                      {nextFixture.homeClubId === userClub.id
-                        ? userClub.stadium
-                        : opponentClub.stadium}
+                    <div className="text-[11px] font-mono font-bold text-[#090a0f]/75">
+                      {userStandingIndex + 1}º · {userClub.formation}
                     </div>
                   </div>
 
-                  <div className="text-right">
-                    <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-semibold">
-                      Favoritismo
+                  {/* Center VS Circle */}
+                  <div className="flex flex-col items-center justify-center">
+                    <div className="w-11 h-11 rounded-full bg-[#0b0c10] text-white font-display font-extrabold text-sm flex items-center justify-center shadow-md">
+                      VS
                     </div>
-                    <div className="font-display font-extrabold text-base uppercase tracking-tight text-[#090a0f] tabular-nums">
-                      1X2 {userClub.abbr}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tactical Comparison & Probability Block inside Dark Card Base */}
-                <div className="p-5 space-y-4 bg-[#14171f]">
-                  {/* 3-Tile Probability Strip (Reference Screen 2 motif: Lime / White / Soft Lime) */}
-                  <div>
-                    <div className="flex items-center justify-between text-xs text-zinc-400 mb-2">
-                      <span>Projeção Tática & Forma Recente</span>
-                      <span className="font-mono text-[11px] text-zinc-300">
-                        {userClub.abbr} vs {opponentClub.abbr}
+                    <div className="text-[11px] font-semibold text-[#090a0f]/80 mt-1.5 flex items-center gap-1">
+                      <MapPin className="w-3 h-3" />
+                      <span>
+                        {nextFixture.homeClubId === userClub.id
+                          ? 'Casa'
+                          : 'Fora'}
                       </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="bg-[#b5ff00] text-[#090a0f] rounded-2xl p-3 flex flex-col justify-between min-h-[68px]">
-                        <span className="text-[10px] font-mono font-bold uppercase opacity-75">
-                          Vitória {userClub.abbr}
-                        </span>
-                        <span className="font-display text-2xl font-extrabold tabular-nums leading-none">
-                          {userWinProb}%
-                        </span>
-                      </div>
-                      <div className="bg-white text-[#090a0f] rounded-2xl p-3 flex flex-col justify-between min-h-[68px]">
-                        <span className="text-[10px] font-mono font-bold uppercase text-zinc-500">
-                          Empate
-                        </span>
-                        <span className="font-display text-2xl font-extrabold tabular-nums leading-none">
-                          {drawProb}%
-                        </span>
-                      </div>
-                      <div className="bg-[#d9ff7a] text-[#090a0f] rounded-2xl p-3 flex flex-col justify-between min-h-[68px]">
-                        <span className="text-[10px] font-mono font-bold uppercase opacity-75">
-                          Vitória {opponentClub.abbr}
-                        </span>
-                        <span className="font-display text-2xl font-extrabold tabular-nums leading-none">
-                          {oppWinProb}%
-                        </span>
-                      </div>
-                    </div>
                   </div>
 
-                  {/* Strength Comparison Bars */}
-                  <div className="space-y-2.5 pt-2 border-t border-white/[0.07]">
-                    {renderComparisonBar(
-                      'Poder Ofensivo',
-                      userRatings.attack,
-                      opponentClub.overallAttack
-                    )}
-                    {renderComparisonBar(
-                      'Domínio de Meio-Campo',
-                      userRatings.midfield,
-                      opponentClub.overallMidfield
-                    )}
-                    {renderComparisonBar(
-                      'Solidez Defensiva',
-                      userRatings.defense,
-                      opponentClub.overallDefense
-                    )}
-                  </div>
-
-                  {/* Key Opponent Players */}
-                  <div className="pt-2 border-t border-white/[0.07]">
-                    <div className="text-xs text-zinc-400 mb-2">
-                      Destaques do {opponentClub.shortName} (Mentalidade{' '}
-                      <strong className="text-white">
-                        {opponentClub.instructions.mentality}
-                      </strong>
-                      ):
+                  {/* Opponent Club */}
+                  <div className="flex flex-col items-center">
+                    <ClubBadge
+                      clubId={opponentClub.id}
+                      abbr={opponentClub.abbr}
+                      name={opponentClub.name}
+                      primaryColor={opponentClub.primaryColor}
+                      size="lg"
+                      surface="light"
+                    />
+                    <div className="font-display font-extrabold text-base uppercase tracking-tight leading-tight mt-2 text-[#090a0f]">
+                      {opponentClub.shortName}
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {opponentClub.starPlayers.slice(0, 2).map((sp, i) => (
-                        <div
-                          key={i}
-                          className="bg-[#0b0c10] border border-white/[0.06] rounded-xl px-3 py-2 flex items-center justify-between text-xs"
-                        >
-                          <div className="min-w-0">
-                            <div className="font-semibold text-zinc-100 truncate">
-                              {sp.name}
-                            </div>
-                            <div className="text-[11px] text-zinc-400">
-                              {sp.position} · {sp.highlightAttribute}
-                            </div>
-                          </div>
-                          <span className="font-mono tabular-nums font-bold text-[#b5ff00] ml-2">
-                            {Math.round(sp.overall)}
+                    <div className="text-[11px] font-mono font-bold text-[#090a0f]/75">
+                      {opponentClub.countryCode
+                        ? `${opponentClub.countryCode} · ${opponentClub.formation}`
+                        : opponentStandingIndex >= 0
+                        ? `${opponentStandingIndex + 1}º · ${opponentClub.formation}`
+                        : `Série ${opponentClub.division} · ${opponentClub.formation}`}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Lower Half: Crisp Light Ticket Stub with Kickoff Time & Metadata */}
+              <div className="bg-gradient-to-b from-white to-zinc-200 px-5 py-3.5 text-[#090a0f] flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-semibold">
+                    Competição
+                  </div>
+                  <div className="font-display font-extrabold text-sm sm:text-base uppercase tracking-tight text-[#090a0f]">
+                    {shortCompLabel}
+                  </div>
+                </div>
+
+                <div className="text-center px-3 border-x border-zinc-300/80">
+                  <div className="font-display font-extrabold text-2xl sm:text-3xl leading-none tracking-tight text-[#090a0f] tabular-nums">
+                    {activeCompetition === 'BRASILEIRAO' ? '16:00' : '21:30'}
+                  </div>
+                  <div className="text-[11px] font-medium text-zinc-600 mt-0.5 truncate max-w-[130px] sm:max-w-none">
+                    {nextFixture.homeClubId === userClub.id
+                      ? userClub.stadium
+                      : opponentClub.stadium}
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-semibold">
+                    Favoritismo
+                  </div>
+                  <div className="font-display font-extrabold text-sm sm:text-base uppercase tracking-tight text-[#090a0f] tabular-nums">
+                    1X2 {userClub.abbr}
+                  </div>
+                </div>
+              </div>
+
+              {/* Integrated Match Card Body with Sub-Tabs: Projeção & 1X2 | Raio-X do Adversário */}
+              <div className="p-4 sm:p-5 space-y-4 bg-[#14171f]">
+                {opponentScoutReport && (
+                  <div className="grid grid-cols-2 gap-1 bg-[#0b0c10] p-1 rounded-xl border border-white/[0.07]">
+                    <button
+                      type="button"
+                      onClick={() => setMatchCardTab('PROJECTION')}
+                      className={`py-2 px-3 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1.5 ${
+                        matchCardTab === 'PROJECTION'
+                          ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      <span>Comparativo & 1X2</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMatchCardTab('SCOUT')}
+                      className={`py-2 px-3 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1.5 ${
+                        matchCardTab === 'SCOUT'
+                          ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      <Target className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        Raio-X & Pontos Fracos (
+                        {opponentScoutReport.weaknesses.length})
+                      </span>
+                    </button>
+                  </div>
+                )}
+
+                {matchCardTab === 'PROJECTION' || !opponentScoutReport ? (
+                  <>
+                    {/* 3-Tile Probability Strip */}
+                    <div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="bg-[#b5ff00] text-[#090a0f] rounded-2xl p-3 flex flex-col justify-between min-h-[64px]">
+                          <span className="text-[10px] font-mono font-bold uppercase opacity-75">
+                            Vitória {userClub.abbr}
                           </span>
+                          <span className="font-display text-2xl font-extrabold tabular-nums leading-none">
+                            {userWinProb}%
+                          </span>
+                        </div>
+                        <div className="bg-white text-[#090a0f] rounded-2xl p-3 flex flex-col justify-between min-h-[64px]">
+                          <span className="text-[10px] font-mono font-bold uppercase text-zinc-500">
+                            Empate
+                          </span>
+                          <span className="font-display text-2xl font-extrabold tabular-nums leading-none">
+                            {drawProb}%
+                          </span>
+                        </div>
+                        <div className="bg-[#d9ff7a] text-[#090a0f] rounded-2xl p-3 flex flex-col justify-between min-h-[64px]">
+                          <span className="text-[10px] font-mono font-bold uppercase opacity-75">
+                            Vitória {opponentClub.abbr}
+                          </span>
+                          <span className="font-display text-2xl font-extrabold tabular-nums leading-none">
+                            {oppWinProb}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Strength Comparison Bars */}
+                    <div className="space-y-2.5 pt-2 border-t border-white/[0.07]">
+                      {renderComparisonBar(
+                        'Poder Ofensivo',
+                        userRatings.attack,
+                        opponentClub.overallAttack
+                      )}
+                      {renderComparisonBar(
+                        'Domínio de Meio-Campo',
+                        userRatings.midfield,
+                        opponentClub.overallMidfield
+                      )}
+                      {renderComparisonBar(
+                        'Solidez Defensiva',
+                        userRatings.defense,
+                        opponentClub.overallDefense
+                      )}
+                    </div>
+
+                    {/* Key Opponent Players */}
+                    <div className="pt-2 border-t border-white/[0.07]">
+                      <div className="text-xs text-zinc-400 mb-2">
+                        Destaques do {opponentClub.shortName} (Mentalidade{' '}
+                        <strong className="text-white">
+                          {opponentClub.instructions.mentality}
+                        </strong>
+                        ):
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {opponentClub.starPlayers.slice(0, 2).map((sp, i) => (
+                          <div
+                            key={i}
+                            className="bg-[#0b0c10] border border-white/[0.06] rounded-xl px-3 py-2 flex items-center justify-between text-xs"
+                          >
+                            <div className="min-w-0">
+                              <div className="font-semibold text-zinc-100 truncate">
+                                {sp.name}
+                              </div>
+                              <div className="text-[11px] text-zinc-400">
+                                {sp.position} · {sp.highlightAttribute}
+                              </div>
+                            </div>
+                            <span className="font-mono tabular-nums font-bold text-[#b5ff00] ml-2">
+                              {Math.round(sp.overall)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Compact Opponent Campaign Row */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-[#0b0c10] border border-white/[0.06] rounded-xl p-2.5">
+                        <div className="text-[10px] font-mono uppercase text-zinc-400">
+                          Campanha
+                        </div>
+                        <div className="font-mono text-xs font-bold text-white mt-0.5 tabular-nums">
+                          {opponentScoutReport.won}V · {opponentScoutReport.drawn}E ·{' '}
+                          {opponentScoutReport.lost}D
+                        </div>
+                      </div>
+                      <div className="bg-[#0b0c10] border border-white/[0.06] rounded-xl p-2.5">
+                        <div className="text-[10px] font-mono uppercase text-zinc-400">
+                          Gols (Pró/Contra)
+                        </div>
+                        <div className="font-mono text-xs font-bold text-white mt-0.5 tabular-nums">
+                          <span className="text-[#b5ff00]">
+                            {opponentScoutReport.goalsFor}
+                          </span>
+                          /{opponentScoutReport.goalsAgainst} (SG{' '}
+                          {opponentScoutReport.goalDifference >= 0
+                            ? `+${opponentScoutReport.goalDifference}`
+                            : opponentScoutReport.goalDifference}
+                          )
+                        </div>
+                      </div>
+                      <div className="bg-[#0b0c10] border border-white/[0.06] rounded-xl p-2.5">
+                        <div className="text-[10px] font-mono uppercase text-zinc-400">
+                          Forma Recente
+                        </div>
+                        <div className="flex items-center gap-1 mt-1">
+                          {opponentScoutReport.recentForm.length > 0 ? (
+                            opponentScoutReport.recentForm.map((res, idx) => (
+                              <span
+                                key={idx}
+                                className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-extrabold ${
+                                  res === 'V'
+                                    ? 'bg-[#b5ff00]/20 text-[#b5ff00]'
+                                    : res === 'E'
+                                    ? 'bg-amber-400/20 text-amber-300'
+                                    : 'bg-rose-500/20 text-rose-300'
+                                }`}
+                              >
+                                {res}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-[11px] font-mono text-zinc-400">
+                              Estreia
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Analytical Summary */}
+                    <div className="bg-[#0b0c10]/80 border border-white/[0.07] rounded-xl p-3 text-xs text-zinc-200 leading-relaxed">
+                      {opponentScoutReport.summary}
+                    </div>
+
+                    {/* Weaknesses List */}
+                    <div className="space-y-2">
+                      {opponentScoutReport.weaknesses.map((wk) => (
+                        <div
+                          key={wk.id}
+                          className="bg-[#0b0c10] border border-white/[0.07] rounded-xl p-3 space-y-1"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                              <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              {wk.title}
+                            </span>
+                            <span
+                              className={`text-[9px] font-mono font-extrabold uppercase px-2 py-0.5 rounded-full border shrink-0 ${
+                                wk.severity === 'alta'
+                                  ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
+                                  : 'bg-amber-400/15 text-amber-300 border-amber-400/30'
+                              }`}
+                            >
+                              {wk.severity === 'alta' ? 'Prioridade' : 'Atenção'}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-zinc-400 leading-snug">
+                            {wk.evidence}
+                          </p>
+                          <p className="text-[11px] text-[#b5ff00] font-medium leading-snug">
+                            Sugestão: {wk.exploitationTip}
+                          </p>
                         </div>
                       ))}
                     </div>
-                  </div>
 
-                  {/* Action Buttons */}
-                  <div className="space-y-2 pt-1">
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <button
-                        onClick={onGoToMatch}
-                        className="py-3 px-4 rounded-2xl text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shadow-md"
-                      >
-                        <Play className="w-3.5 h-3.5 fill-current" />
-                        <span>Assistir Jogo 2D</span>
-                      </button>
-                      {onQuickSimulateMatch ? (
-                        <button
-                          onClick={onQuickSimulateMatch}
-                          className="py-3 px-4 rounded-2xl text-xs font-extrabold bg-white hover:bg-zinc-200 text-[#090a0f] transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shadow-md"
-                        >
-                          <FastForward className="w-3.5 h-3.5" />
-                          <span>Simular Rápido</span>
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => onNavigate('tactics')}
-                          className="py-3 px-4 rounded-2xl text-xs font-bold bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-100 border border-white/10 transition-colors whitespace-nowrap"
-                        >
-                          Ajustar Prancheta
-                        </button>
-                      )}
+                    <div className="text-[11px] text-zinc-300 bg-[#0b0c10] border border-[#b5ff00]/25 rounded-xl px-3 py-2">
+                      Recomendação da comissão:{' '}
+                      <strong className="text-[#b5ff00]">
+                        {opponentScoutReport.tacticalRecommendation}
+                      </strong>
                     </div>
-                    {onQuickSimulateMatch && (
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="space-y-2 pt-1 border-t border-white/[0.07]">
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      onClick={onGoToMatch}
+                      className="py-3 px-4 rounded-2xl text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shadow-md"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Assistir Jogo 2D</span>
+                    </button>
+                    {onQuickSimulateMatch ? (
+                      <button
+                        onClick={onQuickSimulateMatch}
+                        className="py-3 px-4 rounded-2xl text-xs font-extrabold bg-white hover:bg-zinc-200 text-[#090a0f] transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shadow-md"
+                      >
+                        <FastForward className="w-3.5 h-3.5" />
+                        <span>Simular Rápido</span>
+                      </button>
+                    ) : (
                       <button
                         onClick={() => onNavigate('tactics')}
-                        className="w-full py-2.5 px-4 rounded-2xl text-xs font-bold bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-200 border border-white/10 transition-colors whitespace-nowrap"
+                        className="py-3 px-4 rounded-2xl text-xs font-bold bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-100 border border-white/10 transition-colors whitespace-nowrap"
                       >
-                        Ajustar Prancheta & Escalacão antes da Partida
+                        Ajustar Prancheta
                       </button>
                     )}
                   </div>
                 </div>
               </div>
-
-              {/* Secondary Silver Match Ticket Card (Reference Screen 1 stacked card motif) */}
-              {otherRoundFixtures[0] && (
-                <div className="rounded-[24px] bg-gradient-to-b from-zinc-200 to-zinc-300 text-[#090a0f] p-4 shadow-lg flex items-center justify-between">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <ClubBadge
-                      clubId={otherRoundFixtures[0].home.id}
-                      abbr={otherRoundFixtures[0].home.abbr}
-                      name={otherRoundFixtures[0].home.name}
-                      primaryColor={otherRoundFixtures[0].home.primaryColor}
-                      size="md"
-                      surface="light"
-                    />
-                    <div className="min-w-0">
-                      <div className="font-display font-extrabold text-sm uppercase truncate">
-                        {otherRoundFixtures[0].home.shortName}
-                      </div>
-                      <div className="text-[11px] text-zinc-600 font-mono">
-                        Destaque da Rodada
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="w-8 h-8 rounded-full bg-[#0b0c10] text-white font-display font-bold text-xs flex items-center justify-center shrink-0 mx-2">
-                    VS
-                  </div>
-
-                  <div className="flex items-center gap-3 min-w-0 text-right">
-                    <div className="min-w-0">
-                      <div className="font-display font-extrabold text-sm uppercase truncate">
-                        {otherRoundFixtures[0].away.shortName}
-                      </div>
-                      <div className="text-[11px] text-zinc-600 font-mono">
-                        {otherRoundFixtures[0].time}
-                      </div>
-                    </div>
-                    <ClubBadge
-                      clubId={otherRoundFixtures[0].away.id}
-                      abbr={otherRoundFixtures[0].away.abbr}
-                      name={otherRoundFixtures[0].away.name}
-                      primaryColor={otherRoundFixtures[0].away.primaryColor}
-                      size="md"
-                      surface="light"
-                    />
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -689,209 +730,8 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
           </div>
         </div>
 
-        {/* Right Column: Analytical Opponent Scout + Interactive Coaching Inbox (7 columns on xl) */}
+        {/* Right Column: Interactive Coaching Inbox (7 columns on xl) */}
         <div className="xl:col-span-7 space-y-6">
-          {opponentClub && opponentScoutReport && (
-            <section
-              aria-label="Resumo analítico do próximo adversário"
-              className="bg-[#14171f] border border-white/[0.08] rounded-[28px] overflow-hidden shadow-xl"
-            >
-              {/* Header */}
-              <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-white/[0.07]">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-8 h-8 rounded-xl bg-[#b5ff00]/15 border border-[#b5ff00]/30 flex items-center justify-center shrink-0">
-                    <Target className="w-4 h-4 text-[#b5ff00]" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="font-display text-lg font-extrabold uppercase tracking-tight text-white leading-none truncate">
-                      Análise do Adversário · {opponentClub.shortName}
-                    </h3>
-                    <div className="text-[11px] font-mono text-zinc-400 mt-1 truncate">
-                      {opponentScoutReport.standingsBadge}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setScoutFocusMode((m) => (m === 'ALL' ? 'TACTICAL' : 'ALL'))
-                    }
-                    className="px-3 py-1.5 rounded-full text-[11px] font-bold bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-200 border border-white/10 transition-colors flex items-center gap-1.5 whitespace-nowrap"
-                    title="Alternar foco entre resumo completo e dica tática rápida"
-                  >
-                    <RefreshCw className="w-3 h-3 text-[#b5ff00]" />
-                    <span>
-                      {scoutFocusMode === 'ALL'
-                        ? 'Foco Tático'
-                        : 'Visão Completa'}
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-5 space-y-4">
-                {/* Opponent Standings Telemetry Row */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  <div className="bg-[#0b0c10] border border-white/[0.06] rounded-2xl px-3 py-2.5">
-                    <div className="text-[10px] font-mono uppercase text-zinc-400">
-                      Classificação
-                    </div>
-                    <div className="font-display text-xl font-extrabold text-white mt-0.5 tabular-nums">
-                      {opponentScoutReport.position}º
-                      <span className="text-xs font-mono font-normal text-zinc-500">
-                        /{opponentScoutReport.totalTeams}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="bg-[#0b0c10] border border-white/[0.06] rounded-2xl px-3 py-2.5">
-                    <div className="text-[10px] font-mono uppercase text-zinc-400">
-                      Campanha (V-E-D)
-                    </div>
-                    <div className="font-mono text-sm font-bold text-zinc-100 mt-1 tabular-nums">
-                      {opponentScoutReport.won}V · {opponentScoutReport.drawn}E ·{' '}
-                      {opponentScoutReport.lost}D
-                    </div>
-                  </div>
-
-                  <div className="bg-[#0b0c10] border border-white/[0.06] rounded-2xl px-3 py-2.5">
-                    <div className="text-[10px] font-mono uppercase text-zinc-400">
-                      Gols (Pró / Contra)
-                    </div>
-                    <div className="font-mono text-sm font-bold text-zinc-100 mt-1 tabular-nums">
-                      <span className="text-[#b5ff00]">
-                        {opponentScoutReport.goalsFor}
-                      </span>{' '}
-                      /{' '}
-                      <span className="text-rose-400">
-                        {opponentScoutReport.goalsAgainst}
-                      </span>
-                      <span className="text-zinc-500 text-xs ml-1.5">
-                        (SG{' '}
-                        {opponentScoutReport.goalDifference > 0
-                          ? `+${opponentScoutReport.goalDifference}`
-                          : opponentScoutReport.goalDifference}
-                        )
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="bg-[#0b0c10] border border-white/[0.06] rounded-2xl px-3 py-2.5">
-                    <div className="text-[10px] font-mono uppercase text-zinc-400">
-                      Forma na Tabela
-                    </div>
-                    <div className="flex items-center gap-1 mt-1.5">
-                      {opponentScoutReport.recentForm.length > 0 ? (
-                        opponentScoutReport.recentForm.map((res, idx) => (
-                          <span
-                            key={idx}
-                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-extrabold ${
-                              res === 'V'
-                                ? 'bg-[#b5ff00]/20 text-[#b5ff00]'
-                                : res === 'E'
-                                ? 'bg-amber-400/20 text-amber-300'
-                                : 'bg-rose-500/20 text-rose-300'
-                            }`}
-                          >
-                            {res}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-xs font-mono text-zinc-400">
-                          Estreia
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Analytical Summary */}
-                <div className="bg-[#0b0c10]/80 border border-white/[0.07] rounded-2xl p-4 text-xs sm:text-sm text-zinc-200 leading-relaxed">
-                  {opponentScoutReport.summary}
-                </div>
-
-                {/* Suggested Weaknesses based on Standings */}
-                <div className="space-y-2.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
-                      Pontos Fracos Identificados
-                    </span>
-                    <span className="text-[11px] font-mono text-zinc-500">
-                      Base: {opponentScoutReport.tableLabel}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                    {(scoutFocusMode === 'TACTICAL'
-                      ? opponentScoutReport.weaknesses.slice(0, 2)
-                      : opponentScoutReport.weaknesses
-                    ).map((wk, idx) => (
-                      <div
-                        key={wk.id}
-                        className={`bg-[#0b0c10] border border-white/[0.07] rounded-2xl p-3.5 space-y-1.5 ${
-                          idx === 2 && scoutFocusMode === 'ALL'
-                            ? 'md:col-span-2'
-                            : ''
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-xs font-bold text-white">
-                            {wk.title}
-                          </span>
-                          <span
-                            className={`text-[10px] font-mono font-extrabold uppercase px-2 py-0.5 rounded-full border shrink-0 ${
-                              wk.severity === 'alta'
-                                ? 'bg-rose-500/15 text-rose-300 border-rose-500/30'
-                                : 'bg-amber-400/15 text-amber-300 border-amber-400/30'
-                            }`}
-                          >
-                            {wk.severity === 'alta' ? 'Prioridade' : 'Atenção'}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-zinc-400 leading-relaxed">
-                          {wk.evidence}
-                        </p>
-                        <p className="text-[11px] text-[#b5ff00] font-medium leading-snug pt-0.5">
-                          Sugestão: {wk.exploitationTip}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Action Footer */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/[0.07]">
-                  <span className="text-[11px] text-zinc-400">
-                    Recomendação:{' '}
-                    <strong className="text-white">
-                      {opponentScoutReport.tacticalRecommendation}
-                    </strong>
-                  </span>
-                  <div className="flex items-center gap-2 ml-auto">
-                    <button
-                      type="button"
-                      onClick={() => onNavigate('competitions')}
-                      className="px-3 py-1.5 rounded-full text-xs font-semibold bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-200 border border-white/10 transition-colors whitespace-nowrap"
-                    >
-                      Ver Tabela
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onNavigate('tactics')}
-                      className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1 whitespace-nowrap"
-                    >
-                      <span>Ajustar Tática</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </section>
-          )}
-
           <div className="bg-[#14171f] border border-white/[0.07] rounded-[28px] overflow-hidden flex flex-col">
             <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
               <div className="flex items-center gap-2.5">
@@ -900,117 +740,134 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                   Caixa de Entrada da Comissão Técnica
                 </h3>
               </div>
-            <span className="text-xs text-zinc-400 font-mono tabular-nums">
-              {messages.filter((m) => !m.read).length} não lidas ·{' '}
-              {messages.length} mensagens
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-12 flex-1 min-h-[540px]">
-            {/* Message List */}
-            <div className="md:col-span-5 border-b md:border-b-0 md:border-r border-white/[0.07] divide-y divide-white/[0.05] overflow-y-auto max-h-[580px]">
-              {messages.map((msg) => {
-                const isSelected = selectedMessage?.id === msg.id;
-                return (
-                  <button
-                    key={msg.id}
-                    onClick={() => handleSelectMessage(msg.id)}
-                    className={`w-full text-left p-4 transition-colors flex flex-col gap-1.5 ${
-                      isSelected
-                        ? 'bg-white/[0.08]'
-                        : 'hover:bg-white/[0.03] bg-transparent'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2 text-[11px]">
-                      <span
-                        className={`font-semibold ${
-                          msg.priority === 'warning'
-                            ? 'text-amber-400'
-                            : msg.priority === 'danger'
-                            ? 'text-rose-400'
-                            : msg.priority === 'positive'
-                            ? 'text-[#b5ff00]'
-                            : 'text-zinc-400'
-                        }`}
-                      >
-                        {msg.category}
-                      </span>
-                      <span className="text-zinc-400 font-mono tabular-nums">
-                        {msg.date.split('·')[0]}
-                      </span>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      {!msg.read ? (
-                        <Mail className="w-3.5 h-3.5 text-[#b5ff00] shrink-0 mt-0.5" />
-                      ) : (
-                        <MailOpen className="w-3.5 h-3.5 text-zinc-500 shrink-0 mt-0.5" />
-                      )}
-                      <span
-                        className={`text-xs line-clamp-2 ${
-                          !msg.read
-                            ? 'font-bold text-white'
-                            : 'font-normal text-zinc-300'
-                        }`}
-                      >
-                        {msg.subject}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-zinc-400 pl-5 truncate">
-                      {msg.sender} · {msg.senderRole}
-                    </div>
-                  </button>
-                );
-              })}
+              <span className="text-xs text-zinc-400 font-mono tabular-nums">
+                {unreadCount} não lidas · {messages.length} msgs
+              </span>
             </div>
 
-            {/* Message Reading Pane */}
-            <div className="md:col-span-7 p-5 sm:p-6 flex flex-col justify-between bg-[#0b0c10]/40">
-              {selectedMessage ? (
-                <div className="space-y-4">
-                  <div className="pb-4 border-b border-white/[0.07]">
-                    <div className="flex items-center justify-between text-xs text-zinc-400 mb-1.5">
-                      <span>
-                        {selectedMessage.category} ·{' '}
-                        {selectedMessage.senderRole}
-                      </span>
-                      <span className="font-mono tabular-nums">
-                        {selectedMessage.date}
-                      </span>
-                    </div>
-                    <h4 className="text-base sm:text-lg font-bold text-white leading-snug">
-                      {selectedMessage.subject}
-                    </h4>
-                    <div className="text-xs text-[#b5ff00] font-medium mt-1">
-                      Remetente: {selectedMessage.sender}
-                    </div>
-                  </div>
-
-                  <div className="space-y-3 text-xs sm:text-sm text-zinc-300 leading-relaxed">
-                    {selectedMessage.body.map((paragraph, i) => (
-                      <p key={i}>{paragraph}</p>
-                    ))}
-                  </div>
-
-                  {selectedMessage.bulletPoints &&
-                    selectedMessage.bulletPoints.length > 0 && (
-                      <div className="bg-[#0b0c10] border border-white/[0.07] rounded-2xl p-4 space-y-2">
-                        <div className="text-xs font-bold text-white">
-                          Pontos de Atenção da Comissão:
-                        </div>
-                        <ul className="space-y-1.5 text-xs text-zinc-300">
-                          {selectedMessage.bulletPoints.map((pt, idx) => (
-                            <li key={idx} className="flex items-start gap-2">
-                              <span className="text-[#b5ff00] font-mono font-bold">
-                                ·
-                              </span>
-                              <span>{pt}</span>
-                            </li>
-                          ))}
-                        </ul>
+            <div className="grid grid-cols-1 md:grid-cols-12 flex-1 min-h-[460px] md:min-h-[540px]">
+              {/* Message List (Hidden on mobile when reading a selected message) */}
+              <div
+                className={`${
+                  mobileReadingOpen ? 'hidden md:block' : 'block'
+                } md:col-span-5 border-b md:border-b-0 md:border-r border-white/[0.07] divide-y divide-white/[0.05] overflow-y-auto max-h-[460px] md:max-h-[580px]`}
+              >
+                {messages.map((msg) => {
+                  const isSelected = selectedMessage?.id === msg.id;
+                  return (
+                    <button
+                      key={msg.id}
+                      onClick={() => handleSelectMessage(msg.id)}
+                      className={`w-full text-left p-4 transition-colors flex flex-col gap-1.5 ${
+                        isSelected
+                          ? 'bg-white/[0.08]'
+                          : 'hover:bg-white/[0.03] bg-transparent'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 text-[11px]">
+                        <span
+                          className={`font-semibold ${
+                            msg.priority === 'warning'
+                              ? 'text-amber-400'
+                              : msg.priority === 'danger'
+                              ? 'text-rose-400'
+                              : msg.priority === 'positive'
+                              ? 'text-[#b5ff00]'
+                              : 'text-zinc-400'
+                          }`}
+                        >
+                          {msg.category}
+                        </span>
+                        <span className="text-zinc-400 font-mono tabular-nums">
+                          {msg.date.split('·')[0]}
+                        </span>
                       </div>
-                    )}
-                </div>
-              ) : null}
+                      <div className="flex items-start gap-2">
+                        {!msg.read ? (
+                          <Mail className="w-3.5 h-3.5 text-[#b5ff00] shrink-0 mt-0.5" />
+                        ) : (
+                          <MailOpen className="w-3.5 h-3.5 text-zinc-500 shrink-0 mt-0.5" />
+                        )}
+                        <span
+                          className={`text-xs line-clamp-2 ${
+                            !msg.read
+                              ? 'font-bold text-white'
+                              : 'font-normal text-zinc-300'
+                          }`}
+                        >
+                          {msg.subject}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-zinc-400 pl-5 truncate">
+                        {msg.sender} · {msg.senderRole}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Message Reading Pane */}
+              <div
+                className={`${
+                  mobileReadingOpen ? 'flex' : 'hidden md:flex'
+                } md:col-span-7 p-4 sm:p-6 flex-col justify-between bg-[#0b0c10]/40`}
+              >
+                {selectedMessage ? (
+                  <div className="space-y-4">
+                    {/* Mobile Back to List Button */}
+                    <button
+                      type="button"
+                      onClick={() => setMobileReadingOpen(false)}
+                      className="md:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.08] text-xs font-bold text-[#b5ff00] mb-1"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Voltar para lista ({messages.length})</span>
+                    </button>
+
+                    <div className="pb-4 border-b border-white/[0.07]">
+                      <div className="flex items-center justify-between text-xs text-zinc-400 mb-1.5">
+                        <span>
+                          {selectedMessage.category} ·{' '}
+                          {selectedMessage.senderRole}
+                        </span>
+                        <span className="font-mono tabular-nums">
+                          {selectedMessage.date}
+                        </span>
+                      </div>
+                      <h4 className="text-base sm:text-lg font-bold text-white leading-snug">
+                        {selectedMessage.subject}
+                      </h4>
+                      <div className="text-xs text-[#b5ff00] font-medium mt-1">
+                        Remetente: {selectedMessage.sender}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 text-xs sm:text-sm text-zinc-300 leading-relaxed">
+                      {selectedMessage.body.map((paragraph, i) => (
+                        <p key={i}>{paragraph}</p>
+                      ))}
+                    </div>
+
+                    {selectedMessage.bulletPoints &&
+                      selectedMessage.bulletPoints.length > 0 && (
+                        <div className="bg-[#0b0c10] border border-white/[0.07] rounded-2xl p-4 space-y-2">
+                          <div className="text-xs font-bold text-white">
+                            Pontos de Atenção da Comissão:
+                          </div>
+                          <ul className="space-y-1.5 text-xs text-zinc-300">
+                            {selectedMessage.bulletPoints.map((pt, idx) => (
+                              <li key={idx} className="flex items-start gap-2">
+                                <span className="text-[#b5ff00] font-mono font-bold">
+                                  ·
+                                </span>
+                                <span>{pt}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                  </div>
+                ) : null}
 
               {/* Contextual Action Footer inside Inbox Message */}
               {selectedMessage && (

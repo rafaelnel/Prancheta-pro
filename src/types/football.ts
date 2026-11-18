@@ -116,6 +116,7 @@ export interface Player {
   regenBatchYear?: number;
   isTransferListed?: boolean;
   isLoanListed?: boolean;
+  marketListingReason?: string;
   recentOvrDelta?: number;
   exceededExpectations?: boolean;
   breakoutBonusOvr?: number;
@@ -347,6 +348,9 @@ export interface MarketPlayerListing {
   buyFee: number;
   loanFee: number;
   loanAvailable: boolean;
+  isTransferListed?: boolean;
+  isLoanListed?: boolean;
+  listingReason?: string;
 }
 
 export interface TransferEvaluation {
@@ -389,6 +393,20 @@ export interface TransferRecord {
   fromClubName?: string;
   toClubName?: string;
   dealType?: 'COMPRA' | 'EMPRESTIMO';
+}
+
+export interface WatchedPlayerEntry {
+  playerId: string;
+  playerName: string;
+  position: NaturalPosition;
+  addedAtDate: string;
+  addedYear: number;
+  addedOvr: number;
+  addedMarketValue: number;
+  addedSalary: number;
+  addedAge: number;
+  addedClubName: string;
+  addedScope: MarketLeagueScope;
 }
 
 export type MatchEventType =
@@ -656,6 +674,24 @@ export interface SeasonArchiveEntry {
   userPoints: number;
 }
 
+export interface MatchHistoryRecord {
+  id: string;
+  fixtureId: string;
+  seasonYear: number;
+  dateLabel: string;
+  competition: CompetitionType;
+  competitionLabel: string;
+  roundNumber: number;
+  homeClubId: string;
+  awayClubId: string;
+  homeGoals: number;
+  awayGoals: number;
+  homePenalties?: number | null;
+  awayPenalties?: number | null;
+  winnerClubId?: string | null;
+  isKnockout?: boolean;
+}
+
 export type CareerSlotIndex = 1 | 2 | 3 | 4;
 
 export interface CareerSaveData {
@@ -689,10 +725,12 @@ export interface CareerSaveData {
   libertadores?: LibertadoresState;
   messages: InboxMessage[];
   matchState: LiveMatchState;
+  matchHistory?: MatchHistoryRecord[];
   freeAgents?: Player[];
   loanedOutPlayers?: Player[];
   transferHistory?: TransferRecord[];
   transferredOutClubPlayerIds?: string[];
+  watchedPlayers?: WatchedPlayerEntry[];
   pendingOffers?: IncomingTransferOffer[];
   financeLedger?: ClubFinanceLedger;
   youthAcademy?: YouthAcademyState;

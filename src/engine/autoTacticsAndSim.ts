@@ -30,6 +30,7 @@ import {
 } from './aiMarketEngine';
 import { isTransferWindowOpen } from './transferEngine';
 import { attributeAiRoundPlayerStats } from './seasonLifecycle';
+import { createMatchHistoryRecordFromLiveMatch } from './headToHead';
 import {
   Club,
   ClubFinanceLedger,
@@ -39,6 +40,7 @@ import {
   IncomingTransferOffer,
   LibertadoresState,
   LiveMatchState,
+  MatchHistoryRecord,
   MentalityType,
   NaturalPosition,
   Player,
@@ -427,6 +429,7 @@ export interface AutoSimCareerSnapshot {
   libertadores: LibertadoresState;
   messages: InboxMessage[];
   matchState: LiveMatchState;
+  matchHistory?: MatchHistoryRecord[];
   seasonYear?: number;
   seasonStepIndex: number;
   currentRound: number;
@@ -1409,6 +1412,17 @@ export function simulateNextAutoStep(
     goalScorers,
   };
 
+  const newHistoryRecord = createMatchHistoryRecordFromLiveMatch({
+    match: processedMatch,
+    seasonYear,
+    dateLabel,
+    fallbackDivision: updatedUserClubWithTactics.division === 'B' ? 'B' : 'A',
+  });
+  const nextMatchHistory = [
+    newHistoryRecord,
+    ...(working.matchHistory || []).filter((m) => m.id !== newHistoryRecord.id),
+  ];
+
   return {
     done: false,
     snapshot: {
@@ -1424,6 +1438,7 @@ export function simulateNextAutoStep(
       libertadores: nextLib,
       messages: nextMessages,
       matchState: nextPreMatchState,
+      matchHistory: nextMatchHistory,
       seasonYear,
       seasonStepIndex: nextStepIdx,
       currentRound: nextRound,

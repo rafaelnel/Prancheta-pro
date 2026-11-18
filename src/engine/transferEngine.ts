@@ -3,6 +3,7 @@ import {
   getDefaultFormationRoleForPosition,
   getInternationalMarketListings,
 } from '../data/transferCatalog';
+import { evaluateAiClubSquadAndListings } from './aiMarketEngine';
 import { calculatePlayerOverall } from './matchEngine';
 import {
   Club,
@@ -90,21 +91,44 @@ export function buildAllMarketListings(params: {
   for (const club of clubs) {
     if (club.id === userClubId) continue;
     const originClub = clubToMarketProfile(club);
-    const clubSquad =
+    const rawSquad =
       aiSquads && aiSquads[club.id] && aiSquads[club.id].length > 0
         ? aiSquads[club.id]
         : getRealSquadForClub(club);
 
+    // Ensure opponent clubs always evaluate their transfer/loan listings and positional needs
+    const hasExistingListings = rawSquad.some(
+      (p) => p.isTransferListed || p.isLoanListed
+    );
+    const clubSquad = hasExistingListings
+      ? rawSquad
+      : evaluateAiClubSquadAndListings(club, rawSquad);
+
     for (const player of clubSquad) {
       if (!aiSquads?.[club.id] && excludedSet.has(player.id)) continue;
       const ovr = calculatePlayerOverall(player.attributes, player.position);
+      const isTransferListed = Boolean(player.isTransferListed);
+      const isLoanListed = Boolean(player.isLoanListed);
+
+      const buyMultiplier = isTransferListed
+        ? 0.85
+        : player.isStarter
+        ? 1.15
+        : 0.95;
       const buyFee =
-        Math.round((player.marketValue * (player.isStarter ? 1.15 : 0.95)) / 250000) *
-        250000;
-      const loanAvailable = !player.isStarter || player.age <= 23 || ovr <= 79;
-      const loanRatio = player.isStarter ? 0.22 : player.age <= 22 ? 0.08 : 0.13;
+        Math.round((player.marketValue * buyMultiplier) / 250000) * 250000;
+
+      const loanAvailable =
+        isLoanListed || !player.isStarter || player.age <= 23 || ovr <= 79;
+      const loanRatio = isLoanListed
+        ? 0.06
+        : player.isStarter
+        ? 0.22
+        : player.age <= 22
+        ? 0.08
+        : 0.13;
       const loanFee = Math.max(
-        150000,
+        100000,
         Math.round((buyFee * loanRatio) / 50000) * 50000
       );
 
@@ -117,6 +141,9 @@ export function buildAllMarketListings(params: {
         buyFee: Math.max(500000, buyFee),
         loanFee,
         loanAvailable,
+        isTransferListed,
+        isLoanListed,
+        listingReason: player.marketListingReason,
       });
     }
   }
@@ -139,6 +166,8 @@ export function buildAllMarketListings(params: {
       buyFee: 0,
       loanFee: 0,
       loanAvailable: false,
+      isTransferListed: false,
+      isLoanListed: false,
     });
   }
 
@@ -265,6 +294,15 @@ export function evaluateTransferNegotiation(params: {
       const wageCoverDiscount =
         loanWageShare === 1 ? 15 : loanWageShare === 0.75 ? 7 : 0;
       const availabilityPenalty = listing.loanAvailable ? 0 : 22;
+      const clubListedLoanBonus = listing.isLoanListed
+        ? 22
+        : listing.isTransferListed
+        ? 8
+        : 0;
+
+      if (listing.isLoanListed) {
+        clubGapNote += ` O ${seller.shortName} colocou o atleta na LISTA DE EMPRÉSTIMO (${listing.listingReason || 'Ganhar rodagem'}) — liberação facilitada.`;
+      }
 
       resistance = Math.round(
         24 +
@@ -275,6 +313,7 @@ export function evaluateTransferNegotiation(params: {
           availabilityPenalty +
           Math.max(-8, playerDeltaVsTeam * 1.45) -
           wageCoverDiscount -
+          clubListedLoanBonus -
           offerBoost * 0.85
       );
     } else {
@@ -282,12 +321,19 @@ export function evaluateTransferNegotiation(params: {
       effectiveSalary = listing.player.salary;
 
       const starterPenalty = listing.isClubStarter ? 15 : -8;
+      const clubListedBuyBonus = listing.isTransferListed ? 20 : 0;
+
+      if (listing.isTransferListed) {
+        clubGapNote += ` O ${seller.shortName} colocou o atleta DISPONÍVEL PARA COMPRA (${listing.listingReason || 'Disponível no mercado'}) — pedida com desconto e menor resistência.`;
+      }
+
       resistance = Math.round(
         30 +
           repDiff * 1.45 +
           tierDiff * 10 +
           starterPenalty +
           Math.max(-10, playerDeltaVsTeam * 2.1) -
+          clubListedBuyBonus -
           offerBoost
       );
     }
@@ -439,6 +485,9 @@ export function executeIncomingTransfer(params: {
     loanOriginClubName: isLoan ? listing.originClub?.shortName : undefined,
     wageSharePaid: isLoan ? loanWageShare : 1,
     purchaseOptionFee: isLoan ? listing.buyFee : undefined,
+    isTransferListed: false,
+    isLoanListed: false,
+    marketListingReason: undefined,
   };
 
   // Free agents pay boosted salary if user increased offer tier

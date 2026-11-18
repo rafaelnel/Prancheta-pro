@@ -408,6 +408,23 @@ export function getInternationalMarketListings(): MarketPlayerListing[] {
       overrides,
     ] = seed;
     const club = clubMap.get(clubId)!;
+    const isTransferListed = !isClubStarter && (age >= 24 || idx % 2 === 0);
+    const isLoanListed = loanAvailable && (!isClubStarter || age <= 23);
+    const listingReason =
+      isTransferListed && isLoanListed
+        ? age <= 23
+          ? 'Disponível p/ Empréstimo ou Venda (Sem espaço no time titular)'
+          : 'Listado pelo clube (Negociável p/ compra ou empréstimo)'
+        : isTransferListed
+        ? age >= 28
+          ? 'Listado p/ Compra (Alívio de folha salarial)'
+          : 'Listado p/ Compra (Busca mais minutos)'
+        : isLoanListed
+        ? age <= 23
+          ? 'Listado p/ Empréstimo (Jovem p/ ganhar rodagem)'
+          : 'Listado p/ Empréstimo (Rotação de elenco)'
+        : undefined;
+
     const player = buildCatalogPlayer(
       `${clubId}-m${idx + 1}`,
       shirt,
@@ -420,14 +437,26 @@ export function getInternationalMarketListings(): MarketPlayerListing[] {
       true,
       overrides
     );
+    player.isTransferListed = isTransferListed;
+    player.isLoanListed = isLoanListed;
+    player.marketListingReason = listingReason;
+
     const ovr = calculatePlayerOverall(player.attributes, player.position);
-    const buyFee = Math.round((player.marketValue * 1.15) / 250000) * 250000;
+    const buyMultiplier = isTransferListed
+      ? 0.88
+      : isClubStarter
+      ? 1.15
+      : 0.98;
+    const buyFee =
+      Math.round((player.marketValue * buyMultiplier) / 250000) * 250000;
     const loanFee =
       !loanAvailable
         ? Math.round((buyFee * 0.24) / 100000) * 100000
-        : age <= 22 && !isClubStarter
-        ? Math.round((buyFee * 0.08) / 100000) * 100000
-        : Math.round((buyFee * 0.14) / 100000) * 100000;
+        : isLoanListed && age <= 22
+        ? Math.round((buyFee * 0.07) / 100000) * 100000
+        : isLoanListed
+        ? Math.round((buyFee * 0.11) / 100000) * 100000
+        : Math.round((buyFee * 0.15) / 100000) * 100000;
 
     return {
       player,
@@ -438,6 +467,9 @@ export function getInternationalMarketListings(): MarketPlayerListing[] {
       buyFee,
       loanFee: Math.max(250000, loanFee),
       loanAvailable,
+      isTransferListed,
+      isLoanListed,
+      listingReason,
     };
   });
 

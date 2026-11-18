@@ -13,6 +13,8 @@ import {
   Sparkles,
   Zap,
   ShieldAlert,
+  History,
+  Swords,
 } from 'lucide-react';
 import {
   Club,
@@ -25,12 +27,15 @@ import {
   generateSubstitutionSuggestions,
   SubstitutionSuggestion,
 } from '../engine/substitutionAdvisor';
+import { HeadToHeadSummary } from '../engine/headToHead';
 import { ClubBadge } from './ClubBadge';
 
 interface MatchEngineViewProps {
   match: LiveMatchState;
   homeClub: Club;
   awayClub: Club;
+  userClubId?: string;
+  headToHead?: HeadToHeadSummary;
   squad: Player[];
   roundFixtures: RoundFixture[];
   clubs: Club[];
@@ -49,6 +54,8 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
   match,
   homeClub,
   awayClub,
+  userClubId,
+  headToHead,
   squad,
   roundFixtures,
   clubs,
@@ -64,6 +71,11 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
 }) => {
   const [showSubsPanel, setShowSubsPanel] = useState(true);
   const [suggestionIndex, setSuggestionIndex] = useState(0);
+  const [showAllH2H, setShowAllH2H] = useState(false);
+
+  useEffect(() => {
+    setShowAllH2H(false);
+  }, [match.fixtureId]);
 
   const suggestions = useMemo(
     () => generateSubstitutionSuggestions(squad, match),
@@ -494,6 +506,279 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Pre-Match Card: Histórico de Confrontos (Head-to-Head) */}
+      {match.phase === 'PRE_MATCH' &&
+        (() => {
+          const userClub = match.isUserHome ? homeClub : awayClub;
+          const oppClub = match.isUserHome ? awayClub : homeClub;
+          const summary: HeadToHeadSummary = headToHead || {
+            opponentClubId: oppClub.id,
+            totalMatches: 0,
+            userWins: 0,
+            draws: 0,
+            opponentWins: 0,
+            userGoalsFor: 0,
+            userGoalsAgainst: 0,
+            goalDifference: 0,
+            winRatePct: 0,
+            recentMatches: [],
+          };
+          const displayedMatches = showAllH2H
+            ? summary.recentMatches
+            : summary.recentMatches.slice(0, 5);
+          const totalForBar = Math.max(1, summary.totalMatches);
+          const userWinPctBar = (summary.userWins / totalForBar) * 100;
+          const drawPctBar = (summary.draws / totalForBar) * 100;
+          const oppWinPctBar = (summary.opponentWins / totalForBar) * 100;
+
+          return (
+            <section
+              aria-label="Histórico de Confrontos"
+              data-testid="head-to-head-card"
+              className="bg-[#14171f] border border-white/[0.08] rounded-[28px] p-5 space-y-4 shadow-xl"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/[0.07]">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-2xl bg-[#b5ff00]/15 border border-[#b5ff00]/35 flex items-center justify-center text-[#b5ff00] shrink-0">
+                    <History className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-display text-lg sm:text-xl font-extrabold uppercase tracking-tight text-white leading-none">
+                      Histórico de Confrontos
+                    </h3>
+                    <p className="text-[11px] text-zinc-400 mt-1">
+                      Últimas partidas entre{' '}
+                      <strong className="text-zinc-200">{userClub.shortName}</strong> e{' '}
+                      <strong className="text-zinc-200">{oppClub.shortName}</strong> na carreira
+                    </p>
+                  </div>
+                </div>
+
+                <span
+                  className={`px-3 py-1 rounded-full text-[11px] font-mono font-bold border ${
+                    summary.totalMatches > 0
+                      ? 'bg-[#b5ff00]/15 border-[#b5ff00]/40 text-[#b5ff00]'
+                      : 'bg-[#0b0c10] border-white/10 text-zinc-400'
+                  }`}
+                >
+                  {summary.totalMatches > 0
+                    ? `${summary.totalMatches} confronto${summary.totalMatches === 1 ? '' : 's'} registrado${summary.totalMatches === 1 ? '' : 's'}`
+                    : 'Confronto Inédito'}
+                </span>
+              </div>
+
+              {summary.totalMatches === 0 ? (
+                <div className="bg-[#0b0c10] border border-white/[0.06] rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-3">
+                    <Swords className="w-5 h-5 text-zinc-500 shrink-0" />
+                    <div className="text-zinc-300">
+                      <div className="font-bold text-white">
+                        Primeiro duelo oficial entre {userClub.shortName} e {oppClub.shortName} nesta carreira
+                      </div>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        Assim que esta e as próximas partidas pelo Brasileirão, Copa do Brasil e Libertadores forem disputadas, os placares e o retrospecto aparecerão aqui.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="font-mono text-xs font-bold text-zinc-500 shrink-0">
+                    0V · 0E · 0D
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Aggregate H2H Strip */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    <div className="bg-[#0b0c10] border border-[#b5ff00]/25 rounded-2xl p-3">
+                      <div className="text-[10px] font-mono uppercase text-zinc-400">
+                        Vitórias {userClub.abbr}
+                      </div>
+                      <div className="font-display text-2xl font-extrabold text-[#b5ff00] tabular-nums mt-0.5">
+                        {summary.userWins}
+                      </div>
+                    </div>
+                    <div className="bg-[#0b0c10] border border-white/[0.07] rounded-2xl p-3">
+                      <div className="text-[10px] font-mono uppercase text-zinc-400">
+                        Empates
+                      </div>
+                      <div className="font-display text-2xl font-extrabold text-amber-300 tabular-nums mt-0.5">
+                        {summary.draws}
+                      </div>
+                    </div>
+                    <div className="bg-[#0b0c10] border border-white/[0.07] rounded-2xl p-3">
+                      <div className="text-[10px] font-mono uppercase text-zinc-400">
+                        Vitórias {oppClub.abbr}
+                      </div>
+                      <div className="font-display text-2xl font-extrabold text-rose-400 tabular-nums mt-0.5">
+                        {summary.opponentWins}
+                      </div>
+                    </div>
+                    <div className="bg-[#0b0c10] border border-white/[0.07] rounded-2xl p-3">
+                      <div className="text-[10px] font-mono uppercase text-zinc-400">
+                        Gols ({userClub.abbr} × {oppClub.abbr})
+                      </div>
+                      <div className="font-display text-2xl font-extrabold text-white tabular-nums mt-0.5 flex items-baseline gap-2">
+                        <span>
+                          {summary.userGoalsFor}–{summary.userGoalsAgainst}
+                        </span>
+                        <span className="text-[11px] font-mono text-zinc-400">
+                          ({summary.winRatePct}% aprov.)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Proportional W/D/L Bar */}
+                  <div className="w-full h-2 bg-[#0b0c10] rounded-full overflow-hidden flex gap-0.5">
+                    {summary.userWins > 0 && (
+                      <div
+                        className="h-full bg-[#b5ff00]"
+                        style={{ width: `${userWinPctBar}%` }}
+                        title={`${summary.userWins} vitória(s) do ${userClub.shortName}`}
+                      />
+                    )}
+                    {summary.draws > 0 && (
+                      <div
+                        className="h-full bg-amber-400"
+                        style={{ width: `${drawPctBar}%` }}
+                        title={`${summary.draws} empate(s)`}
+                      />
+                    )}
+                    {summary.opponentWins > 0 && (
+                      <div
+                        className="h-full bg-rose-500"
+                        style={{ width: `${oppWinPctBar}%` }}
+                        title={`${summary.opponentWins} vitória(s) do ${oppClub.shortName}`}
+                      />
+                    )}
+                  </div>
+
+                  {/* Last Matches List */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-wider text-zinc-400">
+                      <span>Últimas Partidas</span>
+                      {summary.recentMatches.length > 5 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAllH2H((v) => !v)}
+                          className="text-[#b5ff00] hover:underline font-bold normal-case"
+                        >
+                          {showAllH2H
+                            ? 'Mostrar apenas 5 recentes'
+                            : `Ver todas (${summary.recentMatches.length})`}
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+                      {displayedMatches.map((item) => {
+                        const matchHomeClub =
+                          clubMap.get(item.homeClubId) || homeClub;
+                        const matchAwayClub =
+                          clubMap.get(item.awayClubId) || awayClub;
+                        const isUserItemHome = userClubId
+                          ? item.homeClubId === userClubId
+                          : item.isUserHome;
+                        const outcomeBadge =
+                          item.outcome === 'V'
+                            ? {
+                                label: 'V',
+                                title: 'Vitória',
+                                cls: 'bg-[#b5ff00] text-[#090a0f]',
+                              }
+                            : item.outcome === 'E'
+                            ? {
+                                label: 'E',
+                                title: 'Empate',
+                                cls: 'bg-amber-400/20 text-amber-300 border border-amber-400/40',
+                              }
+                            : {
+                                label: 'D',
+                                title: 'Derrota',
+                                cls: 'bg-rose-500/20 text-rose-300 border border-rose-500/40',
+                              };
+
+                        return (
+                          <div
+                            key={item.id}
+                            className="bg-[#0b0c10] border border-white/[0.07] rounded-2xl px-3.5 py-2.5 flex items-center justify-between gap-3 text-xs"
+                          >
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="flex items-center gap-1.5 text-[10px] font-mono text-zinc-400 truncate">
+                                <span className="text-[#b5ff00] font-bold">
+                                  {item.seasonYear}
+                                </span>
+                                <span>·</span>
+                                <span className="truncate">{item.competitionLabel}</span>
+                                <span>·</span>
+                                <span className="text-zinc-300 shrink-0">
+                                  {isUserItemHome ? 'Casa' : 'Fora'}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <ClubBadge
+                                    clubId={matchHomeClub.id}
+                                    abbr={matchHomeClub.abbr}
+                                    name={matchHomeClub.name}
+                                    primaryColor={matchHomeClub.primaryColor}
+                                    size="xs"
+                                  />
+                                  <span
+                                    className={`truncate font-semibold ${
+                                      isUserItemHome ? 'text-white' : 'text-zinc-300'
+                                    }`}
+                                  >
+                                    {matchHomeClub.shortName}
+                                  </span>
+                                </div>
+
+                                <span className="font-mono font-extrabold text-sm text-white tabular-nums shrink-0 px-1.5 py-0.5 rounded bg-white/[0.06]">
+                                  {item.homeGoals} - {item.awayGoals}
+                                </span>
+
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <ClubBadge
+                                    clubId={matchAwayClub.id}
+                                    abbr={matchAwayClub.abbr}
+                                    name={matchAwayClub.name}
+                                    primaryColor={matchAwayClub.primaryColor}
+                                    size="xs"
+                                  />
+                                  <span
+                                    className={`truncate font-semibold ${
+                                      !isUserItemHome ? 'text-white' : 'text-zinc-300'
+                                    }`}
+                                  >
+                                    {matchAwayClub.shortName}
+                                  </span>
+                                </div>
+
+                                {item.decidedOnPenalties && (
+                                  <span className="text-[10px] font-mono text-amber-300 shrink-0">
+                                    (Pên. {item.homePenalties}-{item.awayPenalties})
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            <span
+                              title={outcomeBadge.title}
+                              className={`w-7 h-7 rounded-xl font-mono text-xs font-extrabold flex items-center justify-center shrink-0 ${outcomeBadge.cls}`}
+                            >
+                              {outcomeBadge.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
+            </section>
+          );
+        })()}
 
       {/* Full-Time Round Summary & Parallel Stage Results */}
       {match.phase === 'FULL_TIME' && (

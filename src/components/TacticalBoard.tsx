@@ -61,9 +61,8 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
   const reserves = squad.filter((p) => !p.isStarter);
 
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number>(5);
-  const [boardSubView, setBoardSubView] = useState<
-    'tactics' | 'lineup' | 'stats'
-  >('tactics');
+  const [showMobileInstructions, setShowMobileInstructions] =
+    useState<boolean>(false);
 
   const slots = FORMATIONS[formation];
   const selectedPlayer =
@@ -133,22 +132,22 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
   };
 
   return (
-    <div className="space-y-5">
-      {/* Reference Screen 3 Header: "Explorar / TÁTICAS" + Formation Segmented Pills */}
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pb-2 border-b border-white/[0.07]">
+    <div className="space-y-4">
+      {/* Header + Formation Segmented Pills */}
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3 pb-2 border-b border-white/[0.07]">
         <div>
           <span className="block text-xs sm:text-sm font-normal text-zinc-400 tracking-wide">
-            Explorar prancheta
+            Esquema tático, funções individuais e sinergia por setor
           </span>
           <h2 className="font-display text-3xl sm:text-5xl font-extrabold uppercase tracking-tight text-white leading-[0.95] mt-0.5">
             TÁTICAS
           </h2>
         </div>
 
-        {/* Formation Pill Selector (4-3-3, 4-2-3-1, 4-4-2, 3-5-2) */}
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Formation Pill Selector (4-3-3, 4-2-3-1, 4-4-2, 3-5-2) + Mobile Instructions Toggle */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div
-            className="flex items-center gap-1.5 bg-[#151821] p-1.5 rounded-full border border-white/[0.07]"
+            className="flex items-center gap-1 bg-[#151821] p-1.5 rounded-full border border-white/[0.07]"
             role="group"
             aria-label="Selecionar Esquema Tático"
           >
@@ -157,7 +156,7 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
                 <button
                   key={fmt}
                   onClick={() => onChangeFormation(fmt)}
-                  className={`px-4 py-1.5 rounded-full text-xs font-mono font-bold transition-colors whitespace-nowrap ${
+                  className={`px-3.5 sm:px-4 py-1.5 rounded-full text-xs font-mono font-bold transition-colors whitespace-nowrap ${
                     formation === fmt
                       ? 'bg-[#b5ff00] text-[#090a0f] shadow-sm'
                       : 'text-zinc-400 hover:text-white'
@@ -169,34 +168,25 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
             )}
           </div>
 
-          {/* Sub-view switcher inspired by Reference Screen 3 Bottom Bar (Lineup | Tactics | Stats) */}
-          <div className="flex items-center gap-1 bg-[#151821] p-1.5 rounded-full border border-white/[0.07]">
-            {(
-              [
-                { id: 'tactics', label: 'Prancheta 2D' },
-                { id: 'lineup', label: '11 Titulares' },
-                { id: 'stats', label: 'Instruções' },
-              ] as const
-            ).map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setBoardSubView(tab.id)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors whitespace-nowrap ${
-                  boardSubView === tab.id
-                    ? 'bg-white text-[#090a0f] font-bold'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowMobileInstructions((v) => !v)}
+            className="lg:hidden px-3.5 py-2 rounded-full text-xs font-bold bg-[#151821] text-zinc-200 border border-white/10 transition-colors whitespace-nowrap"
+          >
+            {showMobileInstructions
+              ? 'Ocultar Instruções ▲'
+              : `Instruções (${instructions.mentality}) ▼`}
+          </button>
         </div>
       </div>
 
       {/* Collective Instructions Strip & Sector Ratings */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        <div className="lg:col-span-8 bg-[#14171f] border border-white/[0.07] rounded-[24px] p-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div
+          className={`${
+            showMobileInstructions ? 'grid' : 'hidden lg:grid'
+          } lg:col-span-8 bg-[#14171f] border border-white/[0.07] rounded-[24px] p-4 grid-cols-1 sm:grid-cols-3 gap-4`}
+        >
           {/* Mentalidade Coletiva */}
           <div>
             <span className="block text-[11px] text-zinc-400 font-medium mb-2">

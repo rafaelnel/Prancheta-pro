@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, AlertTriangle, Zap, AlertCircle, TrendingDown } from 'lucide-react';
+import { X, AlertTriangle, Zap, AlertCircle, TrendingDown, Bookmark, BookmarkCheck } from 'lucide-react';
 import {
   ATTRIBUTE_LABELS,
   MENTAL_KEYS,
@@ -35,6 +35,8 @@ interface PlayerProfileModalProps {
     playerId: string,
     mode: 'TRANSFER' | 'LOAN'
   ) => void;
+  isWatched?: boolean;
+  onToggleWatch?: () => void;
 }
 
 export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
@@ -43,6 +45,8 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   onClose,
   onUpdateRoleDuty,
   onTogglePlayerMarketListing,
+  isWatched = false,
+  onToggleWatch,
 }) => {
   if (!player) return null;
 
@@ -265,6 +269,29 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                 )}
               </div>
             </div>
+            {onToggleWatch && (
+              <button
+                type="button"
+                onClick={onToggleWatch}
+                className={`px-3 py-2 rounded-full text-xs font-bold border transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+                  isWatched
+                    ? 'bg-[#b5ff00]/20 border-[#b5ff00] text-[#b5ff00]'
+                    : 'bg-white/[0.06] border-white/10 text-zinc-200 hover:bg-white/[0.12] hover:text-white'
+                }`}
+              >
+                {isWatched ? (
+                  <>
+                    <BookmarkCheck className="w-3.5 h-3.5" />
+                    <span>Observando</span>
+                  </>
+                ) : (
+                  <>
+                    <Bookmark className="w-3.5 h-3.5" />
+                    <span>Observar</span>
+                  </>
+                )}
+              </button>
+            )}
             <button
               onClick={onClose}
               aria-label="Fechar perfil do jogador"

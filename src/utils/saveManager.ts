@@ -129,11 +129,13 @@ function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
     loanedOutPlayers: save.loanedOutPlayers ?? [],
     transferHistory: save.transferHistory ?? [],
     transferredOutClubPlayerIds: save.transferredOutClubPlayerIds ?? [],
+    watchedPlayers: save.watchedPlayers ?? [],
     pendingOffers: save.pendingOffers ?? [],
     financeLedger:
       save.financeLedger ??
       createInitialFinanceLedger(userClub, hydratedSquad, seasonYear),
     seasonHistory: save.seasonHistory ?? [],
+    matchHistory: save.matchHistory ?? [],
     seasonEndReport: save.seasonEndReport ?? null,
     youthAcademy: (() => {
       const fallback = createInitialYouthAcademy(

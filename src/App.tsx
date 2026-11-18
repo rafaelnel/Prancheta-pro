@@ -74,6 +74,7 @@ import {
   LibertadoresState,
   LiveMatchState,
   MarketPlayerListing,
+  MatchHistoryRecord,
   MentalityType,
   NavigationTab,
   Player,
@@ -86,6 +87,7 @@ import {
   TransferDealMode,
   TransferOfferTier,
   TransferRecord,
+  WatchedPlayerEntry,
   YouthAcademyState,
   YouthInvestmentTier,
   YouthFocusSector,
@@ -141,6 +143,10 @@ import {
   buildSeasonEndSummary,
   executeNewSeasonRollover,
 } from './engine/seasonLifecycle';
+import {
+  createMatchHistoryRecordFromLiveMatch,
+  getHeadToHeadSummary,
+} from './engine/headToHead';
 
 function shouldAutostart(): boolean {
   if (typeof window === 'undefined') return false;
@@ -223,6 +229,12 @@ export default function App() {
     useState<string[]>(
       () => initialAutostartSave?.transferredOutClubPlayerIds || []
     );
+  const [watchedPlayers, setWatchedPlayers] = useState<WatchedPlayerEntry[]>(
+    () => initialAutostartSave?.watchedPlayers || []
+  );
+  const [matchHistory, setMatchHistory] = useState<MatchHistoryRecord[]>(
+    () => initialAutostartSave?.matchHistory || []
+  );
   const [marketFeedback, setMarketFeedback] = useState<MarketFeedback>(null);
 
   // Continuous Multi-Season Career, Living AI Market & Economy Ledger State
@@ -480,6 +492,8 @@ export default function App() {
   );
   const [inspectedExternalPlayer, setInspectedExternalPlayer] =
     useState<Player | null>(null);
+  const [inspectedExternalListing, setInspectedExternalListing] =
+    useState<MarketPlayerListing | null>(null);
 
   const userClub = useMemo(
     () => clubs.find((c) => c.id === userClubId) || clubs[0],
@@ -546,6 +560,28 @@ export default function App() {
       [],
       aiSquads
     )
+  );
+
+  const preMatchHeadToHead = useMemo(
+    () =>
+      getHeadToHeadSummary({
+        userClubId,
+        opponentClubId: opponentClub.id,
+        matchHistory,
+        fixtures,
+        copaDoBrasil,
+        libertadores,
+        currentYear,
+      }),
+    [
+      userClubId,
+      opponentClub.id,
+      matchHistory,
+      fixtures,
+      copaDoBrasil,
+      libertadores,
+      currentYear,
+    ]
   );
 
   const userRank = useMemo(
@@ -683,11 +719,13 @@ export default function App() {
         libertadores: override?.libertadores ?? libertadores,
         messages: override?.messages ?? messages,
         matchState: override?.matchState ?? matchState,
+        matchHistory: override?.matchHistory ?? matchHistory,
         freeAgents: override?.freeAgents ?? freeAgents,
         loanedOutPlayers: override?.loanedOutPlayers ?? loanedOutPlayers,
         transferHistory: override?.transferHistory ?? transferHistory,
         transferredOutClubPlayerIds:
           override?.transferredOutClubPlayerIds ?? transferredOutClubPlayerIds,
+        watchedPlayers: override?.watchedPlayers ?? watchedPlayers,
         pendingOffers: override?.pendingOffers ?? pendingOffers,
         financeLedger: override?.financeLedger ?? financeLedger,
         seasonHistory: override?.seasonHistory ?? seasonHistory,
@@ -728,10 +766,12 @@ export default function App() {
       libertadores,
       messages,
       matchState,
+      matchHistory,
       freeAgents,
       loanedOutPlayers,
       transferHistory,
       transferredOutClubPlayerIds,
+      watchedPlayers,
       pendingOffers,
       financeLedger,
       seasonHistory,
@@ -776,6 +816,7 @@ export default function App() {
     setLoanedOutPlayers(save.loanedOutPlayers || []);
     setTransferHistory(save.transferHistory || []);
     setTransferredOutClubPlayerIds(save.transferredOutClubPlayerIds || []);
+    setWatchedPlayers(save.watchedPlayers || []);
     setPendingOffers(save.pendingOffers || []);
     setFinanceLedger(
       save.financeLedger || createInitialFinanceLedger(saveClub, save.squad, year)
@@ -799,8 +840,10 @@ export default function App() {
     setDayOffset(save.dayOffset);
     setIsMatchDay(save.isMatchDay);
     setMatchState({ ...save.matchState, isRunning: false });
+    setMatchHistory(save.matchHistory || []);
     setInspectedPlayerId(null);
     setInspectedExternalPlayer(null);
+    setInspectedExternalListing(null);
     setActiveTab('inbox');
     setHasUnsavedChanges(false);
     setScreen('club');
@@ -1273,6 +1316,16 @@ export default function App() {
         80
       );
       const processedMatchState = { ...matchState, roundProcessed: true };
+      const newMatchRecord = createMatchHistoryRecordFromLiveMatch({
+        match: processedMatchState,
+        seasonYear: currentYear,
+        dateLabel: formatCalendarDate(dayOffset, currentYear),
+        fallbackDivision: userClub.division === 'B' ? 'B' : 'A',
+      });
+      const updatedMatchHistory = [
+        newMatchRecord,
+        ...matchHistory.filter((m) => m.id !== newMatchRecord.id),
+      ];
 
       setClubs(finalClubs);
       setSquad(finalSquad);
@@ -1288,6 +1341,7 @@ export default function App() {
       setPendingOffers(updatedPendingOffers);
       setMessages(updatedMessages);
       setMatchState(processedMatchState);
+      setMatchHistory(updatedMatchHistory);
 
       persistCareer({
         clubs: finalClubs,
@@ -1304,11 +1358,13 @@ export default function App() {
         pendingOffers: updatedPendingOffers,
         messages: updatedMessages,
         matchState: processedMatchState,
+        matchHistory: updatedMatchHistory,
         midSeasonEvolutionProcessedYear: newMidSeasonProcessedYear,
       });
     }
   }, [
     matchState,
+    matchHistory,
     fixtures,
     clubs,
     standings,
@@ -1718,6 +1774,7 @@ export default function App() {
     setLibertadores(snap.libertadores);
     setMessages(snap.messages);
     setMatchState(snap.matchState);
+    if (snap.matchHistory) setMatchHistory(snap.matchHistory);
     if (snap.seasonYear) setCurrentYear(snap.seasonYear);
     setSeasonStepIndex(snap.seasonStepIndex);
     setCurrentRound(snap.currentRound);
@@ -1812,6 +1869,7 @@ export default function App() {
         libertadores: withSummary.libertadores,
         messages: withSummary.messages,
         matchState: withSummary.matchState,
+        matchHistory: withSummary.matchHistory,
         currentYear: yr,
         seasonStepIndex: withSummary.seasonStepIndex,
         activeCompetition: stepComp,
@@ -1850,6 +1908,7 @@ export default function App() {
       libertadores,
       messages,
       matchState,
+      matchHistory,
       seasonYear: currentYear,
       seasonStepIndex,
       currentRound,
@@ -2936,6 +2995,36 @@ export default function App() {
     });
   };
 
+  const handleToggleWatchPlayer = (listing: MarketPlayerListing) => {
+    const exists = watchedPlayers.some((w) => w.playerId === listing.player.id);
+    const nextWatched: WatchedPlayerEntry[] = exists
+      ? watchedPlayers.filter((w) => w.playerId !== listing.player.id)
+      : [
+          {
+            playerId: listing.player.id,
+            playerName: listing.player.name,
+            position: listing.player.position,
+            addedAtDate: formatCalendarDate(dayOffset, currentYear),
+            addedYear: currentYear,
+            addedOvr: listing.ovr,
+            addedMarketValue: listing.player.marketValue,
+            addedSalary: listing.player.salary,
+            addedAge: listing.player.age,
+            addedClubName: listing.originClub?.shortName || 'Passe Livre',
+            addedScope: listing.scope,
+          },
+          ...watchedPlayers,
+        ];
+    setWatchedPlayers(nextWatched);
+    persistCareer({ watchedPlayers: nextWatched });
+  };
+
+  const handleRemoveWatchedPlayer = (playerId: string) => {
+    const nextWatched = watchedPlayers.filter((w) => w.playerId !== playerId);
+    setWatchedPlayers(nextWatched);
+    persistCareer({ watchedPlayers: nextWatched });
+  };
+
   const handlePrimaryHeaderAction = () => {
     if (activeTab === 'match') {
       if (matchState.phase === 'FULL_TIME') {
@@ -3062,70 +3151,107 @@ export default function App() {
       ? 'Ir p/ Jogo'
       : 'Continuar';
 
-  const navItems = [
+  const youthReadyCount =
+    youthAcademy.youthRoster?.filter((p) => p.age >= 16).length || 0;
+  const isFootballHubActive =
+    activeTab === 'squad' || activeTab === 'tactics' || activeTab === 'youth';
+  const isSeasonHubActive =
+    activeTab === 'competitions' || activeTab === 'calendar';
+
+  const navHubs = [
     {
       id: 'inbox' as const,
-      label: 'Início / Inbox',
+      targetTab: 'inbox' as NavigationTab,
+      isActive: activeTab === 'inbox',
+      label: 'Central & Inbox',
       mobileLabel: 'Início',
       icon: Inbox,
       badge: unreadInboxCount > 0 ? String(unreadInboxCount) : null,
+      subItems: undefined,
     },
     {
-      id: 'squad' as const,
-      label: 'Elenco',
+      id: 'football' as const,
+      targetTab: (isFootballHubActive ? activeTab : 'squad') as NavigationTab,
+      isActive: isFootballHubActive,
+      label: 'Elenco & Tática',
       mobileLabel: 'Elenco',
       icon: Users,
       badge: `${squad.length}`,
-    },
-    {
-      id: 'tactics' as const,
-      label: 'Táticas',
-      mobileLabel: 'Táticas',
-      icon: Sliders,
-      badge: userClub.formation,
+      subItems: [
+        {
+          id: 'squad' as NavigationTab,
+          label: 'Plantel Profissional',
+          shortLabel: 'Plantel',
+          icon: Users,
+          badge: `${squad.length}`,
+        },
+        {
+          id: 'tactics' as NavigationTab,
+          label: 'Prancheta Tática',
+          shortLabel: 'Táticas',
+          icon: Sliders,
+          badge: userClub.formation,
+        },
+        {
+          id: 'youth' as NavigationTab,
+          label: 'Base & Sub-20',
+          shortLabel: 'Base Sub-20',
+          icon: GraduationCap,
+          badge: youthReadyCount > 0 ? String(youthReadyCount) : null,
+        },
+      ],
     },
     {
       id: 'market' as const,
+      targetTab: 'market' as NavigationTab,
+      isActive: activeTab === 'market',
       label: 'Mercado',
-      mobileLabel: 'Merc.',
+      mobileLabel: 'Mercado',
       icon: ArrowLeftRight,
       badge:
         activeOffersCount > 0
           ? `${activeOffersCount}!`
-          : transferHistory.length > 0
-          ? String(transferHistory.length)
+          : watchedPlayers.length > 0
+          ? String(watchedPlayers.length)
           : null,
+      subItems: undefined,
     },
     {
-      id: 'youth' as const,
-      label: 'Base & Sub-20',
-      mobileLabel: 'Base',
-      icon: GraduationCap,
-      badge:
-        (youthAcademy.youthRoster?.filter((p) => p.age >= 16).length || 0) > 0
-          ? `${youthAcademy.youthRoster?.filter((p) => p.age >= 16).length}`
-          : null,
-    },
-    {
-      id: 'calendar' as const,
-      label: 'Calendário Anual',
-      mobileLabel: 'Agenda',
-      icon: Calendar,
-      badge: String(currentYear),
-    },
-    {
-      id: 'competitions' as const,
-      label: 'Competições',
-      mobileLabel: 'Liga',
+      id: 'season' as const,
+      targetTab: (isSeasonHubActive
+        ? activeTab
+        : 'competitions') as NavigationTab,
+      isActive: isSeasonHubActive,
+      label: 'Temporada',
+      mobileLabel: 'Temporada',
       icon: Trophy,
       badge: `${userRank}º`,
+      subItems: [
+        {
+          id: 'competitions' as NavigationTab,
+          label: 'Ligas & Copas',
+          shortLabel: 'Ligas & Copas',
+          icon: Trophy,
+          badge: `${userRank}º`,
+        },
+        {
+          id: 'calendar' as NavigationTab,
+          label: 'Calendário & Simulação',
+          shortLabel: 'Calendário',
+          icon: Calendar,
+          badge: String(currentYear),
+        },
+      ],
     },
     {
       id: 'finances' as const,
+      targetTab: 'finances' as NavigationTab,
+      isActive: activeTab === 'finances',
       label: 'Finanças',
-      mobileLabel: 'Caixa',
+      mobileLabel: 'Finanças',
       icon: Wallet,
       badge: null,
+      subItems: undefined,
     },
   ];
 
@@ -3175,6 +3301,8 @@ export default function App() {
             match={matchState}
             homeClub={homeClub}
             awayClub={awayClub}
+            userClubId={userClubId}
+            headToHead={preMatchHeadToHead}
             squad={squad}
             roundFixtures={activeRoundFixturesForMatchView}
             clubs={clubs}
@@ -3219,40 +3347,70 @@ export default function App() {
             </div>
           </div>
 
-          {/* Navigation Menu */}
+          {/* Consolidated 5-Pillar Navigation Menu with Sub-items */}
           <nav
             className="p-3.5 space-y-1.5"
             aria-label="Navegação principal do clube"
           >
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
+            {navHubs.map((hub) => {
+              const Icon = hub.icon;
               return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center justify-between px-4 py-2.5 rounded-full text-xs transition-all ${
-                    isActive
-                      ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold shadow-md'
-                      : 'text-zinc-400 hover:text-white hover:bg-white/[0.05] font-medium'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <Icon className="w-4 h-4 shrink-0" />
-                    <span className="whitespace-nowrap">{item.label}</span>
-                  </div>
-                  {item.badge && (
-                    <span
-                      className={`font-mono tabular-nums text-[11px] px-2 py-0.5 rounded-full ${
-                        isActive
-                          ? 'bg-[#090a0f] text-[#b5ff00] font-bold'
-                          : 'text-zinc-400 bg-white/[0.05]'
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
+                <div key={hub.id} className="space-y-1">
+                  <button
+                    onClick={() => setActiveTab(hub.targetTab)}
+                    className={`w-full flex items-center justify-between px-4 py-2.5 rounded-full text-xs transition-all ${
+                      hub.isActive
+                        ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold shadow-md'
+                        : 'text-zinc-400 hover:text-white hover:bg-white/[0.05] font-medium'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon className="w-4 h-4 shrink-0" />
+                      <span className="whitespace-nowrap">{hub.label}</span>
+                    </div>
+                    {hub.badge && (
+                      <span
+                        className={`font-mono tabular-nums text-[11px] px-2 py-0.5 rounded-full ${
+                          hub.isActive
+                            ? 'bg-[#090a0f] text-[#b5ff00] font-bold'
+                            : 'text-zinc-400 bg-white/[0.05]'
+                        }`}
+                      >
+                        {hub.badge}
+                      </span>
+                    )}
+                  </button>
+
+                  {hub.subItems && hub.isActive && (
+                    <div className="pl-4 pr-1 py-0.5 space-y-1">
+                      {hub.subItems.map((sub) => {
+                        const SubIcon = sub.icon;
+                        const isSubActive = activeTab === sub.id;
+                        return (
+                          <button
+                            key={sub.id}
+                            onClick={() => setActiveTab(sub.id)}
+                            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-full text-[11px] transition-colors ${
+                              isSubActive
+                                ? 'bg-white/[0.1] text-white font-bold border border-[#b5ff00]/35'
+                                : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04]'
+                            }`}
+                          >
+                            <span className="flex items-center gap-2 truncate">
+                              <SubIcon className="w-3.5 h-3.5 text-[#b5ff00] shrink-0" />
+                              <span className="truncate">{sub.label}</span>
+                            </span>
+                            {sub.badge && (
+                              <span className="font-mono text-[10px] text-zinc-400 ml-1">
+                                {sub.badge}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
-                </button>
+                </div>
               );
             })}
           </nav>
@@ -3347,7 +3505,7 @@ export default function App() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Persistent Top Header Bar */}
-        <header className="sticky top-0 z-30 h-12 lg:h-16 bg-[#0b0c10]/95 border-b border-white/[0.07] px-3 sm:px-5 lg:px-6 flex items-center justify-between gap-2 sm:gap-4 shrink-0">
+        <header className="sticky top-0 z-30 h-13 lg:h-16 bg-[#0b0c10]/95 border-b border-white/[0.07] px-3 sm:px-5 lg:px-6 flex items-center justify-between gap-2 sm:gap-4 shrink-0">
           {/* Left: Club Name & League Status */}
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <ClubBadge
@@ -3372,7 +3530,7 @@ export default function App() {
                 <span className="text-[#b5ff00] font-bold">
                   {formatCompactBRL(userClub.cashBalance)}
                 </span>{' '}
-                · Conf. {userClub.boardConfidence}%
+                · {userRank}º Série {userClub.division}
               </div>
               {/* Desktop status line */}
               <div className="hidden md:block text-xs text-zinc-400 truncate">
@@ -3428,12 +3586,9 @@ export default function App() {
               </div>
             </div>
 
-            {/* Alternador de Moeda (Real R$ / Euro €) */}
+            {/* Alternador de Moeda (Real R$ / Euro €) - Visível em telas sm+ no topo; no mobile fica integrado em Mercado/Finanças */}
             <div className="hidden sm:flex items-center">
               <CurrencyToggle />
-            </div>
-            <div className="flex sm:hidden items-center">
-              <CurrencyToggle compact />
             </div>
 
             {/* Quick Save Pill */}
@@ -3446,7 +3601,7 @@ export default function App() {
                   ? 'Salvar alterações da carreira'
                   : 'Salvar carreira'
               }
-              className={`px-2.5 py-1.5 lg:px-3.5 lg:py-2 rounded-full text-xs font-bold border transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+              className={`p-2 sm:px-3 sm:py-1.5 lg:px-3.5 lg:py-2 rounded-full text-xs font-bold border transition-colors flex items-center gap-1.5 whitespace-nowrap ${
                 saveSuccessFlash
                   ? 'bg-[#b5ff00] text-[#090a0f] border-[#b5ff00]'
                   : 'bg-[#14171f] hover:bg-white/[0.08] text-white border-white/10'
@@ -3471,7 +3626,7 @@ export default function App() {
               onClick={handleReturnToHub}
               aria-label="Voltar aos slots e saves"
               title="Voltar ao menu de saves"
-              className="lg:hidden p-1.5 rounded-full bg-[#14171f] hover:bg-white/[0.08] text-zinc-300 border border-white/10 transition-colors"
+              className="lg:hidden p-2 rounded-full bg-[#14171f] hover:bg-white/[0.08] text-zinc-300 border border-white/10 transition-colors"
             >
               <FolderOpen className="w-3.5 h-3.5 text-[#b5ff00]" />
             </button>
@@ -3479,7 +3634,7 @@ export default function App() {
             {/* Dynamic Primary Action Button */}
             <button
               onClick={handlePrimaryHeaderAction}
-              className="px-3 py-1.5 lg:px-5 lg:py-2.5 rounded-full text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1.5 lg:gap-2 whitespace-nowrap shadow-md"
+              className="px-3.5 py-2 lg:px-5 lg:py-2.5 rounded-full text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1.5 lg:gap-2 whitespace-nowrap shadow-md"
             >
               <Play className="w-3 h-3 lg:w-3.5 lg:h-3.5 fill-current shrink-0" />
               <span className="hidden sm:inline">{primaryActionLabel}</span>
@@ -3490,7 +3645,140 @@ export default function App() {
         </header>
 
         {/* Active Module Viewport */}
-        <main className="flex-1 p-3.5 sm:p-5 lg:p-6 pb-20 lg:pb-6 overflow-y-auto overflow-x-hidden">
+        <main className="flex-1 p-3.5 sm:p-5 lg:p-6 pb-24 lg:pb-6 overflow-y-auto overflow-x-hidden">
+          {/* Unified Sub-Navigation Bar for Football Department Hub (Elenco | Táticas | Base) */}
+          {isFootballHubActive && (
+            <div className="mb-4 flex items-center justify-between gap-2 bg-[#14171f] border border-white/[0.08] p-1.5 rounded-2xl shadow-lg">
+              <div className="grid grid-cols-3 gap-1 w-full">
+                {(
+                  [
+                    {
+                      id: 'squad' as NavigationTab,
+                      label: 'Plantel Profissional',
+                      mobileLabel: 'Plantel',
+                      badge: `${squad.length}`,
+                      icon: Users,
+                    },
+                    {
+                      id: 'tactics' as NavigationTab,
+                      label: 'Prancheta Tática',
+                      mobileLabel: 'Táticas',
+                      badge: userClub.formation,
+                      icon: Sliders,
+                    },
+                    {
+                      id: 'youth' as NavigationTab,
+                      label: 'Base & Sub-20',
+                      mobileLabel: 'Base Sub-20',
+                      badge:
+                        youthReadyCount > 0 ? `${youthReadyCount}` : undefined,
+                      icon: GraduationCap,
+                    },
+                  ] as const
+                ).map((sub) => {
+                  const SubIcon = sub.icon;
+                  const active = activeTab === sub.id;
+                  return (
+                    <button
+                      key={sub.id}
+                      type="button"
+                      onClick={() => setActiveTab(sub.id)}
+                      className={`min-h-[40px] px-2.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap ${
+                        active
+                          ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold shadow-sm'
+                          : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
+                      }`}
+                    >
+                      <SubIcon className="w-3.5 h-3.5 shrink-0" />
+                      <span className="hidden sm:inline">{sub.label}</span>
+                      <span className="sm:hidden">{sub.mobileLabel}</span>
+                      {sub.badge && (
+                        <span
+                          className={`font-mono text-[10px] px-1.5 py-0.5 rounded-full ${
+                            active
+                              ? 'bg-[#090a0f]/15 text-[#090a0f] font-extrabold'
+                              : 'bg-white/[0.06] text-zinc-400'
+                          }`}
+                        >
+                          {sub.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Unified Sub-Navigation Bar for Season Hub (Competições | Calendário Anual) */}
+          {isSeasonHubActive && (
+            <div className="mb-4 flex items-center justify-between gap-2 bg-[#14171f] border border-white/[0.08] p-1.5 rounded-2xl shadow-lg">
+              <div className="grid grid-cols-2 gap-1 w-full">
+                {(
+                  [
+                    {
+                      id: 'competitions' as NavigationTab,
+                      label: 'Ligas, Copas & Tabelas',
+                      mobileLabel: 'Ligas & Copas',
+                      badge: `${userRank}º na Série ${userClub.division}`,
+                      mobileBadge: `${userRank}º`,
+                      icon: Trophy,
+                    },
+                    {
+                      id: 'calendar' as NavigationTab,
+                      label: 'Calendário & Simulação Rápida',
+                      mobileLabel: 'Calendário & Simular',
+                      badge: formatCalendarDate(dayOffset, currentYear)
+                        .split(',')[1]
+                        ?.trim(),
+                      mobileBadge: String(currentYear),
+                      icon: Calendar,
+                    },
+                  ] as const
+                ).map((sub) => {
+                  const SubIcon = sub.icon;
+                  const active = activeTab === sub.id;
+                  return (
+                    <button
+                      key={sub.id}
+                      type="button"
+                      onClick={() => setActiveTab(sub.id)}
+                      className={`min-h-[40px] px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap ${
+                        active
+                          ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold shadow-sm'
+                          : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
+                      }`}
+                    >
+                      <SubIcon className="w-3.5 h-3.5 shrink-0" />
+                      <span className="hidden sm:inline">{sub.label}</span>
+                      <span className="sm:hidden">{sub.mobileLabel}</span>
+                      <span
+                        className={`font-mono text-[10px] px-1.5 py-0.5 rounded-full ${
+                          active
+                            ? 'bg-[#090a0f]/15 text-[#090a0f] font-extrabold'
+                            : 'bg-white/[0.06] text-zinc-400'
+                        }`}
+                      >
+                        <span className="hidden sm:inline">{sub.badge}</span>
+                        <span className="sm:hidden">{sub.mobileBadge}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Mobile Currency Bar inside Finances view */}
+          {activeTab === 'finances' && (
+            <div className="sm:hidden mb-3 flex items-center justify-between bg-[#14171f] border border-white/[0.08] px-3.5 py-2 rounded-2xl">
+              <span className="text-xs font-semibold text-zinc-300">
+                Moeda de exibição financeira
+              </span>
+              <CurrencyToggle compact />
+            </div>
+          )}
+
           {activeTab === 'inbox' && (
             <DashboardInbox
               messages={messages}
@@ -3551,6 +3839,7 @@ export default function App() {
               loanedOutPlayers={loanedOutPlayers}
               transferHistory={transferHistory}
               transferredOutClubPlayerIds={transferredOutClubPlayerIds}
+              watchedPlayers={watchedPlayers}
               seasonYear={currentYear}
               dayOffset={dayOffset}
               aiSquads={aiSquads}
@@ -3558,10 +3847,13 @@ export default function App() {
               onResolveIncomingOffer={handleResolveIncomingOffer}
               lastFeedback={marketFeedback}
               onClearFeedback={() => setMarketFeedback(null)}
-              onInspectPlayer={(p) => {
+              onInspectPlayer={(p, listing) => {
                 setInspectedPlayerId(null);
                 setInspectedExternalPlayer(p);
+                setInspectedExternalListing(listing || null);
               }}
+              onToggleWatchPlayer={handleToggleWatchPlayer}
+              onRemoveWatchedPlayer={handleRemoveWatchedPlayer}
               onProposeTransfer={handleProposeTransfer}
               onOutgoingTransfer={handleOutgoingTransfer}
               onTogglePlayerMarketListing={handleTogglePlayerMarketListing}
@@ -3578,6 +3870,7 @@ export default function App() {
               onInspectPlayer={(p) => {
                 setInspectedPlayerId(null);
                 setInspectedExternalPlayer(p);
+                setInspectedExternalListing(null);
               }}
               onPromoteYouthPlayer={handlePromoteYouthPlayer}
               onReleaseYouthPlayer={handleReleaseYouthPlayer}
@@ -3635,34 +3928,39 @@ export default function App() {
         </main>
       </div>
 
-      {/* Mobile Bottom Capsule Navigation Bar (< lg) */}
+      {/* Mobile Bottom 5-Hub Navigation Bar (< lg) */}
       <nav
         aria-label="Navegação mobile"
-        className="lg:hidden fixed bottom-2 left-1.5 right-1.5 z-40 h-14 bg-[#14171f]/95 border border-white/10 rounded-full grid grid-cols-8 items-center px-1 shadow-2xl select-none"
+        className="lg:hidden fixed bottom-2 left-2 right-2 z-40 h-16 bg-[#14171f]/95 backdrop-blur-md border border-white/10 rounded-2xl grid grid-cols-5 items-center px-1.5 shadow-2xl select-none"
       >
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id;
+        {navHubs.map((hub) => {
+          const Icon = hub.icon;
+          const isActive = hub.isActive;
           return (
             <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`h-11 rounded-full flex flex-col items-center justify-center gap-0.5 transition-all ${
+              key={hub.id}
+              onClick={() => setActiveTab(hub.targetTab)}
+              className={`h-12 rounded-xl flex flex-col items-center justify-center gap-1 transition-all ${
                 isActive
                   ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold shadow-sm'
-                  : 'text-zinc-400 hover:text-white'
+                  : 'text-zinc-400 hover:text-white font-semibold'
               }`}
             >
               <div className="relative flex items-center justify-center">
-                <Icon className="w-3.5 h-3.5" />
-                {item.id === 'inbox' && unreadInboxCount > 0 && !isActive && (
-                  <span className="absolute -top-1 -right-2 text-[8px] font-mono font-bold text-[#b5ff00]">
+                <Icon className="w-4 h-4" />
+                {hub.id === 'inbox' && unreadInboxCount > 0 && !isActive && (
+                  <span className="absolute -top-1.5 -right-3 px-1 rounded-full bg-[#b5ff00] text-[#090a0f] text-[9px] font-mono font-extrabold leading-tight">
                     {unreadInboxCount}
                   </span>
                 )}
+                {hub.id === 'market' && activeOffersCount > 0 && !isActive && (
+                  <span className="absolute -top-1.5 -right-3 px-1 rounded-full bg-[#b5ff00] text-[#090a0f] text-[9px] font-mono font-extrabold leading-tight">
+                    {activeOffersCount}
+                  </span>
+                )}
               </div>
-              <span className="text-[8.5px] leading-none tracking-tight whitespace-nowrap">
-                {item.mobileLabel}
+              <span className="text-[10px] sm:text-[11px] leading-none tracking-tight whitespace-nowrap">
+                {hub.mobileLabel}
               </span>
             </button>
           );
@@ -3673,9 +3971,22 @@ export default function App() {
       <PlayerProfileModal
         player={inspectedPlayer}
         readOnly={Boolean(inspectedExternalPlayer)}
+        isWatched={
+          inspectedExternalListing
+            ? watchedPlayers.some(
+                (w) => w.playerId === inspectedExternalListing.player.id
+              )
+            : false
+        }
+        onToggleWatch={
+          inspectedExternalListing
+            ? () => handleToggleWatchPlayer(inspectedExternalListing)
+            : undefined
+        }
         onClose={() => {
           setInspectedPlayerId(null);
           setInspectedExternalPlayer(null);
+          setInspectedExternalListing(null);
         }}
         onUpdateRoleDuty={handleUpdateRoleDuty}
         onTogglePlayerMarketListing={

@@ -23,11 +23,15 @@ import {
 import { calculatePlayerOverall } from '../engine/matchEngine';
 import {
   LoanWageShare,
+  MAX_OFFER_MULTIPLIER,
+  MIN_OFFER_MULTIPLIER,
   MIN_SQUAD_SIZE,
   buildAllMarketListings,
   evaluateOutgoingPlayer,
   evaluateTransferNegotiation,
   getEffectivePayroll,
+  getOfferTierFromMultiplier,
+  getPlayerNegotiationBlockInfo,
   getPlayerPaidSalary,
   getTransferWindowStatus,
 } from '../engine/transferEngine';
@@ -44,6 +48,7 @@ import {
   NaturalPosition,
   Player,
   PlayerAttributes,
+  PlayerNegotiationState,
   PositionSector,
   TransferAttemptResult,
   TransferDealMode,
@@ -73,6 +78,7 @@ interface MarketViewProps {
   transferHistory: TransferRecord[];
   transferredOutClubPlayerIds: string[];
   watchedPlayers?: WatchedPlayerEntry[];
+  negotiationStates?: Record<string, PlayerNegotiationState>;
   seasonYear?: number;
   dayOffset?: number;
   aiSquads?: Record<string, Player[]>;
@@ -93,6 +99,7 @@ interface MarketViewProps {
     listing: MarketPlayerListing;
     dealMode: TransferDealMode;
     offerTier: TransferOfferTier;
+    offerMultiplier?: number;
     salaryOfferMult?: number;
     loanWageShare: LoanWageShare;
     loanDurationYears?: 1 | 2;
@@ -285,6 +292,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
   transferHistory,
   transferredOutClubPlayerIds,
   watchedPlayers = [],
+  negotiationStates = {},
   seasonYear = 2026,
   dayOffset = 0,
   aiSquads,
@@ -355,11 +363,12 @@ export const MarketView: React.FC<MarketViewProps> = ({
 
   // Proposal controls
   const [dealMode, setDealMode] = useState<TransferDealMode>('BUY');
-  const [offerTier, setOfferTier] = useState<TransferOfferTier>('PADRAO');
+  const [offerMultiplier, setOfferMultiplier] = useState<number>(1.0);
   const [salaryOfferMult, setSalaryOfferMult] = useState<number>(1.0);
   const [loanWageShare, setLoanWageShare] = useState<LoanWageShare>(0.75);
   const [loanDurationYears, setLoanDurationYears] = useState<1 | 2>(1);
   const [contractYears, setContractYears] = useState<2 | 3 | 4>(3);
+  const offerTier: TransferOfferTier = getOfferTierFromMultiplier(offerMultiplier);
 
   const currentPayroll = useMemo(
     () => getEffectivePayroll(squad, loanedOutPlayers),
@@ -515,7 +524,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
     } else if (subTab === 'NACIONAL_LIB' || subTab === 'INTERNACIONAL') {
       setDealMode('BUY');
     }
-    setOfferTier('PADRAO');
+    setOfferMultiplier(1.0);
     setSalaryOfferMult(1.0);
   }, [subTab]);
 
@@ -1050,6 +1059,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
       listing: deskListing,
       dealMode: effectiveDealMode,
       offerTier,
+      offerMultiplier,
       salaryOfferMult,
       loanWageShare,
       loanDurationYears,
@@ -1062,6 +1072,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
     loanedOutPlayers,
     effectiveDealMode,
     offerTier,
+    offerMultiplier,
     salaryOfferMult,
     loanWageShare,
     loanDurationYears,
@@ -1070,7 +1081,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
 
   const handleSelectListing = (item: MarketPlayerListing) => {
     setSelectedListingId(item.player.id);
-    setOfferTier('PADRAO');
+    setOfferMultiplier(1.0);
     setSalaryOfferMult(1.0);
     if (item.scope === 'LIVRES') {
       setDealMode('FREE');
@@ -1092,7 +1103,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
     item: (typeof watchlistItems)[number]
   ) => {
     setSelectedWatchedId(item.entry.playerId);
-    setOfferTier('PADRAO');
+    setOfferMultiplier(1.0);
     setSalaryOfferMult(1.0);
     if (item.listing?.scope === 'LIVRES') {
       setDealMode('FREE');
@@ -1314,6 +1325,23 @@ export const MarketView: React.FC<MarketViewProps> = ({
               </div>
             )}
 
+            {/* 1-Year Negotiation Cooldown Notice */}
+            {lastAttemptResult.negotiationBlockedUntilLabel && (
+              <div className="rounded-2xl bg-rose-950/50 border border-rose-500/45 p-3 text-xs text-rose-200 flex items-start gap-2.5">
+                <Lock className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold text-rose-200">
+                    Negociações bloqueadas por 1 ano
+                  </div>
+                  <div className="text-[11px] text-rose-200/85 mt-0.5">
+                    {isCounter
+                      ? `Esta contraproposta é a última chance. Se não aceitar agora, ${attemptPlayer.name} só voltará a negociar em ${lastAttemptResult.negotiationBlockedUntilLabel}.`
+                      : `${attemptPlayer.name} não aceita novas propostas do ${userClub.shortName} até ${lastAttemptResult.negotiationBlockedUntilLabel}.`}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Resolution Action Buttons */}
             <div className="pt-1 flex flex-col sm:flex-row gap-2">
               {isAccepted ? (
@@ -1334,39 +1362,53 @@ export const MarketView: React.FC<MarketViewProps> = ({
                       onClick={() => onAcceptCounterOffer(lastAttemptResult)}
                       className="flex-1 py-3 px-4 rounded-full bg-[#b5ff00] hover:bg-[#c8ff33] active:scale-[0.98] disabled:bg-zinc-800 disabled:text-zinc-500 text-[#090a0f] text-xs font-extrabold transition-all cursor-pointer"
                     >
-                      Aceitar Contraproposta
+                      {lastAttemptResult.negotiationBlockedUntilLabel
+                        ? 'Aceitar Última Contraproposta'
+                        : 'Aceitar Contraproposta'}
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={handleReopenProposalForm}
-                    className="py-3 px-4 rounded-full bg-white/[0.1] hover:bg-white/[0.16] active:scale-[0.98] text-white text-xs font-bold transition-all cursor-pointer"
-                  >
-                    Ajustar Minha Oferta
-                  </button>
+                  {!lastAttemptResult.negotiationBlockedUntilLabel && (
+                    <button
+                      type="button"
+                      onClick={handleReopenProposalForm}
+                      className="py-3 px-4 rounded-full bg-white/[0.1] hover:bg-white/[0.16] active:scale-[0.98] text-white text-xs font-bold transition-all cursor-pointer"
+                    >
+                      Ajustar Minha Oferta
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={handleDismissOutcome}
                     className="py-3 px-4 rounded-full bg-black/40 hover:bg-black/60 active:scale-[0.98] text-zinc-300 text-xs font-bold transition-all cursor-pointer"
                   >
-                    Fechar
+                    {lastAttemptResult.negotiationBlockedUntilLabel
+                      ? 'Encerrar'
+                      : 'Fechar'}
                   </button>
                 </>
               ) : (
                 <>
-                  <button
-                    type="button"
-                    onClick={handleReopenProposalForm}
-                    className="flex-1 py-3 px-4 rounded-full bg-[#b5ff00] hover:bg-[#c8ff33] active:scale-[0.98] text-[#090a0f] text-xs font-extrabold transition-all cursor-pointer"
-                  >
-                    Tentar Nova Proposta (Ajustar Valores)
-                  </button>
+                  {!lastAttemptResult.negotiationBlockedUntilLabel && (
+                    <button
+                      type="button"
+                      onClick={handleReopenProposalForm}
+                      className="flex-1 py-3 px-4 rounded-full bg-[#b5ff00] hover:bg-[#c8ff33] active:scale-[0.98] text-[#090a0f] text-xs font-extrabold transition-all cursor-pointer"
+                    >
+                      Tentar Nova Proposta (Ajustar Valores)
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={handleDismissOutcome}
-                    className="py-3 px-4 rounded-full bg-white/[0.1] hover:bg-white/[0.16] active:scale-[0.98] text-white text-xs font-bold transition-all cursor-pointer"
+                    className={`${
+                      lastAttemptResult.negotiationBlockedUntilLabel
+                        ? 'w-full'
+                        : ''
+                    } py-3 px-4 rounded-full bg-white/[0.1] hover:bg-white/[0.16] active:scale-[0.98] text-white text-xs font-bold transition-all cursor-pointer`}
                   >
-                    Fechar Modal
+                    {lastAttemptResult.negotiationBlockedUntilLabel
+                      ? 'Voltar ao Mercado'
+                      : 'Fechar Modal'}
                   </button>
                 </>
               )}
@@ -1392,6 +1434,33 @@ export const MarketView: React.FC<MarketViewProps> = ({
     const isFree = deskListing.scope === 'LIVRES';
     const isLoan = effectiveDealMode === 'LOAN';
     const isWatched = watchedIdsSet.has(p.id);
+    const deskNegInfo = getPlayerNegotiationBlockInfo(
+      negotiationStates[p.id],
+      seasonYear,
+      dayOffset
+    );
+    const offerDeltaPct = Math.round((offerMultiplier - 1) * 100);
+    const sliderFillPct = Math.round(
+      ((offerMultiplier - MIN_OFFER_MULTIPLIER) /
+        (MAX_OFFER_MULTIPLIER - MIN_OFFER_MULTIPLIER)) *
+        100
+    );
+    const sliderBarTone =
+      offerDeltaPct < -20
+        ? 'bg-rose-400'
+        : offerDeltaPct < 0
+        ? 'bg-amber-400'
+        : offerDeltaPct > 0
+        ? 'bg-[#b5ff00]'
+        : 'bg-white';
+    const sliderTextTone =
+      offerDeltaPct < -20
+        ? 'text-rose-400'
+        : offerDeltaPct < 0
+        ? 'text-amber-300'
+        : offerDeltaPct > 0
+        ? 'text-[#b5ff00]'
+        : 'text-white';
 
     return (
       <div className="bg-[#14171f] border border-white/[0.08] rounded-[28px] overflow-hidden flex flex-col">
@@ -1771,35 +1840,111 @@ export const MarketView: React.FC<MarketViewProps> = ({
             </div>
           )}
 
-          {/* Offer Boost (Fee / Luvas) */}
-          <div>
-            <div className="text-[11px] text-zinc-400 font-medium mb-1.5">
-              {isFree
-                ? 'Pacote de Luvas / Bônus de Assinatura'
-                : 'Agressividade na Taxa ao Clube (melhora aceite)'}
+          {/* Volume-Style Offer Slider (Below or Above Market/Asking Value) */}
+          <div className="bg-[#0b0c10] border border-white/[0.08] rounded-2xl p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[11px] text-zinc-300 font-semibold">
+                {isFree
+                  ? 'Proposta de Luvas / Salário'
+                  : isLoan
+                  ? 'Valor da Taxa de Empréstimo'
+                  : 'Valor da Proposta ao Clube'}
+              </div>
+              <div className="flex items-center gap-2 font-mono tabular-nums text-xs">
+                <span className={`font-extrabold ${sliderTextTone}`}>
+                  {offerDeltaPct > 0
+                    ? `+${offerDeltaPct}%`
+                    : offerDeltaPct < 0
+                    ? `${offerDeltaPct}%`
+                    : 'Padrão (100%)'}
+                </span>
+                <span className="text-zinc-600">·</span>
+                <span className="font-bold text-white">
+                  {isFree
+                    ? `${formatCompactBRL(activeEvaluation.effectiveSalary)}/mês`
+                    : formatCompactBRL(activeEvaluation.effectiveFee)}
+                </span>
+              </div>
             </div>
-            <div className="grid grid-cols-4 gap-1.5">
+
+            {/* Volume-bar track + interactive range input */}
+            <div className="relative h-7 flex items-center select-none">
+              <div className="w-full h-2.5 rounded-full bg-zinc-800/95 border border-white/[0.06] overflow-hidden relative">
+                <div
+                  className={`h-full transition-all duration-100 ${sliderBarTone}`}
+                  style={{ width: `${sliderFillPct}%` }}
+                />
+              </div>
+              {/* Center 100% market/asking anchor tick */}
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-0.5 h-4 bg-white/50 rounded-full"
+              />
+              {/* Visual thumb indicator */}
+              <div
+                aria-hidden="true"
+                className={`pointer-events-none absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 border-[#090a0f] shadow-md transition-all duration-75 ${sliderBarTone}`}
+                style={{ left: `${sliderFillPct}%` }}
+              />
+              <input
+                type="range"
+                aria-label={
+                  isFree
+                    ? 'Ajustar proposta salarial e luvas'
+                    : 'Ajustar valor da proposta em relação ao valor pedido'
+                }
+                aria-valuetext={`${Math.round(offerMultiplier * 100)}% do valor padrão`}
+                min={MIN_OFFER_MULTIPLIER}
+                max={MAX_OFFER_MULTIPLIER}
+                step={0.05}
+                value={offerMultiplier}
+                onChange={(e) => setOfferMultiplier(Number(e.target.value))}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+            </div>
+
+            {/* Quick-snap scale anchors */}
+            <div className="flex items-center justify-between text-[10px] font-mono tabular-nums">
               {(
                 [
-                  ['PADRAO', 'Padrão'],
-                  ['BONUS_15', '+15%'],
-                  ['AGRESSIVA_30', '+30%'],
-                  ['FORTE_50', '+50%'],
+                  [0.5, '-50%'],
+                  [0.75, '-25%'],
+                  [1.0, 'Padrão'],
+                  [1.25, '+25%'],
+                  [1.5, '+50%'],
                 ] as const
-              ).map(([tier, label]) => (
-                <button
-                  key={tier}
-                  type="button"
-                  onClick={() => setOfferTier(tier)}
-                  className={`py-2 px-1.5 rounded-xl text-xs font-bold border transition-colors ${
-                    offerTier === tier
-                      ? 'bg-white text-[#090a0f] border-white'
-                      : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+              ).map(([val, lbl]) => {
+                const isActive = Math.abs(offerMultiplier - val) < 0.01;
+                return (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setOfferMultiplier(val)}
+                    className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                      isActive
+                        ? 'text-white font-extrabold bg-white/[0.1]'
+                        : 'text-zinc-500 hover:text-zinc-200'
+                    }`}
+                  >
+                    {lbl}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between text-[10px] text-zinc-400 pt-0.5 border-t border-white/[0.05]">
+              <span>
+                {isFree
+                  ? `Pedida base: ${formatCompactBRL(p.salary)}/mês`
+                  : `Valor de mercado: ${formatCompactBRL(p.marketValue)}`}
+              </span>
+              <span className={offerDeltaPct < 0 ? 'text-amber-300 font-medium' : 'text-zinc-500'}>
+                {offerDeltaPct < 0
+                  ? 'Abaixo do pedido reduz chance'
+                  : offerDeltaPct > 0
+                  ? 'Acima do pedido aumenta chance'
+                  : 'Arraste para barganhar ou reforçar'}
+              </span>
             </div>
           </div>
 
@@ -1905,6 +2050,38 @@ export const MarketView: React.FC<MarketViewProps> = ({
             </div>
           )}
 
+          {/* Player Negotiation Cooldown Lock OR Attempts Warning */}
+          {deskNegInfo.isBlocked ? (
+            <div className="rounded-2xl bg-rose-950/45 border border-rose-500/45 p-3 text-xs text-rose-200 flex items-start gap-2.5">
+              <Lock className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold text-rose-200">
+                  Negociações encerradas com {p.name}
+                </div>
+                <div className="text-[11px] text-rose-200/85 mt-0.5">
+                  O atleta recusou continuar negociando após as propostas anteriores. Nova tentativa liberada em{' '}
+                  <strong className="text-white">
+                    {deskNegInfo.blockedUntilDateLabel}
+                  </strong>{' '}
+                  ({deskNegInfo.remainingDays} dias restantes).
+                </div>
+              </div>
+            </div>
+          ) : deskNegInfo.activeAttemptsCount > 0 ? (
+            <div className="rounded-2xl bg-amber-950/35 border border-amber-400/35 px-3 py-2.5 text-[11px] text-amber-200 flex items-start gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-300 shrink-0 mt-0.5" />
+              <span>
+                <strong className="font-mono tabular-nums text-amber-100">
+                  {deskNegInfo.activeAttemptsCount}{' '}
+                  {deskNegInfo.activeAttemptsCount === 1
+                    ? 'proposta anterior'
+                    : 'propostas anteriores'}
+                </strong>{' '}
+                sem acerto. O atleta pode encerrar conversas por 1 ano após 2 a 4 tentativas.
+              </span>
+            </div>
+          ) : null}
+
           {/* Closed Transfer Window Notice */}
           {!windowStatus.isOpen && (
             <div className="rounded-2xl bg-rose-950/35 border border-rose-500/35 p-3 text-xs text-rose-200 flex items-start gap-2">
@@ -1923,27 +2100,34 @@ export const MarketView: React.FC<MarketViewProps> = ({
           {/* Action CTA */}
           <button
             type="button"
-            disabled={activeEvaluation.isBlocked || !windowStatus.isOpen}
+            disabled={
+              activeEvaluation.isBlocked ||
+              !windowStatus.isOpen ||
+              deskNegInfo.isBlocked
+            }
             onClick={() =>
               onProposeTransfer({
                 listing: deskListing,
                 dealMode: effectiveDealMode,
                 offerTier,
+                offerMultiplier,
                 salaryOfferMult,
                 loanWageShare,
                 loanDurationYears,
                 contractYears,
               })
             }
-            className="w-full py-3.5 px-5 rounded-full text-xs sm:text-sm font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] disabled:bg-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed text-[#090a0f] transition-colors flex items-center justify-center gap-2 shadow-lg"
+            className="w-full py-3.5 px-5 rounded-full text-xs sm:text-sm font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] disabled:bg-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed text-[#090a0f] transition-colors flex items-center justify-center gap-2 shadow-lg cursor-pointer"
           >
-            {windowStatus.isOpen ? (
+            {windowStatus.isOpen && !deskNegInfo.isBlocked ? (
               <Handshake className="w-4 h-4" />
             ) : (
               <Lock className="w-4 h-4" />
             )}
             {!windowStatus.isOpen
               ? 'Janela de Transferências Fechada'
+              : deskNegInfo.isBlocked
+              ? `Bloqueado até ${deskNegInfo.blockedUntilDateLabel || 'próximo ano'}`
               : isFree
               ? 'Assinar Contrato Gratuito'
               : isLoan
@@ -3849,6 +4033,11 @@ export const MarketView: React.FC<MarketViewProps> = ({
                     const isSelected =
                       selectedListing?.player.id === item.player.id;
                     const isWatched = watchedIdsSet.has(item.player.id);
+                    const rowNegInfo = getPlayerNegotiationBlockInfo(
+                      negotiationStates[item.player.id],
+                      seasonYear,
+                      dayOffset
+                    );
                     const feeDisplay =
                       item.scope === 'LIVRES'
                         ? 'Livre'
@@ -3929,7 +4118,15 @@ export const MarketView: React.FC<MarketViewProps> = ({
                                   {item.player.attributes[keyAttributeFilter]}
                                 </span>
                               )}
-                              {ev.isBlocked && (
+                              {rowNegInfo.isBlocked && (
+                                <span
+                                  title={`Negociação bloqueada até ${rowNegInfo.blockedUntilDateLabel}`}
+                                  className="text-[10px] font-mono text-rose-400 font-semibold shrink-0"
+                                >
+                                  · Negociação bloqueada
+                                </span>
+                              )}
+                              {!rowNegInfo.isBlocked && ev.isBlocked && (
                                 <span
                                   title={ev.blockReason || undefined}
                                   className="text-[10px] font-mono text-rose-400 shrink-0"

@@ -22,7 +22,7 @@ import {
   UserPlus,
   X,
 } from 'lucide-react';
-import { auth, googleProvider } from '../firebase';
+import { auth, googleProvider, isFirebaseConfigured } from '../firebase';
 import { CareerSaveData } from '../types/football';
 import { formatSavedTimestamp } from '../utils/saveManager';
 
@@ -87,6 +87,12 @@ export const AccountAuthModal: React.FC<AccountAuthModalProps> = ({
   };
 
   const handleGoogleSignIn = async () => {
+    if (!auth || !googleProvider) {
+      setErrorMessage(
+        'Sincronização em nuvem indisponível nesta build. Configure as variáveis VITE_FIREBASE_* no deploy para ativar.'
+      );
+      return;
+    }
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
@@ -104,6 +110,12 @@ export const AccountAuthModal: React.FC<AccountAuthModalProps> = ({
 
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!auth) {
+      setErrorMessage(
+        'Sincronização em nuvem indisponível nesta build. Configure as variáveis VITE_FIREBASE_* no deploy para ativar.'
+      );
+      return;
+    }
     setErrorMessage(null);
 
     const cleanEmail = email.trim();
@@ -150,6 +162,7 @@ export const AccountAuthModal: React.FC<AccountAuthModalProps> = ({
   };
 
   const handleLogout = async () => {
+    if (!auth) return;
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
@@ -327,6 +340,18 @@ export const AccountAuthModal: React.FC<AccountAuthModalProps> = ({
                   })}
                 </div>
               </div>
+            </div>
+          ) : !isFirebaseConfigured ? (
+            <div className="p-4 bg-slate-900/90 border border-amber-500/40 space-y-2.5">
+              <p className="text-xs font-mono font-bold uppercase tracking-wider text-amber-300">
+                MODO LOCAL ATIVO (NUVEM NÃO CONFIGURADA)
+              </p>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Esta publicação está operando sem credenciais do Firebase configuradas. Seus <strong className="text-white">4 Slots de Carreira</strong> e a exportação/importação de backup JSON funcionam normalmente neste dispositivo.
+              </p>
+              <p className="text-[11px] font-mono text-slate-400">
+                Para habilitar a sincronização em nuvem no GitHub Pages, configure os segredos VITE_FIREBASE_* nas configurações do repositório.
+              </p>
             </div>
           ) : (
             <div className="space-y-4">

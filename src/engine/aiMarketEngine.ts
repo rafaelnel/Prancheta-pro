@@ -47,11 +47,14 @@ export function evaluateAiClubSquadAndListings(
   const targetStarterOvr = Math.round(
     (club.overallAttack + club.overallMidfield + club.overallDefense) / 3
   );
-  const totalPayroll = squad.reduce((acc, p) => acc + p.salary, 0);
-  const wageUsageRatio = totalPayroll / Math.max(1, club.wageBudget);
-  const avgSalary = totalPayroll / Math.max(1, squad.length);
-  const needsCashOrWageRelief =
-    club.cashBalance < 6_500_000 || wageUsageRatio >= 0.86;
+  const formationSlots = FORMATIONS[club.formation] || FORMATIONS['4-2-3-1'];
+  const requiredStartersByPos = new Map<NaturalPosition, number>();
+  for (const slot of formationSlots) {
+    requiredStartersByPos.set(
+      slot.label,
+      (requiredStartersByPos.get(slot.label) || 0) + 1
+    );
+  }
 
   // Group players by natural position sorted by starter status then OVR descending
   const byPos = new Map<NaturalPosition, { player: Player; ovr: number }[]>();
@@ -77,8 +80,8 @@ export function evaluateAiClubSquadAndListings(
   const gkTotal = byPos.get('GOL')?.length || 0;
   let loanCount = 0;
   let transferCount = 0;
-  const maxLoansPerClub = 3;
-  const maxTransfersPerClub = 3;
+  const maxLoansPerClub = 2;
+  const maxTransfersPerClub = 2;
 
   return squad.map((player) => {
     // Players on loan from another club cannot be listed by the borrowing club
@@ -91,10 +94,10 @@ export function evaluateAiClubSquadAndListings(
       };
     }
 
-    // Never list the only goalkeeper or if squad is at minimum size
+    // Never list players if squad is at minimum size, or protect the top 2 goalkeepers
     if (
       squad.length <= MIN_SQUAD_SIZE ||
-      (player.position === 'GOL' && gkTotal <= MIN_GOALKEEPERS + 1 && player.isStarter)
+      (player.position === 'GOL' && gkTotal <= MIN_GOALKEEPERS + 1)
     ) {
       return {
         ...player,
@@ -108,63 +111,105 @@ export function evaluateAiClubSquadAndListings(
     const rankInPos = posGroup.findIndex((item) => item.player.id === player.id);
     const posCount = posGroup.length;
     const sectorCount = bySectorCount.get(player.sector) || 0;
+    const reqStarters = requiredStartersByPos.get(player.position) || 0;
+    // Active depth needed at this position: starter(s) + 1 direct backup per starting slot (or 1 tactical option if unused in base XI)
+    const desiredDepthAtPos = reqStarters > 0 ? reqStarters * 2 : 1;
     const ovr = calculatePlayerOverall(player.attributes, player.position);
+    const starterAtPosOvr = posGroup[0]?.ovr ?? targetStarterOvr;
+    const potentialCeiling = Math.max(
+      ovr,
+      player.dynamicCeilingOvr ?? player.basePotentialOvr ?? ovr
+    );
+    const evolutionRoom = Math.max(0, potentialCeiling - ovr);
+
+    // 1. Positional surplus: more players in the same position than the club actually uses in rotation
+    const isPositionalSurplus =
+      rankInPos >= desiredDepthAtPos ||
+      (reqStarters === 0 && posCount >= 2 && rankInPos >= 1);
+
+    // 2. Out of club planning due to age (aging reserve clearly behind squad level)
+    const isOutOfPlanByAge =
+      player.age >= 32 &&
+      ovr <= targetStarterOvr - 4 &&
+      rankInPos >= Math.max(1, reqStarters);
+
+    // 3. Out of club planning due to low evolution / stagnation below the club's tier
+    const isStagnatedOutOfPlan =
+      player.age >= 25 &&
+      evolutionRoom <= 1 &&
+      ovr <= targetStarterOvr - 5 &&
+      (posCount >= Math.max(2, reqStarters + 1) || reqStarters === 0);
+
+    // 4. Young prospect who still needs evolution/minutes and is clearly blocked behind much stronger options
+    const isYoungBlockedForEvolution =
+      player.age <= 22 &&
+      evolutionRoom >= 4 &&
+      (isPositionalSurplus ||
+        (rankInPos >= Math.max(1, reqStarters) &&
+          starterAtPosOvr - ovr >= 5 &&
+          ovr <= targetStarterOvr - 4 &&
+          (posCount >= Math.max(2, reqStarters + 1) || sectorCount >= 6)));
 
     let isTransferListed = false;
     let isLoanListed = false;
     let reason: string | undefined;
 
     if (!player.isStarter) {
-      // 1. Young prospects (<= 23) on the bench -> Loan list for development (not dumped for sale)
+      // Active, competitive direct backups who aren't in positional surplus stay UNLISTED
       if (
-        player.age <= 23 &&
-        (posCount >= 2 || sectorCount >= 5) &&
-        loanCount < maxLoansPerClub
+        !isPositionalSurplus &&
+        !isOutOfPlanByAge &&
+        !isStagnatedOutOfPlan &&
+        !isYoungBlockedForEvolution
       ) {
-        isLoanListed = true;
-        isTransferListed = false;
-        loanCount++;
-        reason = 'Listado p/ Empréstimo: Jovem para ganhar minutagem';
+        return {
+          ...player,
+          isTransferListed: false,
+          isLoanListed: false,
+          marketListingReason: undefined,
+        };
       }
-      // 2. High salary reserve (age >= 25) when club wants wage relief -> Transfer Sale
-      else if (
-        player.age >= 25 &&
-        player.salary >= avgSalary * 1.05 &&
-        (needsCashOrWageRelief || player.age >= 28) &&
-        transferCount < maxTransfersPerClub
-      ) {
-        isTransferListed = true;
-        isLoanListed = false;
-        transferCount++;
-        reason = 'Listado p/ Compra: Alívio de folha salarial';
-      }
-      // 3. Surplus depth (3rd option in position or crowded sector)
-      else if (rankInPos >= 2 || (rankInPos >= 1 && sectorCount >= 7)) {
-        if (player.age >= 24 && transferCount < maxTransfersPerClub) {
+
+      // Case A: Positional surplus -> Loan if young with evolution upside, else Sale
+      if (isPositionalSurplus) {
+        if (
+          player.age <= 23 &&
+          evolutionRoom >= 3 &&
+          loanCount < maxLoansPerClub
+        ) {
+          isLoanListed = true;
+          loanCount++;
+          reason = 'Empréstimo: Excesso na posição — busca minutos p/ evoluir';
+        } else if (transferCount < maxTransfersPerClub) {
           isTransferListed = true;
-          isLoanListed = false;
           transferCount++;
-          reason = 'Listado p/ Compra: Excesso de opções na posição';
+          reason = 'Venda: Excesso de atletas na mesma posição';
         } else if (player.age <= 24 && loanCount < maxLoansPerClub) {
           isLoanListed = true;
-          isTransferListed = false;
           loanCount++;
-          reason = 'Listado p/ Empréstimo: Reserva disponível no elenco';
+          reason = 'Empréstimo: Sem espaço por excesso na posição';
         }
       }
-      // 4. Veteran or below-level reserve outside tactical plans -> Transfer Sale
-      else if (
-        player.age >= 29 &&
-        ovr <= targetStarterOvr - 2 &&
-        transferCount < maxTransfersPerClub
-      ) {
+      // Case B: Young prospect blocked behind stronger starters -> Loan for evolution
+      else if (isYoungBlockedForEvolution && loanCount < maxLoansPerClub) {
+        isLoanListed = true;
+        loanCount++;
+        reason = 'Empréstimo: Jovem com potencial p/ evoluir com minutagem';
+      }
+      // Case C: Out of planning due to age -> Sale
+      else if (isOutOfPlanByAge && transferCount < maxTransfersPerClub) {
         isTransferListed = true;
-        isLoanListed = false;
         transferCount++;
-        reason = 'Listado p/ Compra: Fora dos planos titulares';
+        reason = 'Venda: Fora do planejamento pela idade e nível atual';
+      }
+      // Case D: Stagnated reserve below club standard -> Sale
+      else if (isStagnatedOutOfPlan && transferCount < maxTransfersPerClub) {
+        isTransferListed = true;
+        transferCount++;
+        reason = 'Venda: Fora do planejamento por baixa evolução';
       }
     } else if (
-      // Occasional starter sale if club is desperate for cash and has a solid backup right behind
+      // Occasional starter sale only if club is in severe cash crunch and has a near-equal backup
       club.cashBalance < 3_800_000 &&
       posCount >= 2 &&
       posGroup[1] &&
@@ -173,9 +218,8 @@ export function evaluateAiClubSquadAndListings(
       transferCount < maxTransfersPerClub
     ) {
       isTransferListed = true;
-      isLoanListed = false;
       transferCount++;
-      reason = 'Listado p/ Compra: Clube precisa fazer caixa';
+      reason = 'Venda: Clube precisa fazer caixa';
     }
 
     return {

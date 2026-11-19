@@ -23,6 +23,7 @@ import {
   createInitialFinanceLedger,
   processMidSeasonEvolution,
 } from './economyAndEvolution';
+import { evolveYouthAcademyRoster } from './youthAcademyEngine';
 import {
   createOfferInboxMessage,
   maybeGenerateIncomingOfferForUser,
@@ -1179,7 +1180,7 @@ export function simulateNextAutoStep(
     lastMatchAttendance: isUserHome ? attendance : baseLedger.lastMatchAttendance,
   };
 
-  const nextYouthAcademy: YouthAcademyState | undefined = working.youthAcademy
+  let nextYouthAcademy: YouthAcademyState | undefined = working.youthAcademy
     ? {
         ...working.youthAcademy,
         accumulatedSeasonInvestment:
@@ -1257,6 +1258,18 @@ export function simulateNextAutoStep(
     nextClubs = midRes.updatedClubs;
     finalSquadAfterMatch = midRes.updatedUserSquad;
     nextAiSquads = midRes.updatedAiSquads;
+    if (nextYouthAcademy) {
+      const evolvedClub =
+        nextClubs.find((c) => c.id === working.userClubId) || updatedUserClubWithTactics;
+      const youthMidRes = evolveYouthAcademyRoster({
+        academy: nextYouthAcademy,
+        clubReputation: evolvedClub.reputation,
+        division: evolvedClub.division === 'B' ? 'B' : 'A',
+        phase: 'MID_SEASON',
+        rng,
+      });
+      nextYouthAcademy = youthMidRes.updatedAcademy;
+    }
     midSeasonProcessedYear = seasonYear;
     extraMsgs.push(midRes.inboxMessage);
   }

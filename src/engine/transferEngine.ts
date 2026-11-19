@@ -11,6 +11,7 @@ import {
   MarketLeagueScope,
   MarketPlayerListing,
   Player,
+  PlayerNegotiationState,
   TransferCounterOffer,
   TransferDealMode,
   TransferDifficultyLevel,
@@ -18,6 +19,7 @@ import {
   TransferOfferTier,
   TransferOutcomeStatus,
 } from '../types/football';
+import { formatCalendarDate } from '../utils/formatters';
 
 export const MIN_SQUAD_SIZE = 18;
 export const MIN_GOALKEEPERS = 1;
@@ -120,9 +122,7 @@ export function buildAllMarketListings(params: {
       const buyFee =
         Math.round((player.marketValue * buyMultiplier) / 250000) * 250000;
 
-      const loanAvailable =
-        !player.isStarter &&
-        (isLoanListed || (player.age <= 22 && ovr <= 74));
+      const loanAvailable = !player.isStarter && isLoanListed;
       const loanRatio = isLoanListed
         ? 0.06
         : player.isStarter
@@ -193,11 +193,218 @@ function getLeagueTierWeight(scope: MarketLeagueScope): number {
   }
 }
 
+export const MIN_OFFER_MULTIPLIER = 0.5;
+export const MAX_OFFER_MULTIPLIER = 1.5;
+export const NEGOTIATION_LOCK_DAYS = 365;
+
+export function clampOfferMultiplier(multiplier: number): number {
+  if (!Number.isFinite(multiplier)) return 1.0;
+  return Math.max(
+    MIN_OFFER_MULTIPLIER,
+    Math.min(MAX_OFFER_MULTIPLIER, Math.round(multiplier * 100) / 100)
+  );
+}
+
 export function getOfferMultiplier(offerTier: TransferOfferTier): number {
   if (offerTier === 'BONUS_15') return 1.15;
   if (offerTier === 'AGRESSIVA_30') return 1.3;
   if (offerTier === 'FORTE_50') return 1.5;
   return 1.0;
+}
+
+export function getOfferTierFromMultiplier(multiplier: number): TransferOfferTier {
+  if (multiplier >= 1.45) return 'FORTE_50';
+  if (multiplier >= 1.25) return 'AGRESSIVA_30';
+  if (multiplier >= 1.1) return 'BONUS_15';
+  return 'PADRAO';
+}
+
+export function getOfferBoostForMultiplier(offerMult: number): number {
+  const clamped = clampOfferMultiplier(offerMult);
+  if (clamped >= 1.0) {
+    const delta = clamped - 1.0;
+    if (delta <= 0.3) {
+      return Math.round(delta * (28 / 0.3));
+    }
+    return Math.round(28 + (delta - 0.3) * (12 / 0.2));
+  }
+  const discount = 1.0 - clamped;
+  return -Math.round(discount * 95 + discount * discount * 95);
+}
+
+export function getAbsoluteCareerDay(
+  seasonYear: number,
+  dayOffset: number
+): number {
+  return seasonYear * 365 + dayOffset;
+}
+
+export function rollPlayerNegotiationMaxAttempts(
+  player: Player,
+  listing?: MarketPlayerListing,
+  rng: () => number = Math.random
+): 2 | 3 | 4 {
+  const r = Math.max(0, Math.min(0.999999, rng()));
+  const isListed = Boolean(
+    listing?.isTransferListed ||
+      listing?.isLoanListed ||
+      player.isTransferListed ||
+      player.isLoanListed
+  );
+  const isAmbitiousStar =
+    player.age <= 25 && (player.potentialStars ?? 3) >= 4;
+
+  // Always strictly between 2 and 4 attempts
+  if (isListed) {
+    if (r < 0.2) return 2;
+    if (r < 0.65) return 3;
+    return 4;
+  }
+  if (isAmbitiousStar) {
+    if (r < 0.45) return 2;
+    if (r < 0.85) return 3;
+    return 4;
+  }
+  if (r < 0.3) return 2;
+  if (r < 0.72) return 3;
+  return 4;
+}
+
+export interface PlayerNegotiationBlockInfo {
+  isBlocked: boolean;
+  remainingDays: number;
+  blockedUntilDateLabel?: string;
+  blockedReason?: string;
+  activeAttemptsCount: number;
+  maxAttempts?: number;
+}
+
+export function getPlayerNegotiationBlockInfo(
+  state: PlayerNegotiationState | undefined,
+  seasonYear: number,
+  dayOffset: number
+): PlayerNegotiationBlockInfo {
+  if (!state) {
+    return {
+      isBlocked: false,
+      remainingDays: 0,
+      activeAttemptsCount: 0,
+    };
+  }
+  const currentAbsDay = getAbsoluteCareerDay(seasonYear, dayOffset);
+
+  if (
+    state.blockedUntilAbsDay !== null &&
+    currentAbsDay < state.blockedUntilAbsDay
+  ) {
+    return {
+      isBlocked: true,
+      remainingDays: state.blockedUntilAbsDay - currentAbsDay,
+      blockedUntilDateLabel: state.blockedUntilDateLabel,
+      blockedReason: state.blockedReason,
+      activeAttemptsCount: state.attemptsCount,
+      maxAttempts: state.maxAttempts,
+    };
+  }
+
+  // Expired block or stale attempt cycle (> 1 year without activity) resets cleanly
+  if (
+    state.blockedUntilAbsDay !== null ||
+    currentAbsDay - state.lastAttemptAbsDay >= NEGOTIATION_LOCK_DAYS
+  ) {
+    return {
+      isBlocked: false,
+      remainingDays: 0,
+      activeAttemptsCount: 0,
+    };
+  }
+
+  return {
+    isBlocked: false,
+    remainingDays: 0,
+    activeAttemptsCount: state.attemptsCount,
+    maxAttempts: state.maxAttempts,
+  };
+}
+
+export function recordTransferNegotiationAttempt(params: {
+  states: Record<string, PlayerNegotiationState>;
+  player: Player;
+  listing?: MarketPlayerListing;
+  outcome: TransferOutcomeStatus;
+  seasonYear: number;
+  dayOffset: number;
+  rng?: () => number;
+}): {
+  nextStates: Record<string, PlayerNegotiationState>;
+  playerState: PlayerNegotiationState | null;
+  justBlocked: boolean;
+  blockedUntilDateLabel?: string;
+} {
+  const {
+    states,
+    player,
+    listing,
+    outcome,
+    seasonYear,
+    dayOffset,
+    rng = Math.random,
+  } = params;
+
+  const nextStates: Record<string, PlayerNegotiationState> = { ...states };
+
+  if (outcome === 'ACEITA') {
+    delete nextStates[player.id];
+    return {
+      nextStates,
+      playerState: null,
+      justBlocked: false,
+    };
+  }
+
+  const currentAbsDay = getAbsoluteCareerDay(seasonYear, dayOffset);
+  const existing = states[player.id];
+  const existingInfo = getPlayerNegotiationBlockInfo(
+    existing,
+    seasonYear,
+    dayOffset
+  );
+
+  const maxAttempts =
+    existing && existingInfo.activeAttemptsCount > 0 && !existingInfo.isBlocked
+      ? existing.maxAttempts
+      : rollPlayerNegotiationMaxAttempts(player, listing, rng);
+
+  const attemptsCount = existingInfo.activeAttemptsCount + 1;
+  const justBlocked = attemptsCount >= maxAttempts;
+  const blockedUntilAbsDay = justBlocked
+    ? currentAbsDay + NEGOTIATION_LOCK_DAYS
+    : null;
+  const blockedUntilDateLabel = justBlocked
+    ? formatCalendarDate(dayOffset, seasonYear + 1)
+    : undefined;
+  const blockedReason = justBlocked
+    ? `Após ${attemptsCount} propostas sem acerto, ${player.name} encerrou as negociações por 1 ano.`
+    : undefined;
+
+  const playerState: PlayerNegotiationState = {
+    playerId: player.id,
+    attemptsCount,
+    maxAttempts,
+    blockedUntilAbsDay,
+    blockedUntilDateLabel,
+    blockedReason,
+    lastAttemptAbsDay: currentAbsDay,
+  };
+
+  nextStates[player.id] = playerState;
+
+  return {
+    nextStates,
+    playerState,
+    justBlocked,
+    blockedUntilDateLabel,
+  };
 }
 
 export function getPlayerPotentialCeiling(player: Player, ovr: number): number {
@@ -219,6 +426,7 @@ export function evaluateTransferNegotiation(params: {
   listing: MarketPlayerListing;
   dealMode: TransferDealMode;
   offerTier?: TransferOfferTier;
+  offerMultiplier?: number;
   salaryOfferMult?: number;
   loanWageShare?: LoanWageShare;
   loanDurationYears?: 1 | 2;
@@ -231,6 +439,7 @@ export function evaluateTransferNegotiation(params: {
     listing,
     dealMode,
     offerTier = 'PADRAO',
+    offerMultiplier,
     salaryOfferMult = 1.0,
     loanWageShare = 0.75,
     loanDurationYears = 1,
@@ -273,15 +482,12 @@ export function evaluateTransferNegotiation(params: {
       ? `OVR ${listing.ovr} fica abaixo da sua média titular (${userStartersAvgOvr}) — opção para composição de elenco.`
       : `OVR ${listing.ovr} em patamar equivalente ao seu grupo titular (${userStartersAvgOvr}).`;
 
-  const offerMult = getOfferMultiplier(offerTier);
-  const offerBoost =
-    offerTier === 'FORTE_50'
-      ? 40
-      : offerTier === 'AGRESSIVA_30'
-      ? 28
-      : offerTier === 'BONUS_15'
-      ? 14
-      : 0;
+  const offerMult = clampOfferMultiplier(
+    offerMultiplier !== undefined
+      ? offerMultiplier
+      : getOfferMultiplier(offerTier)
+  );
+  const offerBoost = getOfferBoostForMultiplier(offerMult);
   const salaryBoostRelief = Math.round(Math.max(0, salaryOfferMult - 1) * 65);
 
   const p = listing.player;
@@ -400,7 +606,10 @@ export function evaluateTransferNegotiation(params: {
   if (listing.scope === 'LIVRES' || dealMode === 'FREE') {
     const clubPowerExpectation =
       userClub.reputation >= 80 ? -10 : userClub.division === 'B' ? 12 : 0;
-    const effectiveFreeMult = Math.max(offerMult, salaryOfferMult);
+    const effectiveFreeMult =
+      offerMult < 1.0
+        ? offerMult * salaryOfferMult
+        : Math.max(offerMult, salaryOfferMult);
     resistance = Math.round(
       18 +
         clubPowerExpectation +
@@ -410,8 +619,10 @@ export function evaluateTransferNegotiation(params: {
         salaryBoostRelief * 0.7
     );
     effectiveFee = 0;
-    effectiveSalary =
-      Math.round((p.salary * effectiveFreeMult) / 5000) * 5000;
+    effectiveSalary = Math.max(
+      25000,
+      Math.round((p.salary * effectiveFreeMult) / 5000) * 5000
+    );
     clubGapNote = `Atleta sem vínculo contratual (passe livre); decisão depende do salário ofertado, ambição de evolução e vitrine do ${userClub.shortName}.`;
   } else {
     const seller = listing.originClub!;
@@ -437,9 +648,11 @@ export function evaluateTransferNegotiation(params: {
 
     if (dealMode === 'LOAN') {
       const durationFeeMult = loanDurationYears === 2 ? 1.55 : 1.0;
-      effectiveFee =
+      effectiveFee = Math.max(
+        50000,
         Math.round((listing.loanFee * offerMult * durationFeeMult) / 50000) *
-        50000;
+          50000
+      );
       effectiveSalary =
         Math.round((p.salary * loanWageShare * salaryOfferMult) / 5000) * 5000;
 
@@ -475,7 +688,10 @@ export function evaluateTransferNegotiation(params: {
           salaryBoostRelief * 0.5
       );
     } else {
-      effectiveFee = Math.round((listing.buyFee * offerMult) / 250000) * 250000;
+      effectiveFee = Math.max(
+        250000,
+        Math.round((listing.buyFee * offerMult) / 250000) * 250000
+      );
       effectiveSalary = Math.round((p.salary * salaryOfferMult) / 5000) * 5000;
 
       const starterPenalty = listing.isClubStarter ? 15 : -8;
@@ -511,23 +727,25 @@ export function evaluateTransferNegotiation(params: {
       ? 'Difícil'
       : 'Muito Difícil';
 
+  const minChanceFloor = offerMult < 1.0 ? 2 : 6;
   let acceptanceChance = Math.max(
-    6,
+    minChanceFloor,
     Math.min(98, Math.round(112 - clampedResistance * 1.1))
   );
 
   if (willHardRejectByPlayer) {
     acceptanceChance = Math.min(
       acceptanceChance,
-      Math.max(6, Math.round(playerWillingnessChance * 0.55))
+      Math.max(minChanceFloor, Math.round(playerWillingnessChance * 0.55))
     );
   }
 
+  const offerDeltaPct = Math.round((offerMult - 1) * 100);
   const moneyInfluenceParts: string[] = [];
-  if (offerTier !== 'PADRAO') {
-    moneyInfluenceParts.push(
-      `+${Math.round((offerMult - 1) * 100)}% na taxa/luvas`
-    );
+  if (offerDeltaPct > 0) {
+    moneyInfluenceParts.push(`+${offerDeltaPct}% na taxa/luvas`);
+  } else if (offerDeltaPct < 0) {
+    moneyInfluenceParts.push(`${offerDeltaPct}% abaixo do valor pedido`);
   }
   if (salaryOfferMult > 1.0) {
     moneyInfluenceParts.push(
@@ -535,9 +753,11 @@ export function evaluateTransferNegotiation(params: {
     );
   }
   const moneyInfluenceNote =
-    moneyInfluenceParts.length > 0
-      ? `Pacote turbinado (${moneyInfluenceParts.join(' e ')}) reduz resistência na negociação.`
-      : 'Valores no piso padrão — subir taxa (+15%/+30%/+50%) ou salário (+20%/+40%) melhora chance e evita recusa seca.';
+    offerDeltaPct < 0
+      ? `Oferta ${Math.abs(offerDeltaPct)}% abaixo do valor pedido${salaryOfferMult > 1.0 ? ` (com +${Math.round((salaryOfferMult - 1) * 100)}% no salário)` : ''} — aumenta a resistência e reduz a chance de contratação.`
+      : moneyInfluenceParts.length > 0
+      ? `Pacote reforçado (${moneyInfluenceParts.join(' e ')}) reduz a resistência na negociação.`
+      : 'Valores no padrão de mercado — você pode barganhar abaixo ou subir a barra para melhorar o aceite.';
 
   const currentPayroll = getEffectivePayroll(userSquad, loanedOutPlayers);
   const projectedCash = userClub.cashBalance - effectiveFee;
@@ -903,19 +1123,24 @@ export function executeIncomingTransfer(params: {
 
     if (dealMode === 'FREE') {
       counterFee = 0;
+      const baseExpectedSalary = Math.max(evaluation.effectiveSalary, p.salary);
       counterSalary = Math.max(
-        evaluation.effectiveSalary + 10000,
-        Math.round((evaluation.effectiveSalary * 1.22) / 5000) * 5000
+        baseExpectedSalary + 10000,
+        Math.round((baseExpectedSalary * 1.18) / 5000) * 5000
       );
     } else if (dealMode === 'LOAN') {
       if (loanWageShare < 1.0) {
         counterLoanWageShare = loanWageShare === 0.5 ? 0.75 : 1.0;
       }
+      const durationFeeMult = loanDurationYears === 2 ? 1.55 : 1.0;
+      const askingLoanFee =
+        Math.round((listing.loanFee * durationFeeMult) / 50000) * 50000;
+      const feeBase = Math.max(evaluation.effectiveFee, askingLoanFee);
       counterFee =
         source === 'JOGADOR'
-          ? evaluation.effectiveFee
-          : evaluation.effectiveFee > 0
-          ? Math.round((evaluation.effectiveFee * 1.2) / 50000) * 50000
+          ? Math.max(evaluation.effectiveFee, askingLoanFee)
+          : feeBase > 0
+          ? Math.round((feeBase * 1.15) / 50000) * 50000
           : 250_000;
       const shareToUse = counterLoanWageShare ?? loanWageShare;
       const salaryBump = source === 'CLUBE' ? 1.0 : 1.2;
@@ -926,10 +1151,13 @@ export function executeIncomingTransfer(params: {
         ) * 5000
       );
     } else {
+      const minClubCounterFee =
+        Math.round((listing.buyFee * 0.95) / 250_000) * 250_000;
       counterFee =
         source === 'JOGADOR'
-          ? evaluation.effectiveFee
+          ? Math.max(evaluation.effectiveFee, minClubCounterFee)
           : Math.max(
+              minClubCounterFee,
               evaluation.effectiveFee + 250_000,
               Math.round((evaluation.effectiveFee * 1.2) / 250_000) * 250_000
             );

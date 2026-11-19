@@ -34,6 +34,7 @@ import { YouthAcademyView } from './components/YouthAcademyView';
 import {
   YOUTH_TIERS,
   createInitialYouthAcademy,
+  evolveYouthAcademyRoster,
   promoteYouthPlayerToSeniorSquad,
   releaseYouthPlayerFromAcademy,
 } from './engine/youthAcademyEngine';
@@ -74,8 +75,10 @@ import {
   evaluateTransferNegotiation,
   executeIncomingTransfer,
   executeOutgoingTransfer,
+  getPlayerNegotiationBlockInfo,
   getTransferWindowStatus,
   isTransferWindowOpen,
+  recordTransferNegotiationAttempt,
 } from './engine/transferEngine';
 import {
   getPlayerContractRemainingYears,
@@ -99,6 +102,7 @@ import {
   MentalityType,
   NavigationTab,
   Player,
+  PlayerNegotiationState,
   RoundFixture,
   SeasonArchiveEntry,
   SeasonEndReport,
@@ -292,6 +296,9 @@ export default function App() {
   const [marketFeedback, setMarketFeedback] = useState<MarketFeedback>(null);
   const [transferAttemptResult, setTransferAttemptResult] =
     useState<TransferAttemptResult | null>(null);
+  const [negotiationStates, setNegotiationStates] = useState<
+    Record<string, PlayerNegotiationState>
+  >(() => initialAutostartSave?.negotiationStates || {});
   const [focusRenewalsSignal, setFocusRenewalsSignal] = useState<number>(0);
 
   // Continuous Multi-Season Career, Living AI Market & Economy Ledger State
@@ -809,13 +816,14 @@ export default function App() {
           override?.midSeasonEvolutionProcessedYear !== undefined
             ? override.midSeasonEvolutionProcessedYear
             : midSeasonEvolutionProcessedYear,
+        negotiationStates: override?.negotiationStates ?? negotiationStates,
       };
 
       const stamped = saveCareerToSlot(payload);
       setSlots(loadAllCareerSlots());
       setHasUnsavedChanges(false);
 
-      if (auth.currentUser) {
+      if (auth?.currentUser) {
         setCloudSyncStatus('syncing');
         saveCareerSlotToCloud(auth.currentUser, stamped, currency)
           .then(() => {
@@ -861,12 +869,13 @@ export default function App() {
       seasonEndReport,
       youthAcademy,
       midSeasonEvolutionProcessedYear,
+      negotiationStates,
       currency,
     ]
   );
 
   const handleManualCloudSync = useCallback(async () => {
-    const user = auth.currentUser;
+    const user = auth?.currentUser ?? null;
     if (!user) {
       setIsAccountModalOpen(true);
       return;
@@ -900,6 +909,7 @@ export default function App() {
 
   // Listen to Firebase Auth state changes and auto-sync career slots across devices
   useEffect(() => {
+    if (!auth) return;
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       if (!user) {
@@ -984,6 +994,7 @@ export default function App() {
     setSeasonEndReport(save.seasonEndReport || null);
     setIsSeasonEndModalOpen(Boolean(save.seasonEndReport));
     setMidSeasonEvolutionProcessedYear(save.midSeasonEvolutionProcessedYear);
+    setNegotiationStates(save.negotiationStates || {});
     setMarketFeedback(null);
     setCurrentRound(save.currentRound);
     setSeasonStepIndex(save.seasonStepIndex ?? 0);
@@ -1012,7 +1023,7 @@ export default function App() {
       `✓ Carreira iniciada no ${stored.clubShortName} (Slot 0${slotIndex})!`,
       'emerald'
     );
-    if (auth.currentUser) {
+    if (auth?.currentUser) {
       setCloudSyncStatus('syncing');
       saveCareerSlotToCloud(auth.currentUser, stored, currency)
         .then(() => {
@@ -1040,7 +1051,7 @@ export default function App() {
       setActiveSlot(null);
     }
     showActionToast(`Slot 0${slotIndex} removido.`, 'amber');
-    if (auth.currentUser) {
+    if (auth?.currentUser) {
       void deleteCareerSlotFromCloud(auth.currentUser, slotIndex).catch(() => {
         setCloudSyncStatus('error');
       });
@@ -1054,7 +1065,7 @@ export default function App() {
       `✓ Backup de ${stored.clubShortName} importado no Slot 0${stored.slotIndex}!`,
       'emerald'
     );
-    if (auth.currentUser) {
+    if (auth?.currentUser) {
       void saveCareerSlotToCloud(auth.currentUser, stored, currency).catch(() => {
         setCloudSyncStatus('error');
       });
@@ -1066,7 +1077,7 @@ export default function App() {
     persistCareer();
     setSaveSuccessFlash(true);
     showActionToast(
-      auth.currentUser
+      auth?.currentUser
         ? `✓ Carreira salva no Slot 0${activeSlot} e sincronizada na nuvem!`
         : `✓ Carreira salva localmente no Slot 0${activeSlot}!`,
       'emerald'
@@ -1425,6 +1436,7 @@ export default function App() {
       let finalSquad = updatedSquad;
       let finalClubs = updatedClubs;
       let finalAiSquads = updatedAiSquads;
+      let finalYouthAcademy = youthAcademy;
       let newMidSeasonProcessedYear = midSeasonEvolutionProcessedYear;
 
       if (dayOffset >= 154 && midSeasonEvolutionProcessedYear !== currentYear) {
@@ -1439,6 +1451,14 @@ export default function App() {
         finalClubs = midRes.updatedClubs;
         finalSquad = midRes.updatedUserSquad;
         finalAiSquads = midRes.updatedAiSquads;
+        const evolvedUserClub =
+          finalClubs.find((c) => c.id === userClubId) || userClub;
+        finalYouthAcademy = evolveYouthAcademyRoster({
+          academy: finalYouthAcademy,
+          clubReputation: evolvedUserClub.reputation,
+          division: evolvedUserClub.division === 'B' ? 'B' : 'A',
+          phase: 'MID_SEASON',
+        }).updatedAcademy;
         newMidSeasonProcessedYear = currentYear;
         setMidSeasonEvolutionProcessedYear(currentYear);
         extraMessages.push(midRes.inboxMessage);
@@ -1525,6 +1545,7 @@ export default function App() {
       setCopaDoBrasil(updatedCopaDoBrasil);
       setLibertadores(updatedLibertadores);
       setFinanceLedger(updatedFinanceLedger);
+      setYouthAcademy(finalYouthAcademy);
       setTransferHistory(updatedTransferHistory);
       setPendingOffers(updatedPendingOffers);
       setMessages(updatedMessages);
@@ -1542,6 +1563,7 @@ export default function App() {
         copaDoBrasil: updatedCopaDoBrasil,
         libertadores: updatedLibertadores,
         financeLedger: updatedFinanceLedger,
+        youthAcademy: finalYouthAcademy,
         transferHistory: updatedTransferHistory,
         pendingOffers: updatedPendingOffers,
         messages: updatedMessages,
@@ -2768,6 +2790,14 @@ export default function App() {
       finalClubs = midRes.updatedClubs;
       finalSquad = midRes.updatedUserSquad;
       finalAiSquads = midRes.updatedAiSquads;
+      const evolvedUserClub =
+        finalClubs.find((c) => c.id === userClubId) || userClub;
+      updatedYouthAcademy = evolveYouthAcademyRoster({
+        academy: updatedYouthAcademy,
+        clubReputation: evolvedUserClub.reputation,
+        division: evolvedUserClub.division === 'B' ? 'B' : 'A',
+        phase: 'MID_SEASON',
+      }).updatedAcademy;
       newMidSeasonProcessedYear = currentYear;
       setMidSeasonEvolutionProcessedYear(currentYear);
       nextMessagesList = [midRes.inboxMessage, ...messages];
@@ -3007,6 +3037,16 @@ export default function App() {
       signedPlayer,
     });
 
+    const clearedNeg = recordTransferNegotiationAttempt({
+      states: negotiationStates,
+      player: listing.player,
+      listing,
+      outcome: 'ACEITA',
+      seasonYear: currentYear,
+      dayOffset,
+    });
+    setNegotiationStates(clearedNeg.nextStates);
+
     persistCareer({
       clubs: updatedClubs,
       squad: updatedSquad,
@@ -3017,6 +3057,7 @@ export default function App() {
       transferHistory: nextHistory,
       messages: nextMessages,
       matchState: nextMatchState,
+      negotiationStates: clearedNeg.nextStates,
     });
   };
 
@@ -3024,6 +3065,7 @@ export default function App() {
     listing: MarketPlayerListing;
     dealMode: TransferDealMode;
     offerTier: TransferOfferTier;
+    offerMultiplier?: number;
     salaryOfferMult?: number;
     loanWageShare: LoanWageShare;
     loanDurationYears?: 1 | 2;
@@ -3043,11 +3085,32 @@ export default function App() {
       listing,
       dealMode,
       offerTier,
+      offerMultiplier,
       salaryOfferMult = 1.0,
       loanWageShare,
       loanDurationYears = 1,
       contractYears = 3,
     } = params;
+
+    const blockInfo = getPlayerNegotiationBlockInfo(
+      negotiationStates[listing.player.id],
+      currentYear,
+      dayOffset
+    );
+    if (blockInfo.isBlocked) {
+      const untilLabel = blockInfo.blockedUntilDateLabel || 'o próximo ano';
+      setMarketFeedback({
+        type: 'error',
+        title: `${listing.player.name} não aceita novas negociações`,
+        detail: `O atleta encerrou as conversas com o ${userClub.shortName}. Nova tentativa liberada em ${untilLabel} (${blockInfo.remainingDays} dias restantes).`,
+      });
+      showActionToast(
+        `✕ ${listing.player.name} bloqueado até ${untilLabel}`,
+        'rose'
+      );
+      return;
+    }
+
     const evaluation = evaluateTransferNegotiation({
       userClub,
       userSquad: squad,
@@ -3055,6 +3118,7 @@ export default function App() {
       listing,
       dealMode,
       offerTier,
+      offerMultiplier,
       salaryOfferMult,
       loanWageShare,
       loanDurationYears,
@@ -3076,6 +3140,7 @@ export default function App() {
         listing,
         dealMode,
         offerTier,
+        offerMultiplier,
         salaryOfferMult,
         loanWageShare,
         contractYears,
@@ -3116,6 +3181,20 @@ export default function App() {
         : 'COMPRA';
 
     if (result.outcome === 'CONTRAPROPOSTA' && result.counterOffer) {
+      const negUpdate = recordTransferNegotiationAttempt({
+        states: negotiationStates,
+        player: listing.player,
+        listing,
+        outcome: 'CONTRAPROPOSTA',
+        seasonYear: currentYear,
+        dayOffset,
+      });
+      setNegotiationStates(negUpdate.nextStates);
+
+      const counterNote = negUpdate.justBlocked
+        ? `${result.counterOffer.summary} Última chance: se não aceitar agora, o atleta encerrará negociações por 1 ano (até ${negUpdate.blockedUntilDateLabel}).`
+        : result.counterOffer.summary;
+
       const counterRec: TransferRecord = {
         id: `tr-cnt-${Date.now()}`,
         date: dateLabel,
@@ -3127,39 +3206,85 @@ export default function App() {
         counterpartyClubName: counterpartyName,
         feeAmount: result.counterOffer.counterFee,
         monthlySalaryImpact: result.counterOffer.counterSalary,
-        note: result.counterOffer.summary,
+        note: counterNote,
       };
       const nextHistory = [counterRec, ...transferHistory];
       setTransferHistory(nextHistory);
       setMarketFeedback({
         type: 'counter',
-        title: result.headline,
-        detail: `${result.summary} Pedida: ${formatCompactBRL(result.counterOffer.counterFee)} + ${formatCompactBRL(result.counterOffer.counterSalary)}/mês.`,
+        title: negUpdate.justBlocked
+          ? `Última contraproposta por ${listing.player.name}`
+          : result.headline,
+        detail: `${counterNote} Pedida: ${formatCompactBRL(result.counterOffer.counterFee)} + ${formatCompactBRL(result.counterOffer.counterSalary)}/mês.`,
       });
-      showActionToast(`⇄ ${result.headline}`, 'amber');
+      showActionToast(
+        negUpdate.justBlocked
+          ? `⇄ Última chance: contraproposta de ${listing.player.name}`
+          : `⇄ ${result.headline}`,
+        'amber'
+      );
       setTransferAttemptResult({
         id: `attempt-${Date.now()}`,
         listing,
         dealMode,
         offerTier,
+        offerMultiplier,
         salaryOfferMult,
         loanWageShare,
         contractYears,
         loanDurationYears,
         outcome: 'CONTRAPROPOSTA',
-        headline: result.headline,
-        summary: result.summary,
-        factors: result.factors,
+        headline: negUpdate.justBlocked
+          ? `Última contraproposta por ${listing.player.name}`
+          : result.headline,
+        summary: negUpdate.justBlocked
+          ? `${result.summary} Esta é a oferta final: novas propostas serão bloqueadas por 1 ano (até ${negUpdate.blockedUntilDateLabel}).`
+          : result.summary,
+        factors: negUpdate.justBlocked
+          ? [
+              ...result.factors,
+              `Limite de paciência atingido (${negUpdate.playerState?.attemptsCount} propostas) — novas negociações bloqueadas até ${negUpdate.blockedUntilDateLabel}.`,
+            ]
+          : result.factors,
         offeredFee: evaluation.effectiveFee,
         offeredSalary: evaluation.effectiveSalary,
         evaluation,
         counterOffer: result.counterOffer,
+        negotiationBlockedUntilLabel: negUpdate.blockedUntilDateLabel,
+        negotiationAttemptsCount: negUpdate.playerState?.attemptsCount,
+        negotiationMaxAttempts: negUpdate.playerState?.maxAttempts,
       });
-      persistCareer({ transferHistory: nextHistory });
+      persistCareer({
+        transferHistory: nextHistory,
+        negotiationStates: negUpdate.nextStates,
+      });
       return;
     }
 
     if (!result.accepted || !result.signedPlayer) {
+      const negUpdate = recordTransferNegotiationAttempt({
+        states: negotiationStates,
+        player: listing.player,
+        listing,
+        outcome: 'RECUSADA',
+        seasonYear: currentYear,
+        dayOffset,
+      });
+      setNegotiationStates(negUpdate.nextStates);
+
+      const finalHeadline = negUpdate.justBlocked
+        ? `${listing.player.name} encerrou as negociações por 1 ano`
+        : result.headline;
+      const finalSummary = negUpdate.justBlocked
+        ? `${result.summary} Sem acordo após ${negUpdate.playerState?.attemptsCount} propostas, o estafe de ${listing.player.name} não aceita novas negociações com o ${userClub.shortName} até ${negUpdate.blockedUntilDateLabel}.`
+        : result.summary;
+      const finalFactors = negUpdate.justBlocked
+        ? [
+            ...result.factors,
+            `Bloqueio de 1 ano ativado: novas propostas liberadas somente em ${negUpdate.blockedUntilDateLabel}.`,
+          ]
+        : result.factors;
+
       const rejectedRec: TransferRecord = {
         id: `tr-rej-${Date.now()}`,
         date: dateLabel,
@@ -3171,35 +3296,42 @@ export default function App() {
         counterpartyClubName: counterpartyName,
         feeAmount: evaluation.effectiveFee,
         monthlySalaryImpact: evaluation.effectiveSalary,
-        note: `${result.rejectedBy === 'JOGADOR' ? 'Recusa do atleta' : 'Recusa do clube'} · ${result.summary}`,
+        note: `${result.rejectedBy === 'JOGADOR' ? 'Recusa do atleta' : 'Recusa do clube'} · ${finalSummary}`,
       };
       const nextHistory = [rejectedRec, ...transferHistory];
       setTransferHistory(nextHistory);
       setMarketFeedback({
         type: 'rejected',
-        title: result.headline,
-        detail: result.summary,
+        title: finalHeadline,
+        detail: finalSummary,
       });
-      showActionToast(`✕ ${result.headline}`, 'rose');
+      showActionToast(`✕ ${finalHeadline}`, 'rose');
       setTransferAttemptResult({
         id: `attempt-${Date.now()}`,
         listing,
         dealMode,
         offerTier,
+        offerMultiplier,
         salaryOfferMult,
         loanWageShare,
         contractYears,
         loanDurationYears,
         outcome: 'RECUSADA',
         rejectedBy: result.rejectedBy,
-        headline: result.headline,
-        summary: result.summary,
-        factors: result.factors,
+        headline: finalHeadline,
+        summary: finalSummary,
+        factors: finalFactors,
         offeredFee: evaluation.effectiveFee,
         offeredSalary: evaluation.effectiveSalary,
         evaluation,
+        negotiationBlockedUntilLabel: negUpdate.blockedUntilDateLabel,
+        negotiationAttemptsCount: negUpdate.playerState?.attemptsCount,
+        negotiationMaxAttempts: negUpdate.playerState?.maxAttempts,
       });
-      persistCareer({ transferHistory: nextHistory });
+      persistCareer({
+        transferHistory: nextHistory,
+        negotiationStates: negUpdate.nextStates,
+      });
       return;
     }
 
@@ -4470,6 +4602,7 @@ export default function App() {
               transferHistory={transferHistory}
               transferredOutClubPlayerIds={transferredOutClubPlayerIds}
               watchedPlayers={watchedPlayers}
+              negotiationStates={negotiationStates}
               seasonYear={currentYear}
               dayOffset={dayOffset}
               aiSquads={aiSquads}

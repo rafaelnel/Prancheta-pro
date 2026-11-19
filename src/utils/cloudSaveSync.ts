@@ -45,6 +45,7 @@ export async function ensureCloudUserProfile(
   preferredCurrency: CurrencyCode = 'BRL',
   activeSlotIndex: CareerSlotIndex = 1
 ): Promise<void> {
+  if (!db) return;
   const path = `users/${user.uid}`;
   const userRef = doc(db, 'users', user.uid);
   const displayName = sanitizeDisplayName(
@@ -83,6 +84,7 @@ export async function saveCareerSlotToCloud(
   save: CareerSaveData,
   preferredCurrency: CurrencyCode = 'BRL'
 ): Promise<void> {
+  if (!db) return;
   await ensureCloudUserProfile(user, preferredCurrency, save.slotIndex);
 
   const slotDocId = `slot_${save.slotIndex}`;
@@ -133,6 +135,7 @@ export async function deleteCareerSlotFromCloud(
   user: User,
   slotIndex: CareerSlotIndex
 ): Promise<void> {
+  if (!db) return;
   const slotDocId = `slot_${slotIndex}`;
   const path = `users/${user.uid}/careerSlots/${slotDocId}`;
   const slotRef = doc(db, 'users', user.uid, 'careerSlots', slotDocId);
@@ -158,6 +161,13 @@ export async function syncAllCareerSlotsWithCloud(
   preferredCurrency: CurrencyCode = 'BRL',
   activeSlotIndex: CareerSlotIndex = 1
 ): Promise<CloudSyncSummary> {
+  if (!db) {
+    return {
+      slots: loadAllCareerSlots(),
+      downloadedCount: 0,
+      uploadedCount: 0,
+    };
+  }
   await ensureCloudUserProfile(user, preferredCurrency, activeSlotIndex);
 
   const slotsPath = `users/${user.uid}/careerSlots`;

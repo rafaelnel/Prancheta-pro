@@ -423,11 +423,22 @@ export interface TransferCounterOffer {
   summary: string;
 }
 
+export interface PlayerNegotiationState {
+  playerId: string;
+  attemptsCount: number;
+  maxAttempts: number;
+  blockedUntilAbsDay: number | null;
+  blockedUntilDateLabel?: string;
+  blockedReason?: string;
+  lastAttemptAbsDay: number;
+}
+
 export interface TransferAttemptResult {
   id: string;
   listing: MarketPlayerListing;
   dealMode: TransferDealMode;
   offerTier: TransferOfferTier;
+  offerMultiplier?: number;
   salaryOfferMult: number;
   loanWageShare: 0.5 | 0.75 | 1.0;
   contractYears?: 2 | 3 | 4;
@@ -442,6 +453,9 @@ export interface TransferAttemptResult {
   evaluation: TransferEvaluation;
   counterOffer?: TransferCounterOffer;
   signedPlayer?: Player | null;
+  negotiationBlockedUntilLabel?: string;
+  negotiationAttemptsCount?: number;
+  negotiationMaxAttempts?: number;
 }
 
 export type TransferRecordType =
@@ -828,6 +842,7 @@ export interface CareerSaveData {
   seasonHistory?: SeasonArchiveEntry[];
   seasonEndReport?: SeasonEndReport | null;
   midSeasonEvolutionProcessedYear?: number;
+  negotiationStates?: Record<string, PlayerNegotiationState>;
 }
 
 

@@ -12,8 +12,11 @@ import {
   processSeasonEndContracts,
   setContractNonRenewalDecision,
 } from './contractEngine';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   createInitialYouthAcademy,
+  evolveYouthAcademyRoster,
   generateYouthRegens,
   getYouthInitialOvrRange,
   releaseYouthPlayerFromAcademy,
@@ -748,4 +751,166 @@ test('Age-based evolution curve: <=25 evolves strongly (but can regress), 26-30 
   assert.ok(veteran33.desiredDelta <= 1, `Expected 31-35 low evolution/decline, got ${veteran33.desiredDelta}`);
   assert.ok(elder37.desiredDelta <= 0 && elder37.desiredDelta < youngStrong.desiredDelta, `Expected >35 regression, got ${elder37.desiredDelta}`);
 });
+
+test('Youth academy prospects continue evolving stochastically based on potential up to age 20 (leaving only after 20)', () => {
+  const highPot19 = makeTestPlayer({
+    id: 'youth-5star-19',
+    name: 'Joia 19 Anos',
+    age: 19,
+    position: 'MEI',
+    sector: 'MEI',
+    potentialStars: 5,
+    basePotentialOvr: 88,
+    dynamicCeilingOvr: 92,
+    attributes: {
+      passe: 14,
+      finalizacao: 13,
+      drible: 14,
+      desarme: 10,
+      primeiroToque: 14,
+      cruzamento: 13,
+      decisoes: 14,
+      visaoDeJogo: 14,
+      compostura: 13,
+      semBola: 14,
+      posicionamento: 11,
+      indiceDeTrabalho: 13,
+      velocidade: 14,
+      aceleracao: 14,
+      resistencia: 14,
+      forca: 12,
+      impulsao: 12,
+      agilidade: 14,
+    },
+  });
+
+  const lowPot19 = makeTestPlayer({
+    id: 'youth-2star-19',
+    name: 'Reserva Base 19',
+    age: 19,
+    position: 'MEI',
+    sector: 'MEI',
+    potentialStars: 2,
+    basePotentialOvr: 70,
+    dynamicCeilingOvr: 71,
+    attributes: {
+      passe: 12,
+      finalizacao: 11,
+      drible: 12,
+      desarme: 10,
+      primeiroToque: 12,
+      cruzamento: 11,
+      decisoes: 12,
+      visaoDeJogo: 12,
+      compostura: 11,
+      semBola: 12,
+      posicionamento: 10,
+      indiceDeTrabalho: 12,
+      velocidade: 12,
+      aceleracao: 12,
+      resistencia: 12,
+      forca: 11,
+      impulsao: 11,
+      agilidade: 12,
+    },
+  });
+
+  const turning21 = makeTestPlayer({
+    id: 'youth-20-grad',
+    name: 'Sub20 Limite',
+    age: 20,
+    position: 'ATA',
+    sector: 'ATA',
+    potentialStars: 3.5,
+    basePotentialOvr: 79,
+    dynamicCeilingOvr: 81,
+  });
+
+  const baseAcademy = {
+    ...createInitialYouthAcademy('flamengo', 84, 'A', 2026),
+    youthRoster: [highPot19, lowPot19, turning21],
+  };
+
+  // 1. Mid-season: all players <= 20 (including 20yo!) stay and evolve randomly
+  const midRes = evolveYouthAcademyRoster({
+    academy: baseAcademy,
+    clubReputation: 84,
+    division: 'A',
+    phase: 'MID_SEASON',
+    rng: () => 0.85,
+  });
+  assert.equal(midRes.updatedYouthRoster.length, 3, '20yo stays in academy during season');
+  const midHigh = midRes.updatedYouthRoster.find((p) => p.id === 'youth-5star-19')!;
+  const beforeOvr = calculatePlayerOverall(highPot19.attributes, highPot19.position);
+  const midOvr = calculatePlayerOverall(midHigh.attributes, midHigh.position);
+  assert.ok(midOvr > beforeOvr, `Expected 5★ youth to evolve mid-season (${beforeOvr} -> ${midOvr})`);
+
+  // 2. Season-end: 19yo turns 20 and STAYS & EVOLVES; 20yo turns 21 and graduates out
+  const endRes = evolveYouthAcademyRoster({
+    academy: baseAcademy,
+    clubReputation: 84,
+    division: 'A',
+    phase: 'SEASON_END',
+    rng: () => 0.78,
+  });
+  const evolved20 = endRes.updatedYouthRoster.find((p) => p.id === 'youth-5star-19');
+  assert.ok(evolved20, '19yo turning 20 must remain in academy and evolve up to age 20');
+  assert.equal(evolved20!.age, 20);
+  assert.ok(
+    calculatePlayerOverall(evolved20!.attributes, evolved20!.position) > beforeOvr,
+    '19yo turning 20 should gain OVR'
+  );
+  assert.equal(
+    endRes.updatedYouthRoster.some((p) => p.id === 'youth-20-grad'),
+    false,
+    '20yo turning 21 should leave Sub-20 academy'
+  );
+  assert.deepEqual(endRes.graduatedOutNames, ['Sub20 Limite']);
+
+  // 3. Stochastic & potential-weighted: 5★ evolves more on average than 2★ across seeds, and outcomes vary randomly
+  let highTotalGain = 0;
+  let lowTotalGain = 0;
+  const highOutcomes = new Set<number>();
+  const lowBeforeOvr = calculatePlayerOverall(lowPot19.attributes, lowPot19.position);
+  for (let i = 0; i < 40; i++) {
+    let s = i * 7919 + 13;
+    const seeded = () => {
+      s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+    const res = evolveYouthAcademyRoster({
+      academy: baseAcademy,
+      clubReputation: 84,
+      division: 'A',
+      phase: 'SEASON_END',
+      rng: seeded,
+    });
+    const h = res.updatedYouthRoster.find((p) => p.id === 'youth-5star-19')!;
+    const l = res.updatedYouthRoster.find((p) => p.id === 'youth-2star-19')!;
+    const hDelta = calculatePlayerOverall(h.attributes, h.position) - beforeOvr;
+    const lDelta = calculatePlayerOverall(l.attributes, l.position) - lowBeforeOvr;
+    highTotalGain += hDelta;
+    lowTotalGain += lDelta;
+    highOutcomes.add(hDelta);
+  }
+  assert.ok(
+    highOutcomes.size >= 2,
+    `Expected stochastic variation in youth OVR gains, got single value: ${[...highOutcomes]}`
+  );
+  assert.ok(
+    highTotalGain > lowTotalGain,
+    `Expected 5★ average evolution (${highTotalGain}) > 2★ (${lowTotalGain})`
+  );
+
+  // 4. YouthAcademyView removes all rules and mechanics explanation sections
+  const youthViewSource = fs.readFileSync(
+    path.resolve('src/components/YouthAcademyView.tsx'),
+    'utf-8'
+  );
+  assert.equal(youthViewSource.includes('Regras de Transição'), false);
+  assert.equal(youthViewSource.includes('Mecânica de Potencial Dinâmico'), false);
+  assert.equal(youthViewSource.includes('Rompimento de Teto'), false);
+  assert.equal(youthViewSource.includes('O Potencial Não Protege'), false);
+});
+
 

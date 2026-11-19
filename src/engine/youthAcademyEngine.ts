@@ -511,9 +511,228 @@ export function createInitialYouthAcademy(
   };
 }
 
+const SECTOR_PRIORITY_ATTRS: Record<
+  PositionSector,
+  Array<keyof PlayerAttributes>
+> = {
+  GOL: [
+    'posicionamento',
+    'compostura',
+    'agilidade',
+    'decisoes',
+    'impulsao',
+    'passe',
+  ],
+  DEF: [
+    'desarme',
+    'posicionamento',
+    'forca',
+    'impulsao',
+    'velocidade',
+    'passe',
+    'decisoes',
+  ],
+  MEI: [
+    'passe',
+    'visaoDeJogo',
+    'primeiroToque',
+    'decisoes',
+    'drible',
+    'resistencia',
+    'semBola',
+  ],
+  ATA: [
+    'finalizacao',
+    'drible',
+    'velocidade',
+    'aceleracao',
+    'semBola',
+    'primeiroToque',
+    'compostura',
+  ],
+};
+
+function rollYouthAcademyOvrGain(params: {
+  stars: PotentialStars;
+  headroom: number;
+  phase: 'MID_SEASON' | 'SEASON_END';
+  rng: () => number;
+}): number {
+  const { stars, headroom, phase, rng } = params;
+  if (headroom <= 0) return 0;
+
+  const r = rng();
+
+  if (phase === 'MID_SEASON') {
+    // Stochastic mid-season growth weighted by star potential (0 to +2 OVR)
+    let gain = 0;
+    if (stars >= 5) {
+      gain = r < 0.15 ? 0 : r < 0.62 ? 1 : 2;
+    } else if (stars >= 4.5) {
+      gain = r < 0.22 ? 0 : r < 0.72 ? 1 : 2;
+    } else if (stars >= 4) {
+      gain = r < 0.30 ? 0 : r < 0.80 ? 1 : 2;
+    } else if (stars >= 3) {
+      gain = r < 0.44 ? 0 : r < 0.90 ? 1 : 2;
+    } else if (stars >= 2) {
+      gain = r < 0.62 ? 0 : 1;
+    } else {
+      gain = r < 0.78 ? 0 : 1;
+    }
+    return Math.min(headroom, gain);
+  }
+
+  // SEASON_END annual stochastic evolution weighted by star potential (0 to +3 OVR)
+  let gain = 0;
+  if (stars >= 5) {
+    gain = r < 0.08 ? 0 : r < 0.34 ? 1 : r < 0.74 ? 2 : 3;
+  } else if (stars >= 4.5) {
+    gain = r < 0.12 ? 0 : r < 0.42 ? 1 : r < 0.80 ? 2 : 3;
+  } else if (stars >= 4) {
+    gain = r < 0.16 ? 0 : r < 0.54 ? 1 : r < 0.88 ? 2 : 3;
+  } else if (stars >= 3) {
+    gain = r < 0.24 ? 0 : r < 0.72 ? 1 : 2;
+  } else if (stars >= 2) {
+    gain = r < 0.42 ? 0 : r < 0.88 ? 1 : 2;
+  } else {
+    gain = r < 0.60 ? 0 : 1;
+  }
+
+  return Math.min(headroom, gain);
+}
+
 /**
- * Evolves existing U-20 players (+1 year of age and training boost) and generates
- * the new annual intake of youth regens into the Sub-20 roster based on actual investment.
+ * Evolves all youth prospects currently in the Base / Sub-20 roster randomly based on their potential.
+ * - Players continue evolving while in the academy up until completing age 20 (age <= 20).
+ * - On SEASON_END, each prospect ages +1 year; players turning 21 (> 20) graduate out of Sub-20.
+ * - On MID_SEASON, age stays the same and eligible prospects (<= 20) undergo random training evolution.
+ */
+export function evolveYouthAcademyRoster(params: {
+  academy: YouthAcademyState;
+  clubReputation: number;
+  division: 'A' | 'B' | 'LIB';
+  phase: 'MID_SEASON' | 'SEASON_END';
+  rng?: () => number;
+}): {
+  updatedAcademy: YouthAcademyState;
+  updatedYouthRoster: Player[];
+  evolvedCount: number;
+  graduatedOutNames: string[];
+} {
+  const {
+    academy,
+    clubReputation,
+    division,
+    phase,
+    rng = Math.random,
+  } = params;
+
+  const existingRoster = academy.youthRoster || [];
+  const nextRoster: Player[] = [];
+  const graduatedOutNames: string[] = [];
+  let evolvedCount = 0;
+
+  for (const yp of existingRoster) {
+    const nextAge = phase === 'SEASON_END' ? yp.age + 1 : yp.age;
+    // Youth prospects stay and evolve in the academy until completing age 20 (leave only after 20)
+    if (nextAge > 20) {
+      graduatedOutNames.push(yp.name);
+      continue;
+    }
+
+    const stars = yp.potentialStars ?? 3;
+    const currentOvr = calculatePlayerOverall(yp.attributes, yp.position);
+    const starBounds = getYouthInitialOvrRange(stars);
+    const dynProfile = getDynamicPotentialProfile(stars, rng, currentOvr, nextAge);
+    const playerBaseCeiling = Math.max(
+      yp.basePotentialOvr ?? dynProfile.basePotentialOvr,
+      starBounds.maxOvr
+    );
+    const agePotentialLimit = getMaxRealisticOvrForAgeAndPotential(
+      nextAge,
+      stars,
+      yp
+    );
+    const academyCeiling = Math.min(
+      88,
+      Math.max(
+        currentOvr,
+        Math.min(
+          playerBaseCeiling,
+          Math.max(starBounds.maxOvr, agePotentialLimit)
+        )
+      )
+    );
+    const headroom = Math.max(0, academyCeiling - currentOvr);
+
+    const ovrGain = rollYouthAcademyOvrGain({
+      stars,
+      headroom,
+      phase,
+      rng,
+    });
+
+    let evolvedAttrs: PlayerAttributes = { ...yp.attributes };
+    if (ovrGain > 0) {
+      // Nudge random sector-relevant attributes first for organic, individualized growth
+      const priorityKeys = SECTOR_PRIORITY_ATTRS[yp.sector] || SECTOR_PRIORITY_ATTRS.MEI;
+      const bumps = ovrGain + 1 + Math.floor(rng() * 2);
+      for (let b = 0; b < bumps; b++) {
+        const key = priorityKeys[Math.floor(rng() * priorityKeys.length)];
+        evolvedAttrs[key] = Math.min(19, evolvedAttrs[key] + 1);
+      }
+
+      const targetNextOvr = Math.min(academyCeiling, currentOvr + ovrGain);
+      evolvedAttrs = calibrateAttributesToTargetOvr(
+        evolvedAttrs,
+        yp.position,
+        targetNextOvr,
+        academyCeiling
+      );
+    }
+
+    const newOvr = calculatePlayerOverall(evolvedAttrs, yp.position);
+    const actualDelta = newOvr - currentOvr;
+    if (actualDelta > 0) {
+      evolvedCount += 1;
+    }
+
+    const { marketValue, salary } = calculateBalancedValuationAndWage({
+      ovr: newOvr,
+      age: Math.max(16, nextAge),
+      clubReputation,
+      division,
+      potentialStars: stars,
+      position: yp.position,
+    });
+
+    nextRoster.push({
+      ...yp,
+      age: nextAge,
+      attributes: evolvedAttrs,
+      marketValue,
+      salary: Math.max(15_000, Math.round((salary * 0.35) / 5_000) * 5_000),
+      recentOvrDelta:
+        phase === 'MID_SEASON'
+          ? (yp.recentOvrDelta ?? 0) + actualDelta
+          : actualDelta,
+    });
+  }
+
+  return {
+    updatedAcademy: {
+      ...academy,
+      youthRoster: nextRoster,
+    },
+    updatedYouthRoster: nextRoster,
+    evolvedCount,
+    graduatedOutNames,
+  };
+}
+
+/**
+ * Evolves existing youth players (+1 year of age and stochastic potential-based evolution up to age 20)
+ * and generates the new annual intake of youth regens into the Sub-20 roster based on actual investment.
  */
 export function generateYouthRegens(params: {
   academy: YouthAcademyState;
@@ -551,60 +770,17 @@ export function generateYouthRegens(params: {
     Math.max(0.3, spendRatio * 0.65 + monthsRatio * 0.35)
   );
 
-  // 1. Age (+1 year) and train (+1 to +2 OVR max) existing youth roster players who stay in Sub-20 (up to age 19)
+  // 1. Age (+1 year) and randomly evolve existing youth roster players based on potential (up to age 20)
   const existingRoster = academy.youthRoster || [];
-  const agedYouthRoster: Player[] = [];
-  const usedNames = new Set<string>();
-
-  for (const yp of existingRoster) {
-    usedNames.add(yp.name);
-    const nextAge = yp.age + 1;
-    // Players who turn 20+ without being promoted leave the U-20 category
-    if (nextAge > 19) continue;
-
-    const stars = yp.potentialStars ?? 3;
-    const starBounds = getYouthInitialOvrRange(stars);
-    const sub20Ceiling = Math.min(
-      85,
-      Math.max(
-        starBounds.maxOvr,
-        getMaxRealisticOvrForAgeAndPotential(nextAge, stars)
-      )
-    );
-    const currentOvr = calculatePlayerOverall(yp.attributes, yp.position);
-    const annualGain =
-      currentOvr >= sub20Ceiling
-        ? 0
-        : stars >= 4 && rng() < 0.55
-        ? 2
-        : 1;
-    const targetNextOvr = Math.min(sub20Ceiling, currentOvr + annualGain);
-
-    const upgradedAttrs = calibrateAttributesToTargetOvr(
-      yp.attributes,
-      yp.position,
-      targetNextOvr,
-      sub20Ceiling
-    );
-
-    const newOvr = calculatePlayerOverall(upgradedAttrs, yp.position);
-    const { marketValue, salary } = calculateBalancedValuationAndWage({
-      ovr: newOvr,
-      age: Math.max(16, nextAge),
-      clubReputation,
-      division,
-      potentialStars: stars,
-      position: yp.position,
-    });
-
-    agedYouthRoster.push({
-      ...yp,
-      age: nextAge,
-      attributes: upgradedAttrs,
-      marketValue,
-      salary: Math.max(15_000, Math.round((salary * 0.35) / 5_000) * 5_000),
-    });
-  }
+  const usedNames = new Set<string>(existingRoster.map((yp) => yp.name));
+  const evolvedExisting = evolveYouthAcademyRoster({
+    academy,
+    clubReputation,
+    division,
+    phase: 'SEASON_END',
+    rng,
+  });
+  const agedYouthRoster = evolvedExisting.updatedYouthRoster;
 
   // 2. Generate new annual intake of youth prospects
   const countSpan = tierConfig.maxRegens - tierConfig.minRegens + 1;

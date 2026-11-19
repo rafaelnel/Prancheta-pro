@@ -16,7 +16,20 @@ import {
   ArrowLeftRight,
   FastForward,
   GraduationCap,
+  Cloud,
+  UserCheck,
+  CheckCircle2,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
+import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth } from './firebase';
+import {
+  deleteCareerSlotFromCloud,
+  saveCareerSlotToCloud,
+  syncAllCareerSlotsWithCloud,
+} from './utils/cloudSaveSync';
+import { AccountAuthModal } from './components/AccountAuthModal';
 import { YouthAcademyView } from './components/YouthAcademyView';
 import {
   YOUTH_TIERS,
@@ -50,12 +63,14 @@ import {
   buildPitchTokens,
   calculatePlayerOverall,
   createInitialMatchState,
+  pickBestLineupForFormation,
   simulateRoundFixtures,
   stepMatchMinute,
   updateStandingsWithRound,
 } from './engine/matchEngine';
 import {
   LoanWageShare,
+  acceptTransferCounterOffer,
   evaluateTransferNegotiation,
   executeIncomingTransfer,
   executeOutgoingTransfer,
@@ -63,10 +78,16 @@ import {
   isTransferWindowOpen,
 } from './engine/transferEngine';
 import {
+  getPlayerContractRemainingYears,
+  negotiateContractRenewal,
+  setContractNonRenewalDecision,
+} from './engine/contractEngine';
+import {
   CareerSaveData,
   CareerSlotIndex,
   Club,
   ClubFinanceLedger,
+  ContractRenewalOutcome,
   CopaDoBrasilState,
   FormationType,
   InboxMessage,
@@ -84,6 +105,7 @@ import {
   StandingsRow,
   TacticalDuty,
   TeamInstructions,
+  TransferAttemptResult,
   TransferDealMode,
   TransferOfferTier,
   TransferRecord,
@@ -154,9 +176,41 @@ function shouldAutostart(): boolean {
 }
 
 export default function App() {
-  useCurrency();
+  const { currency } = useCurrency();
   const [slots, setSlots] = useState<Array<CareerSaveData | null>>(() =>
     loadAllCareerSlots()
+  );
+
+  // Firebase Auth & Cross-Device Cloud Sync State
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<
+    'idle' | 'syncing' | 'synced' | 'error'
+  >('idle');
+  const [lastSyncMessage, setLastSyncMessage] = useState<string | null>(null);
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState<boolean>(false);
+
+  // Global Viewport-Fixed Action Feedback Toast (always visible in mobile field of view)
+  const [actionToast, setActionToast] = useState<{
+    id: number;
+    message: string;
+    tone: 'emerald' | 'amber' | 'rose' | 'cyan';
+  } | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showActionToast = useCallback(
+    (
+      message: string,
+      tone: 'emerald' | 'amber' | 'rose' | 'cyan' = 'emerald'
+    ) => {
+      setActionToast({ id: Date.now(), message, tone });
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+      toastTimerRef.current = window.setTimeout(() => {
+        setActionToast(null);
+      }, 3800);
+    },
+    []
   );
 
   const initialAutostartSave = useMemo(() => {
@@ -236,6 +290,9 @@ export default function App() {
     () => initialAutostartSave?.matchHistory || []
   );
   const [marketFeedback, setMarketFeedback] = useState<MarketFeedback>(null);
+  const [transferAttemptResult, setTransferAttemptResult] =
+    useState<TransferAttemptResult | null>(null);
+  const [focusRenewalsSignal, setFocusRenewalsSignal] = useState<number>(0);
 
   // Continuous Multi-Season Career, Living AI Market & Economy Ledger State
   const [currentYear, setCurrentYear] = useState<number>(
@@ -309,6 +366,10 @@ export default function App() {
     setYouthAcademy(nextState);
     setHasUnsavedChanges(true);
     persistCareer({ youthAcademy: nextState });
+    showActionToast(
+      `Base Sub-20 atualizada: Nível ${tierObj.label} (${focus})`,
+      'cyan'
+    );
   };
 
   const handlePromoteYouthPlayer = (playerId: string) => {
@@ -353,9 +414,14 @@ export default function App() {
       squad: res.updatedSeniorSquad,
       messages: nextMessages,
     });
+    showActionToast(
+      `✓ ${res.promotedPlayer.name} (OVR ${ovr}) promovido ao elenco profissional!`,
+      'emerald'
+    );
   };
 
   const handleReleaseYouthPlayer = (playerId: string) => {
+    const released = youthAcademy.youthRoster?.find((p) => p.id === playerId);
     const nextAcademy = releaseYouthPlayerFromAcademy({
       academy: youthAcademy,
       playerId,
@@ -363,6 +429,9 @@ export default function App() {
     setYouthAcademy(nextAcademy);
     setHasUnsavedChanges(true);
     persistCareer({ youthAcademy: nextAcademy });
+    if (released) {
+      showActionToast(`${released.name} dispensado da base Sub-20.`, 'amber');
+    }
   };
 
   const handleTogglePlayerMarketListing = (
@@ -385,17 +454,19 @@ export default function App() {
       const statusParts: string[] = [];
       if (target.isTransferListed) statusParts.push('Venda');
       if (target.isLoanListed) statusParts.push('Empréstimo');
+      const titleMsg =
+        statusParts.length > 0
+          ? `${target.name} disponibilizado para ${statusParts.join(' e ')}`
+          : `${target.name} retirado da lista de transferências`;
       setMarketFeedback({
         type: 'success',
-        title:
-          statusParts.length > 0
-            ? `${target.name} disponibilizado para ${statusParts.join(' e ')}`
-            : `${target.name} retirado da lista de transferências`,
+        title: titleMsg,
         detail:
           statusParts.length > 0
             ? 'Clubes da IA que precisam desta posição enviarão propostas com maior frequência e melhores condições.'
             : 'O atleta voltou ao status normal de permanência no elenco.',
       });
+      showActionToast(titleMsg, statusParts.length > 0 ? 'emerald' : 'amber');
     }
 
     persistCareer({ squad: updatedSquad });
@@ -740,9 +811,21 @@ export default function App() {
             : midSeasonEvolutionProcessedYear,
       };
 
-      saveCareerToSlot(payload);
+      const stamped = saveCareerToSlot(payload);
       setSlots(loadAllCareerSlots());
       setHasUnsavedChanges(false);
+
+      if (auth.currentUser) {
+        setCloudSyncStatus('syncing');
+        saveCareerSlotToCloud(auth.currentUser, stamped, currency)
+          .then(() => {
+            setCloudSyncStatus('synced');
+            setLastSyncMessage(`Slot 0${stamped.slotIndex} salvo na nuvem`);
+          })
+          .catch(() => {
+            setCloudSyncStatus('error');
+          });
+      }
     },
     [
       activeSlot,
@@ -778,8 +861,75 @@ export default function App() {
       seasonEndReport,
       youthAcademy,
       midSeasonEvolutionProcessedYear,
+      currency,
     ]
   );
+
+  const handleManualCloudSync = useCallback(async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      setIsAccountModalOpen(true);
+      return;
+    }
+    setCloudSyncStatus('syncing');
+    try {
+      const summary = await syncAllCareerSlotsWithCloud(
+        user,
+        currency,
+        activeSlot || 1
+      );
+      setSlots(summary.slots);
+      if (activeSlot && summary.slots[activeSlot - 1] && summary.downloadedCount > 0) {
+        applyCareerSaveToState(summary.slots[activeSlot - 1]!);
+      }
+      setCloudSyncStatus('synced');
+      const msg =
+        summary.downloadedCount > 0 || summary.uploadedCount > 0
+          ? `Nuvem sincronizada (${summary.downloadedCount} baixado(s), ${summary.uploadedCount} enviado(s))`
+          : 'Todos os slots já estão atualizados na nuvem';
+      setLastSyncMessage(msg);
+      showActionToast(`✓ ${msg}`, 'cyan');
+    } catch {
+      setCloudSyncStatus('error');
+      showActionToast(
+        'Não foi possível sincronizar com a nuvem agora. Seus saves locais estão seguros.',
+        'amber'
+      );
+    }
+  }, [currency, activeSlot, showActionToast]);
+
+  // Listen to Firebase Auth state changes and auto-sync career slots across devices
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
+      if (!user) {
+        setCloudSyncStatus('idle');
+        setLastSyncMessage(null);
+        return;
+      }
+      setCloudSyncStatus('syncing');
+      try {
+        const summary = await syncAllCareerSlotsWithCloud(
+          user,
+          currency,
+          activeSlot || 1
+        );
+        setSlots(summary.slots);
+        setCloudSyncStatus('synced');
+        const msg =
+          summary.downloadedCount > 0
+            ? `${summary.downloadedCount} carreira(s) carregada(s) da sua conta na nuvem!`
+            : `${summary.slots.filter(Boolean).length}/4 slots sincronizados na nuvem`;
+        setLastSyncMessage(msg);
+        if (summary.downloadedCount > 0) {
+          showActionToast(`✓ ${msg}`, 'emerald');
+        }
+      } catch {
+        setCloudSyncStatus('error');
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const applyCareerSaveToState = (save: CareerSaveData) => {
     const otherDivision: 'A' | 'B' = save.division === 'B' ? 'A' : 'B';
@@ -858,12 +1008,29 @@ export default function App() {
     const stored = saveCareerToSlot(newSave);
     setSlots(loadAllCareerSlots());
     applyCareerSaveToState(stored);
+    showActionToast(
+      `✓ Carreira iniciada no ${stored.clubShortName} (Slot 0${slotIndex})!`,
+      'emerald'
+    );
+    if (auth.currentUser) {
+      setCloudSyncStatus('syncing');
+      saveCareerSlotToCloud(auth.currentUser, stored, currency)
+        .then(() => {
+          setCloudSyncStatus('synced');
+          setLastSyncMessage(`Slot 0${slotIndex} sincronizado na nuvem`);
+        })
+        .catch(() => setCloudSyncStatus('error'));
+    }
   };
 
   const handleLoadCareer = (slotIndex: CareerSlotIndex) => {
     const loaded = loadCareerSlot(slotIndex);
     if (!loaded) return;
     applyCareerSaveToState(loaded);
+    showActionToast(
+      `✓ Carreira do ${loaded.clubShortName} (Slot 0${slotIndex}) carregada!`,
+      'emerald'
+    );
   };
 
   const handleDeleteCareer = (slotIndex: CareerSlotIndex) => {
@@ -872,17 +1039,38 @@ export default function App() {
     if (activeSlot === slotIndex) {
       setActiveSlot(null);
     }
+    showActionToast(`Slot 0${slotIndex} removido.`, 'amber');
+    if (auth.currentUser) {
+      void deleteCareerSlotFromCloud(auth.currentUser, slotIndex).catch(() => {
+        setCloudSyncStatus('error');
+      });
+    }
   };
 
   const handleImportCareer = (saveData: CareerSaveData) => {
-    saveCareerToSlot(saveData);
+    const stored = saveCareerToSlot(saveData);
     setSlots(loadAllCareerSlots());
+    showActionToast(
+      `✓ Backup de ${stored.clubShortName} importado no Slot 0${stored.slotIndex}!`,
+      'emerald'
+    );
+    if (auth.currentUser) {
+      void saveCareerSlotToCloud(auth.currentUser, stored, currency).catch(() => {
+        setCloudSyncStatus('error');
+      });
+    }
   };
 
   const handleManualSave = () => {
     if (!activeSlot) return;
     persistCareer();
     setSaveSuccessFlash(true);
+    showActionToast(
+      auth.currentUser
+        ? `✓ Carreira salva no Slot 0${activeSlot} e sincronizada na nuvem!`
+        : `✓ Carreira salva localmente no Slot 0${activeSlot}!`,
+      'emerald'
+    );
     if (saveTimerRef.current) {
       window.clearTimeout(saveTimerRef.current);
     }
@@ -1427,6 +1615,8 @@ export default function App() {
     roleId: string,
     duty: TacticalDuty
   ) => {
+    const targetPlayer = squad.find((p) => p.id === playerId);
+    const roleDef = getRoleById(roleId);
     setSquad((prev) =>
       prev.map((p) =>
         p.id === playerId
@@ -1435,27 +1625,41 @@ export default function App() {
       )
     );
     setHasUnsavedChanges(true);
+    if (targetPlayer) {
+      showActionToast(
+        `✓ ${targetPlayer.name}: ${roleDef.name} (${duty})`,
+        'cyan'
+      );
+    }
   };
 
   const handleSwapPlayers = (playerAId: string, playerBId: string) => {
+    const playerA = squad.find((p) => p.id === playerAId);
+    const playerB = squad.find((p) => p.id === playerBId);
+    if (playerA && playerB) {
+      showActionToast(
+        `⇄ Troca realizada: ${playerA.name} ⇄ ${playerB.name}`,
+        'emerald'
+      );
+    }
     setSquad((prev) => {
-      const playerA = prev.find((p) => p.id === playerAId);
-      const playerB = prev.find((p) => p.id === playerBId);
-      if (!playerA || !playerB) return prev;
+      const pA = prev.find((p) => p.id === playerAId);
+      const pB = prev.find((p) => p.id === playerBId);
+      if (!pA || !pB) return prev;
 
       const updated = prev.map((p) => {
         if (p.id === playerAId) {
           return {
             ...p,
-            isStarter: playerB.isStarter,
-            slotIndex: playerB.slotIndex,
+            isStarter: pB.isStarter,
+            slotIndex: pB.slotIndex,
           };
         }
         if (p.id === playerBId) {
           return {
             ...p,
-            isStarter: playerA.isStarter,
-            slotIndex: playerA.slotIndex,
+            isStarter: pA.isStarter,
+            slotIndex: pA.slotIndex,
           };
         }
         return p;
@@ -1507,86 +1711,108 @@ export default function App() {
   };
 
   const handleAutoPickBestXI = () => {
-    const slotsDef = FORMATIONS[userClub.formation];
-    const pool = [...squad].filter((p) => !p.injured);
-    const chosenIds = new Set<string>();
-    const slotAssignments = new Map<string, number>();
-
-    slotsDef.forEach((slot) => {
-      const candidates = pool
-        .filter((p) => !chosenIds.has(p.id))
-        .sort((a, b) => {
-          const aMatch =
-            a.position === slot.label
-              ? 3
-              : a.sector === slot.sector
-              ? 1.5
-              : 0;
-          const bMatch =
-            b.position === slot.label
-              ? 3
-              : b.sector === slot.sector
-              ? 1.5
-              : 0;
-          const aScore =
-            calculatePlayerOverall(a.attributes, a.position) +
-            aMatch +
-            a.condition * 0.05;
-          const bScore =
-            calculatePlayerOverall(b.attributes, b.position) +
-            bMatch +
-            b.condition * 0.05;
-          return bScore - aScore;
-        });
-
-      if (candidates[0]) {
-        chosenIds.add(candidates[0].id);
-        slotAssignments.set(candidates[0].id, slot.slotIndex);
+    setSquad((prev) => {
+      const updated = pickBestLineupForFormation(prev, userClub.formation);
+      if (matchState.phase === 'PRE_MATCH') {
+        const { homeTokens, awayTokens } = buildPitchTokens(
+          homeClub,
+          awayClub,
+          updated,
+          matchState.isUserHome,
+          transferredOutClubPlayerIds,
+          aiSquads
+        );
+        setMatchState((m) => ({ ...m, homeTokens, awayTokens }));
       }
+      return updated;
     });
-
-    setSquad((prev) =>
-      prev.map((p) => {
-        if (slotAssignments.has(p.id)) {
-          const sIdx = slotAssignments.get(p.id)!;
-          const slotDef = slotsDef[sIdx];
-          return {
-            ...p,
-            isStarter: true,
-            slotIndex: sIdx,
-            assignedRole: slotDef.defaultRole,
-            assignedDuty: slotDef.defaultDuty,
-          };
-        }
-        return {
-          ...p,
-          isStarter: false,
-          slotIndex: null,
-        };
-      })
-    );
     setHasUnsavedChanges(true);
+    showActionToast(
+      `✓ Melhor Escalação aplicada (${userClub.formation})!`,
+      'emerald'
+    );
   };
 
-  const handleTriggerMidSeasonEvolution = () => {
-    const midRes = processMidSeasonEvolution({
-      clubs,
-      userClubId,
+  const handleRenewContract = (
+    player: Player,
+    offeredSalary: number,
+    addYears: 1 | 2 | 3
+  ): ContractRenewalOutcome => {
+    const res = negotiateContractRenewal({
+      player,
+      club: userClub,
       userSquad: squad,
-      aiSquads,
       loanedOutPlayers,
       currentYear,
+      offeredSalary,
+      addYears,
     });
-    setClubs(midRes.updatedClubs);
-    setSquad(midRes.updatedUserSquad);
-    setAiSquads(midRes.updatedAiSquads);
-    setLoanedOutPlayers(midRes.updatedLoanedOut);
-    setMidSeasonEvolutionProcessedYear(currentYear);
-    setMessages((prev: InboxMessage[]) => [midRes.inboxMessage, ...prev]);
+
+    if (res.outcome === 'ACEITA' && res.updatedPlayer) {
+      const updatedSquad = squad.map((p) =>
+        p.id === player.id ? res.updatedPlayer! : p
+      );
+      const renewalMsg: InboxMessage = {
+        id: `msg-renew-${player.id}-${Date.now()}`,
+        date: `${formatCalendarDate(dayOffset, currentYear)} · 16:00`,
+        sender: 'Departamento Jurídico',
+        senderRole: 'Renovação Contratual',
+        subject: `Contrato Renovado: ${player.name} até ${res.updatedPlayer.contractEndYear}`,
+        category: 'Diretoria',
+        priority: 'positive',
+        read: false,
+        relatedPlayerId: player.id,
+        body: [
+          `${player.name} assinou novo vínculo com o ${userClub.shortName} (+${addYears} ano(s), válido até fim de ${res.updatedPlayer.contractEndYear}).`,
+          `Novo salário mensal: ${formatCompactBRL(offeredSalary)}/mês.`,
+        ],
+        actionLabel: 'Ver Elenco',
+        actionTargetTab: 'squad',
+      };
+      const nextMsgs = [renewalMsg, ...messages];
+      setSquad(updatedSquad);
+      setMessages(nextMsgs);
+      setHasUnsavedChanges(true);
+      persistCareer({
+        squad: updatedSquad,
+        messages: nextMsgs,
+      });
+      showActionToast(`✓ ${res.headline}`, 'emerald');
+    } else if (res.outcome === 'CONTRAPROPOSTA') {
+      showActionToast(`⇄ ${res.headline}`, 'amber');
+    } else {
+      showActionToast(`✕ ${res.headline}`, 'rose');
+    }
+
+    return res;
+  };
+
+  const handleToggleDoNotRenewContract = (
+    player: Player,
+    doNotRenew: boolean
+  ) => {
+    const updatedPlayer = setContractNonRenewalDecision(player, doNotRenew);
+    const updatedSquad = squad.map((p) =>
+      p.id === player.id ? updatedPlayer : p
+    );
+    setSquad(updatedSquad);
     setHasUnsavedChanges(true);
+    persistCareer({ squad: updatedSquad });
+    if (doNotRenew) {
+      showActionToast(
+        `✕ Definido: ${player.name} não terá contrato renovado e sairá livre ao fim do vínculo.`,
+        'amber'
+      );
+    } else {
+      showActionToast(
+        `✓ Conversas de renovação reabertas com ${player.name}.`,
+        'cyan'
+      );
+    }
   };
 
   const handleChangeFormation = (formation: FormationType) => {
+    showActionToast(`✓ Esquema tático alterado para ${formation}`, 'cyan');
     const slotsDef = FORMATIONS[formation];
     setClubs((prev) =>
       prev.map((c) => (c.id === userClubId ? { ...c, formation } : c))
@@ -1639,6 +1865,10 @@ export default function App() {
       prev.map((c) => (c.id === userClubId ? { ...c, instructions } : c))
     );
     setHasUnsavedChanges(true);
+    showActionToast(
+      `✓ Instrução tática atualizada (${instructions.mentality})`,
+      'cyan'
+    );
   };
 
   const handleChangeLiveMentality = (mentality: MentalityType) => {
@@ -1661,6 +1891,10 @@ export default function App() {
     const role = getRoleById(reserveIn.assignedRole);
     const parts = reserveIn.name.split(' ');
     const shortName = parts[parts.length - 1];
+    const reserveOvr = calculatePlayerOverall(
+      reserveIn.attributes,
+      reserveIn.position
+    );
 
     setMatchState((prev) => {
       const replaceToken = (tokens: typeof prev.homeTokens) =>
@@ -1670,6 +1904,7 @@ export default function App() {
                 ...t,
                 id: reserveIn.id,
                 number: reserveIn.number,
+                ovr: reserveOvr,
                 name: reserveIn.name,
                 shortName,
                 sector: reserveIn.sector,
@@ -2591,11 +2826,208 @@ export default function App() {
     });
   };
 
+  const commitAcceptedIncomingTransfer = (params: {
+    listing: MarketPlayerListing;
+    dealMode: TransferDealMode;
+    offerTier: TransferOfferTier;
+    salaryOfferMult: number;
+    loanWageShare: LoanWageShare;
+    loanDurationYears?: 1 | 2;
+    contractYears?: 2 | 3 | 4;
+    feePaid: number;
+    monthlySalary: number;
+    evaluation: ReturnType<typeof evaluateTransferNegotiation>;
+    updatedClub: Club;
+    updatedSquad: Player[];
+    updatedFreeAgents: Player[];
+    updatedTransferredOutIds: string[];
+    signedPlayer: Player;
+    headline?: string;
+    summary?: string;
+    factors?: string[];
+  }) => {
+    const {
+      listing,
+      dealMode,
+      offerTier,
+      salaryOfferMult,
+      loanWageShare,
+      loanDurationYears = 1,
+      contractYears = 3,
+      feePaid,
+      monthlySalary,
+      evaluation,
+      updatedClub,
+      updatedSquad,
+      updatedFreeAgents,
+      updatedTransferredOutIds,
+      signedPlayer,
+      headline,
+      summary,
+      factors,
+    } = params;
+
+    const dateLabel = formatCalendarDate(dayOffset, currentYear);
+    const counterpartyName = listing.originClub?.shortName || 'Passe Livre';
+    const recordType: TransferRecord['type'] =
+      dealMode === 'FREE'
+        ? 'LIVRE'
+        : dealMode === 'LOAN'
+        ? 'EMPRESTIMO_IN'
+        : 'COMPRA';
+
+    const updatedClubs = clubs.map((c) => {
+      if (c.id === userClubId) return updatedClub;
+      if (
+        dealMode !== 'FREE' &&
+        listing.originClub &&
+        c.id === listing.originClub.id
+      ) {
+        return { ...c, cashBalance: c.cashBalance + feePaid };
+      }
+      return c;
+    });
+
+    const nextAiSquads = { ...aiSquads };
+    if (listing.originClub && nextAiSquads[listing.originClub.id]) {
+      nextAiSquads[listing.originClub.id] = nextAiSquads[
+        listing.originClub.id
+      ].filter((p) => p.id !== listing.player.id);
+    }
+
+    const nextFinanceLedger: ClubFinanceLedger = {
+      ...financeLedger,
+      seasonTransferSpend: financeLedger.seasonTransferSpend + feePaid,
+    };
+
+    const durationYears = dealMode === 'LOAN' ? loanDurationYears : contractYears;
+    const endYear = signedPlayer.contractEndYear ?? currentYear + durationYears - 1;
+
+    const acceptedRec: TransferRecord = {
+      id: `tr-acc-${Date.now()}`,
+      date: dateLabel,
+      type: recordType,
+      status: 'CONCLUIDA',
+      playerName: signedPlayer.name,
+      position: signedPlayer.position,
+      ovr: listing.ovr,
+      counterpartyClubName: counterpartyName,
+      fromClubName: counterpartyName,
+      toClubName: userClub.shortName,
+      feeAmount: feePaid,
+      monthlySalaryImpact: monthlySalary,
+      durationYears,
+      note:
+        dealMode === 'LOAN'
+          ? `Empréstimo de ${loanDurationYears} ${loanDurationYears === 1 ? 'temporada' : 'temporadas'} (até ${endYear}, ${Math.round(loanWageShare * 100)}% salário).`
+          : dealMode === 'FREE'
+          ? `Contrato sem custo de ${contractYears} anos (até ${endYear}).`
+          : `Compra definitiva · contrato de ${contractYears} anos (até ${endYear}).`,
+    };
+
+    const nextHistory = [acceptedRec, ...transferHistory];
+    const transferMsg: InboxMessage = {
+      id: `msg-tr-${Date.now()}`,
+      date: `${dateLabel} · 14:30`,
+      sender: 'Departamento de Futebol',
+      senderRole: 'Mercado & Contratações',
+      subject: `Reforço Oficializado: ${signedPlayer.name} (${signedPlayer.position} · OVR ${listing.ovr})`,
+      category: 'Mercado',
+      priority: 'positive',
+      read: false,
+      relatedPlayerId: signedPlayer.id,
+      body: [
+        `${signedPlayer.name} fechou com o ${userClub.shortName} (${acceptedRec.note}) vindo de ${counterpartyName}.`,
+        `Investimento imediato: ${
+          feePaid === 0
+            ? `${formatCompactBRL(0)} (Passe Livre)`
+            : formatCompactBRL(feePaid)
+        } · Folha adicional: +${formatCompactBRL(monthlySalary)}/mês.`,
+      ],
+      actionLabel: 'Ver Elenco',
+      actionTargetTab: 'squad',
+    };
+    const nextMessages = [transferMsg, ...messages];
+
+    let nextMatchState = matchState;
+    if (matchState.phase === 'PRE_MATCH') {
+      const { homeTokens, awayTokens } = buildPitchTokens(
+        homeClub,
+        awayClub,
+        updatedSquad,
+        matchState.isUserHome,
+        updatedTransferredOutIds,
+        nextAiSquads
+      );
+      nextMatchState = { ...matchState, homeTokens, awayTokens };
+      setMatchState(nextMatchState);
+    }
+
+    setClubs(updatedClubs);
+    setSquad(updatedSquad);
+    setAiSquads(nextAiSquads);
+    setFinanceLedger(nextFinanceLedger);
+    setFreeAgents(updatedFreeAgents);
+    setTransferredOutClubPlayerIds(updatedTransferredOutIds);
+    setTransferHistory(nextHistory);
+    setMessages(nextMessages);
+    const successHeadline =
+      headline ||
+      (dealMode === 'LOAN'
+        ? `Empréstimo fechado! ${signedPlayer.name} no ${userClub.shortName}`
+        : `${signedPlayer.name} contratado com sucesso!`);
+    setMarketFeedback({
+      type: 'success',
+      title: successHeadline,
+      detail: `${acceptedRec.note} Já integrado ao elenco com camisa #${signedPlayer.number}.`,
+    });
+    showActionToast(`✓ ${successHeadline}`, 'emerald');
+    setTransferAttemptResult({
+      id: `attempt-${Date.now()}`,
+      listing,
+      dealMode,
+      offerTier,
+      salaryOfferMult,
+      loanWageShare,
+      contractYears,
+      loanDurationYears,
+      outcome: 'ACEITA',
+      headline:
+        headline || `${signedPlayer.name} acertou com o ${userClub.shortName}!`,
+      summary:
+        summary ||
+        `${acceptedRec.note} Já integrado ao elenco com a camisa #${signedPlayer.number}.`,
+      factors: factors || [
+        `Atleta: ${listing.player.age} anos · OVR ${listing.ovr} (${listing.player.position})`,
+        evaluation.playerAmbitionNote,
+      ],
+      offeredFee: feePaid,
+      offeredSalary: monthlySalary,
+      evaluation,
+      signedPlayer,
+    });
+
+    persistCareer({
+      clubs: updatedClubs,
+      squad: updatedSquad,
+      aiSquads: nextAiSquads,
+      financeLedger: nextFinanceLedger,
+      freeAgents: updatedFreeAgents,
+      transferredOutClubPlayerIds: updatedTransferredOutIds,
+      transferHistory: nextHistory,
+      messages: nextMessages,
+      matchState: nextMatchState,
+    });
+  };
+
   const handleProposeTransfer = (params: {
     listing: MarketPlayerListing;
     dealMode: TransferDealMode;
     offerTier: TransferOfferTier;
+    salaryOfferMult?: number;
     loanWageShare: LoanWageShare;
+    loanDurationYears?: 1 | 2;
+    contractYears?: 2 | 3 | 4;
   }) => {
     if (!isTransferWindowOpen(dayOffset)) {
       const windowStatus = getTransferWindowStatus(dayOffset, currentYear);
@@ -2604,9 +3036,18 @@ export default function App() {
         title: 'Janela de Transferências Fechada',
         detail: windowStatus.description,
       });
+      showActionToast('✕ Janela de Transferências Fechada', 'rose');
       return;
     }
-    const { listing, dealMode, offerTier, loanWageShare } = params;
+    const {
+      listing,
+      dealMode,
+      offerTier,
+      salaryOfferMult = 1.0,
+      loanWageShare,
+      loanDurationYears = 1,
+      contractYears = 3,
+    } = params;
     const evaluation = evaluateTransferNegotiation({
       userClub,
       userSquad: squad,
@@ -2614,7 +3055,10 @@ export default function App() {
       listing,
       dealMode,
       offerTier,
+      salaryOfferMult,
       loanWageShare,
+      loanDurationYears,
+      contractYears,
     });
 
     if (evaluation.isBlocked) {
@@ -2622,6 +3066,28 @@ export default function App() {
         type: 'error',
         title: 'Operação bloqueada pelos limites financeiros',
         detail: evaluation.blockReason || 'Saldo ou folha insuficiente.',
+      });
+      showActionToast(
+        `✕ Operação bloqueada pelo orçamento (${listing.player.name})`,
+        'rose'
+      );
+      setTransferAttemptResult({
+        id: `attempt-${Date.now()}`,
+        listing,
+        dealMode,
+        offerTier,
+        salaryOfferMult,
+        loanWageShare,
+        contractYears,
+        loanDurationYears,
+        outcome: 'RECUSADA',
+        rejectedBy: 'ORCAMENTO',
+        headline: 'Operação bloqueada pelo orçamento',
+        summary: evaluation.blockReason || 'Saldo ou folha insuficiente.',
+        factors: [evaluation.playerAmbitionNote, evaluation.moneyInfluenceNote],
+        offeredFee: evaluation.effectiveFee,
+        offeredSalary: evaluation.effectiveSalary,
+        evaluation,
       });
       return;
     }
@@ -2635,6 +3101,9 @@ export default function App() {
       dealMode,
       evaluation,
       loanWageShare,
+      loanDurationYears,
+      contractYears,
+      seasonYear: currentYear,
     });
 
     const dateLabel = formatCalendarDate(dayOffset, currentYear);
@@ -2645,6 +3114,50 @@ export default function App() {
         : dealMode === 'LOAN'
         ? 'EMPRESTIMO_IN'
         : 'COMPRA';
+
+    if (result.outcome === 'CONTRAPROPOSTA' && result.counterOffer) {
+      const counterRec: TransferRecord = {
+        id: `tr-cnt-${Date.now()}`,
+        date: dateLabel,
+        type: recordType,
+        status: 'CONTRAPROPOSTA',
+        playerName: listing.player.name,
+        position: listing.player.position,
+        ovr: listing.ovr,
+        counterpartyClubName: counterpartyName,
+        feeAmount: result.counterOffer.counterFee,
+        monthlySalaryImpact: result.counterOffer.counterSalary,
+        note: result.counterOffer.summary,
+      };
+      const nextHistory = [counterRec, ...transferHistory];
+      setTransferHistory(nextHistory);
+      setMarketFeedback({
+        type: 'counter',
+        title: result.headline,
+        detail: `${result.summary} Pedida: ${formatCompactBRL(result.counterOffer.counterFee)} + ${formatCompactBRL(result.counterOffer.counterSalary)}/mês.`,
+      });
+      showActionToast(`⇄ ${result.headline}`, 'amber');
+      setTransferAttemptResult({
+        id: `attempt-${Date.now()}`,
+        listing,
+        dealMode,
+        offerTier,
+        salaryOfferMult,
+        loanWageShare,
+        contractYears,
+        loanDurationYears,
+        outcome: 'CONTRAPROPOSTA',
+        headline: result.headline,
+        summary: result.summary,
+        factors: result.factors,
+        offeredFee: evaluation.effectiveFee,
+        offeredSalary: evaluation.effectiveSalary,
+        evaluation,
+        counterOffer: result.counterOffer,
+      });
+      persistCareer({ transferHistory: nextHistory });
+      return;
+    }
 
     if (!result.accepted || !result.signedPlayer) {
       const rejectedRec: TransferRecord = {
@@ -2658,128 +3171,122 @@ export default function App() {
         counterpartyClubName: counterpartyName,
         feeAmount: evaluation.effectiveFee,
         monthlySalaryImpact: evaluation.effectiveSalary,
-        note: `Dificuldade ${evaluation.level} (${evaluation.acceptanceChance}% chance).`,
+        note: `${result.rejectedBy === 'JOGADOR' ? 'Recusa do atleta' : 'Recusa do clube'} · ${result.summary}`,
       };
       const nextHistory = [rejectedRec, ...transferHistory];
       setTransferHistory(nextHistory);
       setMarketFeedback({
         type: 'rejected',
-        title: `${counterpartyName} recusou a proposta por ${listing.player.name}`,
-        detail: `Dificuldade ${evaluation.level} (${evaluation.acceptanceChance}% de aceite). Dica: aumente a oferta para +15%/+30% ou tente um Empréstimo com maior cobertura salarial.`,
+        title: result.headline,
+        detail: result.summary,
+      });
+      showActionToast(`✕ ${result.headline}`, 'rose');
+      setTransferAttemptResult({
+        id: `attempt-${Date.now()}`,
+        listing,
+        dealMode,
+        offerTier,
+        salaryOfferMult,
+        loanWageShare,
+        contractYears,
+        loanDurationYears,
+        outcome: 'RECUSADA',
+        rejectedBy: result.rejectedBy,
+        headline: result.headline,
+        summary: result.summary,
+        factors: result.factors,
+        offeredFee: evaluation.effectiveFee,
+        offeredSalary: evaluation.effectiveSalary,
+        evaluation,
       });
       persistCareer({ transferHistory: nextHistory });
       return;
     }
 
-    const updatedClubs = clubs.map((c) => {
-      if (c.id === userClubId) return result.updatedClub;
-      if (
-        dealMode !== 'FREE' &&
-        listing.originClub &&
-        c.id === listing.originClub.id
-      ) {
-        return { ...c, cashBalance: c.cashBalance + evaluation.effectiveFee };
-      }
-      return c;
+    commitAcceptedIncomingTransfer({
+      listing,
+      dealMode,
+      offerTier,
+      salaryOfferMult,
+      loanWageShare,
+      loanDurationYears,
+      contractYears,
+      feePaid: evaluation.effectiveFee,
+      monthlySalary: evaluation.effectiveSalary,
+      evaluation,
+      updatedClub: result.updatedClub,
+      updatedSquad: result.updatedSquad,
+      updatedFreeAgents: result.updatedFreeAgents,
+      updatedTransferredOutIds: result.updatedTransferredOutIds,
+      signedPlayer: result.signedPlayer,
+      headline: result.headline,
+      summary: result.summary,
+      factors: result.factors,
     });
+  };
 
-    // Remove signed player from origin AI club squad if present
-    const nextAiSquads = { ...aiSquads };
-    if (listing.originClub && nextAiSquads[listing.originClub.id]) {
-      nextAiSquads[listing.originClub.id] = nextAiSquads[
-        listing.originClub.id
-      ].filter((p) => p.id !== listing.player.id);
+  const handleAcceptCounterOffer = (attempt: TransferAttemptResult) => {
+    if (!attempt.counterOffer) return;
+    if (!isTransferWindowOpen(dayOffset)) {
+      const windowStatus = getTransferWindowStatus(dayOffset, currentYear);
+      setMarketFeedback({
+        type: 'error',
+        title: 'Janela de Transferências Fechada',
+        detail: windowStatus.description,
+      });
+      showActionToast('✕ Janela de Transferências Fechada', 'rose');
+      return;
     }
 
-    const nextFinanceLedger: ClubFinanceLedger = {
-      ...financeLedger,
-      seasonTransferSpend:
-        financeLedger.seasonTransferSpend + evaluation.effectiveFee,
-    };
-
-    const acceptedRec: TransferRecord = {
-      id: `tr-acc-${Date.now()}`,
-      date: dateLabel,
-      type: recordType,
-      status: 'CONCLUIDA',
-      playerName: result.signedPlayer.name,
-      position: result.signedPlayer.position,
-      ovr: listing.ovr,
-      counterpartyClubName: counterpartyName,
-      fromClubName: counterpartyName,
-      toClubName: userClub.shortName,
-      feeAmount: evaluation.effectiveFee,
-      monthlySalaryImpact: evaluation.effectiveSalary,
-      note:
-        dealMode === 'LOAN'
-          ? `Empréstimo ${currentYear} (${Math.round(loanWageShare * 100)}% salário).`
-          : dealMode === 'FREE'
-          ? 'Contrato sem custo de transferência.'
-          : 'Compra definitiva concluída.',
-    };
-
-    const nextHistory = [acceptedRec, ...transferHistory];
-    const transferMsg: InboxMessage = {
-      id: `msg-tr-${Date.now()}`,
-      date: `${dateLabel} · 14:30`,
-      sender: 'Departamento de Futebol',
-      senderRole: 'Mercado & Contratações',
-      subject: `Reforço Oficializado: ${result.signedPlayer.name} (${result.signedPlayer.position} · OVR ${listing.ovr})`,
-      category: 'Mercado',
-      priority: 'positive',
-      read: false,
-      relatedPlayerId: result.signedPlayer.id,
-      body: [
-        `${result.signedPlayer.name} fechou com o ${userClub.shortName} (${acceptedRec.note}) vindo de ${counterpartyName}.`,
-        `Investimento imediato: ${
-          evaluation.effectiveFee === 0
-            ? `${formatCompactBRL(0)} (Passe Livre)`
-            : formatCompactBRL(evaluation.effectiveFee)
-        } · Folha adicional: +${formatCompactBRL(evaluation.effectiveSalary)}/mês.`,
-      ],
-      actionLabel: 'Ver Elenco',
-      actionTargetTab: 'squad',
-    };
-    const nextMessages = [transferMsg, ...messages];
-
-    let nextMatchState = matchState;
-    if (matchState.phase === 'PRE_MATCH') {
-      const { homeTokens, awayTokens } = buildPitchTokens(
-        homeClub,
-        awayClub,
-        result.updatedSquad,
-        matchState.isUserHome,
-        result.updatedTransferredOutIds,
-        nextAiSquads
-      );
-      nextMatchState = { ...matchState, homeTokens, awayTokens };
-      setMatchState(nextMatchState);
-    }
-
-    setClubs(updatedClubs);
-    setSquad(result.updatedSquad);
-    setAiSquads(nextAiSquads);
-    setFinanceLedger(nextFinanceLedger);
-    setFreeAgents(result.updatedFreeAgents);
-    setTransferredOutClubPlayerIds(result.updatedTransferredOutIds);
-    setTransferHistory(nextHistory);
-    setMessages(nextMessages);
-    setMarketFeedback({
-      type: 'success',
-      title: `${result.signedPlayer.name} contratado com sucesso!`,
-      detail: `${acceptedRec.note} Já integrado ao elenco com camisa #${result.signedPlayer.number}.`,
+    const res = acceptTransferCounterOffer({
+      userClub,
+      userSquad: squad,
+      loanedOutPlayers,
+      freeAgents,
+      transferredOutClubPlayerIds,
+      listing: attempt.listing,
+      dealMode: attempt.dealMode,
+      counterOffer: attempt.counterOffer,
+      loanWageShare: attempt.loanWageShare,
+      loanDurationYears: attempt.loanDurationYears ?? 1,
+      contractYears: attempt.contractYears ?? 3,
+      seasonYear: currentYear,
     });
 
-    persistCareer({
-      clubs: updatedClubs,
-      squad: result.updatedSquad,
-      aiSquads: nextAiSquads,
-      financeLedger: nextFinanceLedger,
-      freeAgents: result.updatedFreeAgents,
-      transferredOutClubPlayerIds: result.updatedTransferredOutIds,
-      transferHistory: nextHistory,
-      messages: nextMessages,
-      matchState: nextMatchState,
+    if (!res.accepted || !res.signedPlayer) {
+      setMarketFeedback({
+        type: 'error',
+        title: 'Contraproposta acima do orçamento atual',
+        detail:
+          res.blockReason ||
+          'Saldo em caixa ou folha salarial insuficiente para aceitar a contraproposta.',
+      });
+      showActionToast('✕ Contraproposta acima do orçamento atual', 'rose');
+      return;
+    }
+
+    const effectiveShare =
+      attempt.counterOffer.counterLoanWageShare ?? attempt.loanWageShare;
+
+    commitAcceptedIncomingTransfer({
+      listing: attempt.listing,
+      dealMode: attempt.dealMode,
+      offerTier: attempt.offerTier,
+      salaryOfferMult: attempt.salaryOfferMult,
+      loanWageShare: effectiveShare,
+      loanDurationYears: attempt.loanDurationYears ?? 1,
+      contractYears: attempt.contractYears ?? 3,
+      feePaid: attempt.counterOffer.counterFee,
+      monthlySalary: attempt.counterOffer.counterSalary,
+      evaluation: attempt.evaluation,
+      updatedClub: res.updatedClub,
+      updatedSquad: res.updatedSquad,
+      updatedFreeAgents: res.updatedFreeAgents,
+      updatedTransferredOutIds: res.updatedTransferredOutIds,
+      signedPlayer: res.signedPlayer,
+      headline: `Contraproposta aceita! ${res.signedPlayer.name} contratado`,
+      summary: `Você aceitou os termos finais (${formatCompactBRL(attempt.counterOffer.counterFee)} + ${formatCompactBRL(attempt.counterOffer.counterSalary)}/mês) e fechou com ${res.signedPlayer.name}.`,
+      factors: attempt.factors,
     });
   };
 
@@ -2794,6 +3301,7 @@ export default function App() {
         title: 'Janela de Transferências Fechada',
         detail: windowStatus.description,
       });
+      showActionToast('✕ Janela de Transferências Fechada', 'rose');
       return;
     }
     const { player, action } = params;
@@ -2813,6 +3321,7 @@ export default function App() {
         title: 'Não foi possível concluir a saída',
         detail: 'Verifique os limites mínimos do elenco.',
       });
+      showActionToast('✕ Limite mínimo do elenco atingido', 'rose');
       return;
     }
 
@@ -2871,18 +3380,20 @@ export default function App() {
     setSquad(result.updatedSquad);
     setLoanedOutPlayers(result.updatedLoanedOutPlayers);
     setTransferHistory(nextHistory);
+    const outgoingTitle =
+      action === 'VENDA'
+        ? `${player.name} vendido por ${formatCompactBRL(result.feeReceived)}`
+        : action === 'EMPRESTIMO_OUT'
+        ? `${player.name} emprestado com alívio de ${formatCompactBRL(result.monthlyWageRelief)}/mês`
+        : `${player.name} devolvido ao clube de origem`;
     setMarketFeedback({
       type: 'success',
-      title:
-        action === 'VENDA'
-          ? `${player.name} vendido por ${formatCompactBRL(result.feeReceived)}`
-          : action === 'EMPRESTIMO_OUT'
-          ? `${player.name} emprestado com alívio de ${formatCompactBRL(result.monthlyWageRelief)}/mês`
-          : `${player.name} devolvido ao clube de origem`,
+      title: outgoingTitle,
       detail: result.promotedStarterName
         ? `${result.promotedStarterName} assumiu automaticamente a vaga titular.`
         : `Folha mensal reduzida em ${formatCompactBRL(result.monthlyWageRelief)}.`,
     });
+    showActionToast(`✓ ${outgoingTitle}`, 'emerald');
 
     persistCareer({
       clubs: updatedClubs,
@@ -2905,6 +3416,7 @@ export default function App() {
         title: 'Janela de Transferências Fechada',
         detail: windowStatus.description,
       });
+      showActionToast('✕ Janela de Transferências Fechada', 'rose');
       return;
     }
     const targetOffer = pendingOffers.find((o) => o.id === offerId);
@@ -2960,13 +3472,18 @@ export default function App() {
     setFinanceLedger(nextLedger);
 
     if (res.outcome === 'ACCEPTED') {
+      const title = `Negócio fechado com ${targetOffer.fromClubName}!`;
       setMarketFeedback({
         type: 'success',
-        title: `Negócio fechado com ${targetOffer.fromClubName}!`,
+        title,
         detail: `${targetOffer.playerName} transferido por ${formatCompactBRL(
           res.finalFee
         )}.${res.promotedStarterName ? ` ${res.promotedStarterName} assumiu a titularidade.` : ''}`,
       });
+      showActionToast(
+        `✓ ${targetOffer.playerName} negociado com ${targetOffer.fromClubName} (${formatCompactBRL(res.finalFee)})`,
+        'emerald'
+      );
     } else if (res.outcome === 'COUNTER_REJECTED') {
       setMarketFeedback({
         type: 'rejected',
@@ -2975,12 +3492,20 @@ export default function App() {
           res.finalFee
         )}.`,
       });
+      showActionToast(
+        `✕ ${targetOffer.fromClubName} recusou sua contraproposta`,
+        'rose'
+      );
     } else {
       setMarketFeedback({
         type: 'rejected',
         title: `Proposta de ${targetOffer.fromClubName} recusada`,
         detail: `${targetOffer.playerName} permanece no elenco do ${userClub.shortName}.`,
       });
+      showActionToast(
+        `Proposta de ${targetOffer.fromClubName} por ${targetOffer.playerName} recusada`,
+        'amber'
+      );
     }
 
     persistCareer({
@@ -3017,12 +3542,22 @@ export default function App() {
         ];
     setWatchedPlayers(nextWatched);
     persistCareer({ watchedPlayers: nextWatched });
+    showActionToast(
+      exists
+        ? `${listing.player.name} removido da lista de observação`
+        : `✓ ${listing.player.name} adicionado aos Observados`,
+      exists ? 'amber' : 'cyan'
+    );
   };
 
   const handleRemoveWatchedPlayer = (playerId: string) => {
+    const target = watchedPlayers.find((w) => w.playerId === playerId);
     const nextWatched = watchedPlayers.filter((w) => w.playerId !== playerId);
     setWatchedPlayers(nextWatched);
     persistCareer({ watchedPlayers: nextWatched });
+    if (target) {
+      showActionToast(`${target.playerName} removido dos Observados`, 'amber');
+    }
   };
 
   const handlePrimaryHeaderAction = () => {
@@ -3098,20 +3633,79 @@ export default function App() {
     matchState.roundNumber,
   ]);
 
+  const globalOverlayNodes = (
+    <>
+      {actionToast && (
+        <div
+          data-testid="global-action-toast"
+          role="status"
+          aria-live="polite"
+          className="fixed top-14 left-1/2 -translate-x-1/2 z-[85] max-w-[92vw] sm:max-w-md pointer-events-auto"
+        >
+          <div
+            className={`px-3.5 py-2 rounded-2xl border shadow-2xl backdrop-blur-md flex items-center gap-2 text-xs font-extrabold tracking-tight ${
+              actionToast.tone === 'emerald'
+                ? 'bg-[#091811]/95 border-[#b5ff00]/50 text-[#b5ff00]'
+                : actionToast.tone === 'amber'
+                ? 'bg-[#1c1507]/95 border-amber-400/50 text-amber-300'
+                : actionToast.tone === 'rose'
+                ? 'bg-[#1f0b10]/95 border-rose-500/50 text-rose-200'
+                : 'bg-[#08171e]/95 border-cyan-400/50 text-cyan-200'
+            }`}
+          >
+            {actionToast.tone === 'emerald' ? (
+              <CheckCircle2 className="w-4 h-4 text-[#b5ff00] shrink-0" />
+            ) : actionToast.tone === 'rose' || actionToast.tone === 'amber' ? (
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+            ) : (
+              <Check className="w-4 h-4 shrink-0" />
+            )}
+            <span className="truncate">{actionToast.message}</span>
+            <button
+              type="button"
+              onClick={() => setActionToast(null)}
+              aria-label="Fechar aviso"
+              className="ml-1 p-0.5 rounded-full hover:bg-white/10 text-current/70 hover:text-current shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <AccountAuthModal
+        isOpen={isAccountModalOpen}
+        onClose={() => setIsAccountModalOpen(false)}
+        currentUser={currentUser}
+        cloudSyncStatus={cloudSyncStatus}
+        lastSyncMessage={lastSyncMessage}
+        careerSlots={slots}
+        onManualSync={handleManualCloudSync}
+        onNotify={showActionToast}
+      />
+    </>
+  );
+
   // Render Entry / Career Slot Selection Screen when on 'hub'
   if (screen === 'hub') {
     return (
-      <CareerHubScreen
-        slots={slots}
-        onStartNewCareer={handleStartNewCareer}
-        onLoadCareer={handleLoadCareer}
-        onDeleteCareer={handleDeleteCareer}
-        onImportCareer={handleImportCareer}
-        activeCareerSlot={activeSlot}
-        onReturnToActiveCareer={
-          activeSlot ? () => setScreen('club') : undefined
-        }
-      />
+      <>
+        <CareerHubScreen
+          slots={slots}
+          onStartNewCareer={handleStartNewCareer}
+          onLoadCareer={handleLoadCareer}
+          onDeleteCareer={handleDeleteCareer}
+          onImportCareer={handleImportCareer}
+          activeCareerSlot={activeSlot}
+          onReturnToActiveCareer={
+            activeSlot ? () => setScreen('club') : undefined
+          }
+          currentUser={currentUser}
+          cloudSyncStatus={cloudSyncStatus}
+          onOpenAccountModal={() => setIsAccountModalOpen(true)}
+        />
+        {globalOverlayNodes}
+      </>
     );
   }
 
@@ -3323,6 +3917,7 @@ export default function App() {
             }
           />
         </main>
+        {globalOverlayNodes}
       </div>
     );
   }
@@ -3507,7 +4102,7 @@ export default function App() {
         {/* Persistent Top Header Bar */}
         <header className="sticky top-0 z-30 h-13 lg:h-16 bg-[#0b0c10]/95 border-b border-white/[0.07] px-3 sm:px-5 lg:px-6 flex items-center justify-between gap-2 sm:gap-4 shrink-0">
           {/* Left: Club Name & League Status */}
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden">
             <ClubBadge
               clubId={userClub.id}
               abbr={userClub.abbr}
@@ -3515,13 +4110,13 @@ export default function App() {
               primaryColor={userClub.primaryColor}
               size="header"
             />
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <h1 className="font-display text-sm sm:text-base lg:text-xl font-extrabold uppercase tracking-tight text-white truncate">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                <h1 className="font-display text-sm sm:text-base lg:text-lg font-extrabold uppercase tracking-tight text-white truncate">
                   {userClub.name}
                 </h1>
-                <span className="text-xs text-zinc-400 font-mono hidden sm:inline whitespace-nowrap">
-                  · {userRank}º na Série {userClub.division}
+                <span className="text-xs text-zinc-400 font-mono hidden xl:inline whitespace-nowrap shrink-0">
+                  · {userRank}º Série {userClub.division}
                 </span>
               </div>
               {/* Mobile compact status line */}
@@ -3618,6 +4213,35 @@ export default function App() {
               {hasUnsavedChanges && !saveSuccessFlash && (
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
               )}
+            </button>
+
+            {/* Cloud Account & Multi-Device Sync Button */}
+            <button
+              type="button"
+              onClick={() => setIsAccountModalOpen(true)}
+              data-testid="open-account-modal-header-btn"
+              aria-label="Conta e sincronização na nuvem"
+              title={
+                currentUser
+                  ? `Conectado: ${currentUser.displayName || currentUser.email}`
+                  : 'Entrar ou Criar Conta para sincronizar em múltiplos dispositivos'
+              }
+              className={`p-2 sm:px-3 sm:py-1.5 rounded-full text-xs font-bold border transition-colors flex items-center gap-1.5 whitespace-nowrap active:scale-95 ${
+                currentUser
+                  ? 'bg-[#b5ff00]/10 hover:bg-[#b5ff00]/20 text-[#b5ff00] border-[#b5ff00]/35'
+                  : 'bg-[#14171f] hover:bg-white/[0.08] text-zinc-200 border-white/10'
+              }`}
+            >
+              {currentUser ? (
+                <UserCheck className="w-3.5 h-3.5 text-[#b5ff00] shrink-0" />
+              ) : (
+                <Cloud className="w-3.5 h-3.5 text-[#b5ff00] shrink-0" />
+              )}
+              <span className="hidden md:inline max-w-[96px] truncate">
+                {currentUser
+                  ? currentUser.displayName?.split(' ')[0] || 'Nuvem ✓'
+                  : 'Conta'}
+              </span>
             </button>
 
             {/* Mobile/Compact Return to Career Hub Button */}
@@ -3808,12 +4432,17 @@ export default function App() {
 
           {activeTab === 'squad' && (
             <SquadView
+              club={userClub}
               squad={squad}
+              loanedOutPlayers={loanedOutPlayers}
+              currentYear={currentYear}
+              focusRenewalsSignal={focusRenewalsSignal}
               onInspectPlayer={(p) => setInspectedPlayerId(p.id)}
               onSwapPlayers={handleSwapPlayers}
               onAutoPickBestXI={handleAutoPickBestXI}
               onTogglePlayerMarketListing={handleTogglePlayerMarketListing}
-              onSimulateMidSeasonEvolution={handleTriggerMidSeasonEvolution}
+              onRenewContract={handleRenewContract}
+              onToggleDoNotRenewContract={handleToggleDoNotRenewContract}
             />
           )}
 
@@ -3827,6 +4456,7 @@ export default function App() {
               onUpdateRoleDuty={handleUpdateRoleDuty}
               onSwapPlayers={handleSwapPlayers}
               onInspectPlayer={(p) => setInspectedPlayerId(p.id)}
+              onAutoPickBestXI={handleAutoPickBestXI}
             />
           )}
 
@@ -3847,6 +4477,9 @@ export default function App() {
               onResolveIncomingOffer={handleResolveIncomingOffer}
               lastFeedback={marketFeedback}
               onClearFeedback={() => setMarketFeedback(null)}
+              lastAttemptResult={transferAttemptResult}
+              onClearAttemptResult={() => setTransferAttemptResult(null)}
+              onAcceptCounterOffer={handleAcceptCounterOffer}
               onInspectPlayer={(p, listing) => {
                 setInspectedPlayerId(null);
                 setInspectedExternalPlayer(p);
@@ -3968,31 +4601,56 @@ export default function App() {
       </nav>
 
       {/* Detailed 18-Attribute Player Profile Modal */}
-      <PlayerProfileModal
-        player={inspectedPlayer}
-        readOnly={Boolean(inspectedExternalPlayer)}
-        isWatched={
-          inspectedExternalListing
-            ? watchedPlayers.some(
-                (w) => w.playerId === inspectedExternalListing.player.id
-              )
-            : false
-        }
-        onToggleWatch={
-          inspectedExternalListing
-            ? () => handleToggleWatchPlayer(inspectedExternalListing)
-            : undefined
-        }
-        onClose={() => {
-          setInspectedPlayerId(null);
-          setInspectedExternalPlayer(null);
-          setInspectedExternalListing(null);
-        }}
-        onUpdateRoleDuty={handleUpdateRoleDuty}
-        onTogglePlayerMarketListing={
-          inspectedExternalPlayer ? undefined : handleTogglePlayerMarketListing
-        }
-      />
+      {(() => {
+        const isInspectedYouthPlayer = Boolean(
+          inspectedPlayer &&
+            (youthAcademy.youthRoster || []).some(
+              (y) => y.id === inspectedPlayer.id
+            )
+        );
+        return (
+          <PlayerProfileModal
+            player={inspectedPlayer}
+            readOnly={Boolean(inspectedExternalPlayer)}
+            currentYear={currentYear}
+            isWatched={
+              inspectedExternalListing
+                ? watchedPlayers.some(
+                    (w) => w.playerId === inspectedExternalListing.player.id
+                  )
+                : false
+            }
+            onToggleWatch={
+              inspectedExternalListing
+                ? () => handleToggleWatchPlayer(inspectedExternalListing)
+                : undefined
+            }
+            onClose={() => {
+              setInspectedPlayerId(null);
+              setInspectedExternalPlayer(null);
+              setInspectedExternalListing(null);
+            }}
+            onUpdateRoleDuty={handleUpdateRoleDuty}
+            onTogglePlayerMarketListing={
+              inspectedExternalPlayer
+                ? undefined
+                : handleTogglePlayerMarketListing
+            }
+            onToggleDoNotRenewContract={
+              inspectedExternalPlayer
+                ? undefined
+                : handleToggleDoNotRenewContract
+            }
+            isYouthAcademyPlayer={isInspectedYouthPlayer}
+            onPromoteYouthPlayer={
+              isInspectedYouthPlayer ? handlePromoteYouthPlayer : undefined
+            }
+            onReleaseYouthPlayer={
+              isInspectedYouthPlayer ? handleReleaseYouthPlayer : undefined
+            }
+          />
+        );
+      })()}
 
       {/* Match-by-Match Calendar Auto-Simulation Modal */}
       <AutoSimModal
@@ -4037,9 +4695,23 @@ export default function App() {
         report={seasonEndReport}
         userClub={userClub}
         clubs={clubs}
+        expiringContracts={squad.filter(
+          (p) =>
+            p.contractType !== 'EMPRESTADO' &&
+            getPlayerContractRemainingYears(p) <= 1 &&
+            p.contractRenewalStatus !== 'RENOVADO' &&
+            p.contractRenewalStatus !== 'RECUSADO'
+        )}
+        onGoToContracts={() => {
+          setIsSeasonEndModalOpen(false);
+          setFocusRenewalsSignal((s) => s + 1);
+          setActiveTab('squad');
+        }}
         onClose={() => setIsSeasonEndModalOpen(false)}
         onStartNextSeason={handleStartNextSeason}
       />
+
+      {globalOverlayNodes}
     </div>
   );
 }

@@ -88,7 +88,7 @@ function writeSlotMap(
   }
 }
 
-function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
+export function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
   const existingIds = new Set(save.clubs.map((c) => c.id));
   const missingForeign = CONMEBOL_FOREIGN_CLUBS.filter(
     (c) => !existingIds.has(c.id)
@@ -104,12 +104,13 @@ function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
     hydratedClubs.find((c) => c.id === save.userClubId) || hydratedClubs[0];
   const seasonYear = save.currentYear ?? 2026;
   const hydratedSquad = save.squad.map((p) =>
-    ensurePlayerDefaults(p, userClub.reputation, userClub.division)
+    ensurePlayerDefaults(p, userClub.reputation, userClub.division, seasonYear)
   );
+  const baseAiSquads = buildInitialAiSquads(hydratedClubs, save.userClubId);
   const hydratedAiSquads =
     save.aiSquads && Object.keys(save.aiSquads).length > 0
-      ? save.aiSquads
-      : buildInitialAiSquads(hydratedClubs, save.userClubId);
+      ? { ...baseAiSquads, ...save.aiSquads }
+      : baseAiSquads;
 
   return {
     ...save,
@@ -124,7 +125,7 @@ function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
     libertadores:
       save.libertadores ?? createInitialLibertadores(save.userClubId),
     freeAgents: (save.freeAgents ?? createInitialFreeAgents()).map((p) =>
-      ensurePlayerDefaults(p, 72, 'A')
+      ensurePlayerDefaults(p, 72, 'A', seasonYear)
     ),
     loanedOutPlayers: save.loanedOutPlayers ?? [],
     transferHistory: save.transferHistory ?? [],
@@ -156,7 +157,8 @@ function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
         ensurePlayerDefaults(
           { ...yp, isRegen: true },
           userClub.reputation,
-          userClub.division
+          userClub.division,
+          seasonYear
         )
       );
       return {
@@ -211,6 +213,17 @@ export function saveCareerToSlot(
   map[String(stamped.slotIndex)] = stamped;
   writeSlotMap(map, storage);
   return stamped;
+}
+
+export function writeCareerSlotDirectly(
+  saveData: CareerSaveData,
+  storage: StorageAdapter | null = getDefaultStorage()
+): CareerSaveData {
+  const hydrated = hydrateCareerSave(saveData);
+  const map = readSlotMap(storage);
+  map[String(hydrated.slotIndex)] = hydrated;
+  writeSlotMap(map, storage);
+  return hydrated;
 }
 
 export function deleteCareerSlot(

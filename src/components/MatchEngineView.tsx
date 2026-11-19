@@ -27,8 +27,14 @@ import {
   generateSubstitutionSuggestions,
   SubstitutionSuggestion,
 } from '../engine/substitutionAdvisor';
+import { calculatePlayerOverall } from '../engine/playerOverall';
 import { HeadToHeadSummary } from '../engine/headToHead';
 import { ClubBadge } from './ClubBadge';
+import {
+  PitchJerseySvg,
+  PlayerJersey,
+  PlayerOvrBadge,
+} from './PlayerJersey';
 
 interface MatchEngineViewProps {
   match: LiveMatchState;
@@ -154,6 +160,13 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
     match.maxSubstitutions - match.substitutionsMade
   );
 
+  const [draggedSubPlayerId, setDraggedSubPlayerId] = useState<string | null>(
+    null
+  );
+  const [dragOverSubPlayerId, setDragOverSubPlayerId] = useState<string | null>(
+    null
+  );
+
   const handleCycleNextSuggestion = () => {
     if (suggestions.length === 0) return;
     const nextIdx = (suggestionIndex + 1) % suggestions.length;
@@ -176,6 +189,47 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
     if (match.substitutionsMade >= match.maxSubstitutions) return;
     onMakeSubstitution(selectedStarterOutId, selectedReserveInId);
     setSuggestionIndex(0);
+  };
+
+  const handleSubDragStart = (e: React.DragEvent, playerId: string) => {
+    setDraggedSubPlayerId(playerId);
+    e.dataTransfer.setData('text/plain', playerId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleSubDragOver = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverSubPlayerId !== targetId) {
+      setDragOverSubPlayerId(targetId);
+    }
+  };
+
+  const handleSubDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    const sourceId = draggedSubPlayerId || e.dataTransfer.getData('text/plain');
+    setDraggedSubPlayerId(null);
+    setDragOverSubPlayerId(null);
+    if (!sourceId || sourceId === targetId) return;
+    if (match.substitutionsMade >= match.maxSubstitutions) return;
+
+    const sourcePlayer = squad.find((p) => p.id === sourceId);
+    const targetPlayer = squad.find((p) => p.id === targetId);
+    if (!sourcePlayer || !targetPlayer) return;
+
+    // One must be a starter and the other an available reserve
+    if (sourcePlayer.isStarter && !targetPlayer.isStarter && !targetPlayer.injured) {
+      onMakeSubstitution(sourcePlayer.id, targetPlayer.id);
+      setSuggestionIndex(0);
+    } else if (!sourcePlayer.isStarter && !sourcePlayer.injured && targetPlayer.isStarter) {
+      onMakeSubstitution(targetPlayer.id, sourcePlayer.id);
+      setSuggestionIndex(0);
+    }
+  };
+
+  const handleSubDragEnd = () => {
+    setDraggedSubPlayerId(null);
+    setDragOverSubPlayerId(null);
   };
 
   const renderStatComparisonRow = (
@@ -914,22 +968,37 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-11 gap-2.5 items-center bg-[#14171f] rounded-xl p-3 border border-white/[0.06]">
                 {/* Starter Out */}
                 <div className="md:col-span-5 flex items-center justify-between gap-2 bg-[#0b0c10] rounded-xl px-3 py-2 border border-rose-500/25">
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-mono uppercase text-rose-400 font-bold">
-                      SAI DE CAMPO · {activeSuggestion.starterOut.position}
-                    </div>
-                    <div className="text-xs font-bold text-white truncate">
-                      #{activeSuggestion.starterOut.number}{' '}
-                      {activeSuggestion.starterOut.name}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <PlayerJersey
+                      number={activeSuggestion.starterOut.number}
+                      variant="white"
+                      size="sm"
+                      highlight="out"
+                    />
+                    <PlayerOvrBadge
+                      ovr={activeSuggestion.starterOvr}
+                      position={activeSuggestion.starterOut.position}
+                      size="sm"
+                      tone="rose"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-mono uppercase text-rose-400 font-bold">
+                        SAI DE CAMPO
+                      </div>
+                      <div className="text-xs font-bold text-white truncate">
+                        {activeSuggestion.starterOut.name}{' '}
+                        <span className="font-mono text-zinc-300 font-semibold">
+                          ({activeSuggestion.starterOut.age}a)
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <div className="text-right shrink-0 font-mono">
+                  <div className="text-right shrink-0 font-mono tabular-nums">
                     <div className="text-xs font-bold text-rose-300">
                       {activeSuggestion.starterLiveCondition}% fís.
                     </div>
                     <div className="text-[10px] text-zinc-400">
-                      OVR {activeSuggestion.starterOvr} · Nota{' '}
-                      {activeSuggestion.starterLiveRating.toFixed(1)}
+                      Nota {activeSuggestion.starterLiveRating.toFixed(1)}
                     </div>
                   </div>
                 </div>
@@ -940,22 +1009,37 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
 
                 {/* Reserve In */}
                 <div className="md:col-span-5 flex items-center justify-between gap-2 bg-[#0b0c10] rounded-xl px-3 py-2 border border-[#b5ff00]/35">
-                  <div className="min-w-0">
-                    <div className="text-[10px] font-mono uppercase text-[#b5ff00] font-bold">
-                      ENTRA EM CAMPO · {activeSuggestion.reserveIn.position}
-                    </div>
-                    <div className="text-xs font-bold text-white truncate">
-                      #{activeSuggestion.reserveIn.number}{' '}
-                      {activeSuggestion.reserveIn.name}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <PlayerJersey
+                      number={activeSuggestion.reserveIn.number}
+                      variant="lime"
+                      size="sm"
+                      highlight="selected"
+                    />
+                    <PlayerOvrBadge
+                      ovr={activeSuggestion.reserveOvr}
+                      position={activeSuggestion.reserveIn.position}
+                      size="sm"
+                      tone="lime"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-[10px] font-mono uppercase text-[#b5ff00] font-bold">
+                        ENTRA EM CAMPO
+                      </div>
+                      <div className="text-xs font-bold text-white truncate">
+                        {activeSuggestion.reserveIn.name}{' '}
+                        <span className="font-mono text-zinc-300 font-semibold">
+                          ({activeSuggestion.reserveIn.age}a)
+                        </span>
+                      </div>
                     </div>
                   </div>
-                  <div className="text-right shrink-0 font-mono">
+                  <div className="text-right shrink-0 font-mono tabular-nums">
                     <div className="text-xs font-bold text-[#b5ff00]">
                       {activeSuggestion.reserveCondition}% fís.
                     </div>
                     <div className="text-[10px] text-zinc-400">
-                      OVR {activeSuggestion.reserveOvr} · Adeq.{' '}
-                      {activeSuggestion.roleSuitabilityPct}%
+                      Adeq. {activeSuggestion.roleSuitabilityPct}%
                     </div>
                   </div>
                 </div>
@@ -967,6 +1051,202 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
               </p>
             </div>
           )}
+
+          {/* Interactive Drag-and-Drop Jersey Substitution Board (Starters in Game + Bench Reserves) */}
+          <div className="bg-[#0b0c10] border border-white/[0.08] rounded-2xl p-3.5 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-bold text-white">
+                Substituição com Camisas (Arraste um Reserva sobre um Titular ou vice-versa):
+              </span>
+              {draggedSubPlayerId && (
+                <span className="text-[11px] font-bold text-[#b5ff00] animate-pulse">
+                  Solte sobre a camisa alvo para substituir!
+                </span>
+              )}
+            </div>
+
+            {/* 11 Starters on the Pitch as Jerseys */}
+            <div>
+              <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1.5">
+                Em Campo (11 Titulares — Clique para selecionar quem sai ou solte um reserva aqui)
+              </div>
+              <div className="flex items-center gap-2 overflow-x-auto pb-1.5 pt-0.5">
+                {starters.map((st) => {
+                  const token = (
+                    match.isUserHome ? match.homeTokens : match.awayTokens
+                  ).find((t) => t.id === st.id);
+                  const liveCond = token
+                    ? Math.round(token.condition)
+                    : Math.round(st.condition);
+                  const stOvr = calculatePlayerOverall(st.attributes, st.position);
+                  const isSelectedOut = selectedStarterOutId === st.id;
+                  const isDragged = draggedSubPlayerId === st.id;
+                  const isDropTarget =
+                    dragOverSubPlayerId === st.id && draggedSubPlayerId !== st.id;
+                  const lastName = st.name.split(' ').slice(-1)[0] || st.name;
+                  const isLimeShirt =
+                    isSelectedOut ||
+                    st.assignedDuty === 'Atacar' ||
+                    st.assignedDuty === 'Apoiar';
+
+                  return (
+                    <button
+                      key={st.id}
+                      type="button"
+                      draggable={subsRemaining > 0}
+                      onDragStart={(e) => handleSubDragStart(e, st.id)}
+                      onDragOver={(e) => handleSubDragOver(e, st.id)}
+                      onDragLeave={() => {
+                        if (dragOverSubPlayerId === st.id) {
+                          setDragOverSubPlayerId(null);
+                        }
+                      }}
+                      onDrop={(e) => handleSubDrop(e, st.id)}
+                      onDragEnd={handleSubDragEnd}
+                      onClick={() => setSelectedStarterOutId(st.id)}
+                      title={`Titular #${st.number} ${st.name} (${st.position} · OVR ${stOvr} · ${st.age}a · Cond ${liveCond}%) — Arraste um reserva aqui`}
+                      className={`shrink-0 flex flex-col items-center rounded-2xl px-2.5 py-2 border transition-all select-none ${
+                        isDropTarget
+                          ? 'bg-sky-400/20 border-sky-400 ring-2 ring-sky-400 scale-105'
+                          : isSelectedOut
+                          ? 'bg-rose-500/15 border-rose-400 ring-2 ring-rose-400/70'
+                          : 'bg-[#14171f] border-white/[0.07] hover:border-white/25 cursor-grab active:cursor-grabbing'
+                      } ${isDragged ? 'opacity-40 scale-95' : ''}`}
+                    >
+                      <PlayerJersey
+                        number={st.number}
+                        ovr={stOvr}
+                        variant={isLimeShirt ? 'lime' : 'white'}
+                        size="sm"
+                        highlight={
+                          isDropTarget
+                            ? 'dropTarget'
+                            : isSelectedOut
+                            ? 'out'
+                            : 'none'
+                        }
+                      />
+                      <div
+                        className={`mt-1.5 px-2 py-0.5 rounded-full text-[9px] font-semibold whitespace-nowrap ${
+                          isSelectedOut
+                            ? 'bg-rose-500 text-white font-bold'
+                            : 'bg-[#0b0c10] text-zinc-100 border border-white/10'
+                        }`}
+                      >
+                        <span
+                          className={`font-mono font-bold mr-1 ${
+                            isSelectedOut ? 'text-white' : 'text-[#b5ff00]'
+                          }`}
+                        >
+                          {st.position}
+                        </span>
+                        <span>{lastName}</span>
+                      </div>
+                      <span className="mt-0.5 text-[9px] font-mono tabular-nums text-zinc-300">
+                        {st.age}a ·{' '}
+                        <strong
+                          className={
+                            liveCond >= 80
+                              ? 'text-emerald-400'
+                              : liveCond >= 65
+                              ? 'text-amber-400'
+                              : 'text-rose-400'
+                          }
+                        >
+                          {liveCond}%
+                        </strong>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Bench Reserves as Jerseys */}
+            <div className="pt-2 border-t border-white/[0.06]">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1.5">
+                Banco de Reservas ({reserves.length} Atletas — Arraste sobre um titular acima para substituir)
+              </div>
+              <div className="flex items-center gap-2 overflow-x-auto pb-1.5 pt-0.5">
+                {reserves.map((res) => {
+                  const resCond = Math.round(res.condition);
+                  const resOvr = calculatePlayerOverall(res.attributes, res.position);
+                  const isSelectedIn = selectedReserveInId === res.id;
+                  const isDragged = draggedSubPlayerId === res.id;
+                  const isDropTarget =
+                    dragOverSubPlayerId === res.id && draggedSubPlayerId !== res.id;
+                  const lastName = res.name.split(' ').slice(-1)[0] || res.name;
+                  const isLimeShirt =
+                    isSelectedIn ||
+                    res.sector === 'ATA' ||
+                    res.sector === 'MEI';
+
+                  return (
+                    <button
+                      key={res.id}
+                      type="button"
+                      draggable={!res.injured && subsRemaining > 0}
+                      onDragStart={(e) => handleSubDragStart(e, res.id)}
+                      onDragOver={(e) => handleSubDragOver(e, res.id)}
+                      onDragLeave={() => {
+                        if (dragOverSubPlayerId === res.id) {
+                          setDragOverSubPlayerId(null);
+                        }
+                      }}
+                      onDrop={(e) => handleSubDrop(e, res.id)}
+                      onDragEnd={handleSubDragEnd}
+                      disabled={res.injured}
+                      onClick={() => setSelectedReserveInId(res.id)}
+                      title={`Reserva #${res.number} ${res.name} (${res.position} · OVR ${resOvr} · ${res.age}a) — Arraste sobre um titular`}
+                      className={`shrink-0 flex flex-col items-center rounded-2xl px-2.5 py-2 border transition-all select-none ${
+                        res.injured
+                          ? 'opacity-40 cursor-not-allowed border-white/[0.04] bg-[#14171f]/50'
+                          : isDropTarget
+                          ? 'bg-sky-400/20 border-sky-400 ring-2 ring-sky-400 scale-105'
+                          : isSelectedIn
+                          ? 'bg-[#b5ff00]/15 border-[#b5ff00] ring-2 ring-[#b5ff00]/70'
+                          : 'bg-[#14171f] border-white/[0.07] hover:border-[#b5ff00]/50 cursor-grab active:cursor-grabbing'
+                      } ${isDragged ? 'opacity-40 scale-95' : ''}`}
+                    >
+                      <PlayerJersey
+                        number={res.number}
+                        ovr={resOvr}
+                        variant={isLimeShirt ? 'lime' : 'white'}
+                        size="sm"
+                        highlight={
+                          isDropTarget
+                            ? 'dropTarget'
+                            : isSelectedIn
+                            ? 'selected'
+                            : 'none'
+                        }
+                      />
+                      <div
+                        className={`mt-1.5 px-2 py-0.5 rounded-full text-[9px] font-semibold whitespace-nowrap ${
+                          isSelectedIn
+                            ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold'
+                            : 'bg-[#0b0c10] text-zinc-100 border border-white/10'
+                        }`}
+                      >
+                        <span
+                          className={`font-mono font-bold mr-1 ${
+                            isSelectedIn ? 'text-[#090a0f]' : 'text-[#b5ff00]'
+                          }`}
+                        >
+                          {res.position}
+                        </span>
+                        <span>{lastName}</span>
+                      </div>
+                      <span className="mt-0.5 text-[9px] font-mono tabular-nums text-zinc-300">
+                        {res.age}a ·{' '}
+                        <strong className="text-emerald-400">{resCond}%</strong>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
 
           {/* Manual Override Selector */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end pt-1">
@@ -990,10 +1270,10 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
                   const liveCond = token
                     ? Math.round(token.condition)
                     : Math.round(st.condition);
+                  const stOvr = calculatePlayerOverall(st.attributes, st.position);
                   return (
                     <option key={st.id} value={st.id}>
-                      #{st.number} {st.name} ({st.position}) — Condição:{' '}
-                      {liveCond}%
+                      #{st.number} {st.name} ({st.position} · OVR {stOvr} · {st.age}a) — Condição: {liveCond}%
                     </option>
                   );
                 })}
@@ -1013,13 +1293,15 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
                 onChange={(e) => setSelectedReserveInId(e.target.value)}
                 className="w-full bg-[#0b0c10] border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
               >
-                {reserves.map((res) => (
-                  <option key={res.id} value={res.id} disabled={res.injured}>
-                    #{res.number} {res.name} ({res.position}) — Condição:{' '}
-                    {Math.round(res.condition)}%{' '}
-                    {res.injured ? '[Transição]' : ''}
-                  </option>
-                ))}
+                {reserves.map((res) => {
+                  const resOvr = calculatePlayerOverall(res.attributes, res.position);
+                  return (
+                    <option key={res.id} value={res.id} disabled={res.injured}>
+                      #{res.number} {res.name} ({res.position} · OVR {resOvr} · {res.age}a) — Condição: {Math.round(res.condition)}%{' '}
+                      {res.injured ? '[Transição]' : ''}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
@@ -1041,12 +1323,12 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-1.5 font-bold text-[#b5ff00] whitespace-nowrap">
-                <span className="w-2.5 h-2.5 rounded-full bg-[#b5ff00] inline-block shrink-0" />
+                <PlayerJersey variant="lime" size="xs" className="!w-5 !h-5" />
                 {homeClub.shortName} (→)
               </span>
               <span className="text-zinc-600">·</span>
               <span className="flex items-center gap-1.5 font-bold text-white whitespace-nowrap">
-                <span className="w-2.5 h-2.5 rounded-full bg-white inline-block shrink-0" />
+                <PlayerJersey variant="white" size="xs" className="!w-5 !h-5" />
                 {awayClub.shortName} (←)
               </span>
             </div>
@@ -1183,103 +1465,39 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
                 strokeWidth="2"
               />
 
-              {/* Away Team 11 Numbered Dots (Crisp White Tokens) */}
+              {/* Away Team 11 Jerseys (Crisp White Shirts) */}
               {match.awayTokens.map((token) => {
                 const cx = (token.x / 100) * 950 + 25;
                 const cy = (token.y / 100) * 575 + 25;
                 return (
-                  <g
+                  <PitchJerseySvg
                     key={token.id}
-                    style={{
-                      transform: `translate(${cx}px, ${cy}px)`,
-                      transition: 'transform 220ms linear',
-                    }}
-                  >
-                    {token.hasBall && (
-                      <circle
-                        r="21"
-                        fill="none"
-                        stroke="#b5ff00"
-                        strokeWidth="2.5"
-                        strokeDasharray="4 3"
-                      />
-                    )}
-                    <circle
-                      r="14"
-                      fill="#ffffff"
-                      stroke="#090a0f"
-                      strokeWidth="2.5"
-                    />
-                    <text
-                      textAnchor="middle"
-                      dy="4"
-                      fill="#090a0f"
-                      fontSize="11"
-                      fontFamily="JetBrains Mono, monospace"
-                      fontWeight="800"
-                    >
-                      {token.number}
-                    </text>
-                    <text
-                      textAnchor="middle"
-                      dy="26"
-                      fill="rgba(255,255,255,0.88)"
-                      fontSize="10"
-                      fontWeight="600"
-                    >
-                      {token.shortName}
-                    </text>
-                  </g>
+                    cx={cx}
+                    cy={cy}
+                    number={token.number}
+                    ovr={token.ovr}
+                    shortName={token.shortName}
+                    team="AWAY"
+                    hasBall={token.hasBall}
+                  />
                 );
               })}
 
-              {/* Home Team 11 Numbered Dots (Electric Lime #b5ff00 Tokens) */}
+              {/* Home Team 11 Jerseys (Electric Lime #b5ff00 Shirts) */}
               {match.homeTokens.map((token) => {
                 const cx = (token.x / 100) * 950 + 25;
                 const cy = (token.y / 100) * 575 + 25;
                 return (
-                  <g
+                  <PitchJerseySvg
                     key={token.id}
-                    style={{
-                      transform: `translate(${cx}px, ${cy}px)`,
-                      transition: 'transform 220ms linear',
-                    }}
-                  >
-                    {token.hasBall && (
-                      <circle
-                        r="21"
-                        fill="none"
-                        stroke="#ffffff"
-                        strokeWidth="2.5"
-                        strokeDasharray="4 3"
-                      />
-                    )}
-                    <circle
-                      r="14"
-                      fill="#b5ff00"
-                      stroke="#090a0f"
-                      strokeWidth="2.5"
-                    />
-                    <text
-                      textAnchor="middle"
-                      dy="4"
-                      fill="#090a0f"
-                      fontSize="11"
-                      fontFamily="JetBrains Mono, monospace"
-                      fontWeight="800"
-                    >
-                      {token.number}
-                    </text>
-                    <text
-                      textAnchor="middle"
-                      dy="26"
-                      fill="#b5ff00"
-                      fontSize="10"
-                      fontWeight="700"
-                    >
-                      {token.shortName}
-                    </text>
-                  </g>
+                    cx={cx}
+                    cy={cy}
+                    number={token.number}
+                    ovr={token.ovr}
+                    shortName={token.shortName}
+                    team="HOME"
+                    hasBall={token.hasBall}
+                  />
                 );
               })}
 

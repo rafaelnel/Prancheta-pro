@@ -35,6 +35,7 @@ import {
   resolveOpponentStandingsContext,
 } from '../engine/opponentScout';
 import { ClubBadge } from './ClubBadge';
+import { PlayerOvrBadge } from './PlayerJersey';
 
 interface DashboardInboxProps {
   messages: InboxMessage[];
@@ -471,19 +472,21 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                         {opponentClub.starPlayers.slice(0, 2).map((sp, i) => (
                           <div
                             key={i}
-                            className="bg-[#0b0c10] border border-white/[0.06] rounded-xl px-3 py-2 flex items-center justify-between text-xs"
+                            className="bg-[#0b0c10] border border-white/[0.06] rounded-xl px-3 py-2 flex items-center gap-2.5 text-xs"
                           >
+                            <PlayerOvrBadge
+                              ovr={Math.round(sp.overall)}
+                              position={sp.position}
+                              size="sm"
+                            />
                             <div className="min-w-0">
                               <div className="font-semibold text-zinc-100 truncate">
                                 {sp.name}
                               </div>
-                              <div className="text-[11px] text-zinc-400">
-                                {sp.position} · {sp.highlightAttribute}
+                              <div className="text-[11px] text-zinc-400 truncate">
+                                {sp.highlightAttribute}
                               </div>
                             </div>
-                            <span className="font-mono tabular-nums font-bold text-[#b5ff00] ml-2">
-                              {Math.round(sp.overall)}
-                            </span>
                           </div>
                         ))}
                       </div>

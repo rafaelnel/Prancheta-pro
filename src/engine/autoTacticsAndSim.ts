@@ -557,6 +557,7 @@ function applySquadAutoSubstitutionInSim(
   const role = getRoleById(reserveIn.assignedRole);
   const parts = reserveIn.name.split(' ');
   const shortName = parts[parts.length - 1];
+  const reserveOvr = calculatePlayerOverall(reserveIn.attributes, reserveIn.position);
 
   const replaceToken = (tokens: typeof match.homeTokens) =>
     tokens.map((t) =>
@@ -565,6 +566,7 @@ function applySquadAutoSubstitutionInSim(
             ...t,
             id: reserveIn.id,
             number: reserveIn.number,
+            ovr: reserveOvr,
             name: reserveIn.name,
             shortName,
             sector: reserveIn.sector,

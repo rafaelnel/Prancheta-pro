@@ -20,11 +20,16 @@ import {
   getMoraleColor,
 } from '../utils/formatters';
 import { StarRating, resolvePlayerStars } from './StarRating';
-import { getDynamicPotentialProfile } from '../engine/economyAndEvolution';
+import {
+  evaluatePlayerRetirementProbability,
+  getDynamicPotentialProfile,
+} from '../engine/economyAndEvolution';
+import { PlayerJersey, PlayerOvrBadge } from './PlayerJersey';
 
 interface PlayerProfileModalProps {
   player: Player | null;
   readOnly?: boolean;
+  currentYear?: number;
   onClose: () => void;
   onUpdateRoleDuty: (
     playerId: string,
@@ -35,6 +40,10 @@ interface PlayerProfileModalProps {
     playerId: string,
     mode: 'TRANSFER' | 'LOAN'
   ) => void;
+  onToggleDoNotRenewContract?: (player: Player, doNotRenew: boolean) => void;
+  isYouthAcademyPlayer?: boolean;
+  onPromoteYouthPlayer?: (playerId: string) => void;
+  onReleaseYouthPlayer?: (playerId: string) => void;
   isWatched?: boolean;
   onToggleWatch?: () => void;
 }
@@ -42,18 +51,30 @@ interface PlayerProfileModalProps {
 export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
   player,
   readOnly = false,
+  currentYear = 2026,
   onClose,
   onUpdateRoleDuty,
   onTogglePlayerMarketListing,
+  onToggleDoNotRenewContract,
+  isYouthAcademyPlayer = false,
+  onPromoteYouthPlayer,
+  onReleaseYouthPlayer,
   isWatched = false,
   onToggleWatch,
 }) => {
   if (!player) return null;
 
+  const contractRemaining =
+    player.contractYearsRemaining ??
+    (player.contractType === 'EMPRESTADO' ? player.loanDurationYears ?? 1 : 2);
+  const contractEndYear =
+    player.contractEndYear ?? currentYear + contractRemaining - 1;
+
   const currentRole = getRoleById(player.assignedRole);
   const suitability = calculateRoleSuitability(player, currentRole);
   const overall = calculatePlayerOverall(player.attributes, player.position);
   const condStyle = getConditionColor(player.condition);
+  const retirementEval = evaluatePlayerRetirementProbability(player, overall);
 
   const renderAttributeGroup = (title: string, keys: AttributeKey[]) => (
     <div className="bg-[#0b0c10] border border-white/[0.07] rounded-2xl p-4">
@@ -140,15 +161,18 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
       <div className="bg-[#14171f] border border-white/10 rounded-[28px] max-w-4xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
         {/* Top Header */}
         <div className="flex flex-wrap sm:flex-nowrap items-start justify-between gap-3 sm:gap-4 p-4 sm:p-6 border-b border-white/[0.07] bg-[#0b0c10]/60">
-          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-            <div className="w-14 h-14 rounded-2xl bg-[#b5ff00] text-[#090a0f] flex flex-col items-center justify-center shrink-0 shadow-md">
-              <span className="text-xs font-mono font-bold leading-none opacity-80">
-                #{player.number}
-              </span>
-              <span className="font-display text-xl font-extrabold leading-tight">
-                {player.position}
-              </span>
-            </div>
+          <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
+            <PlayerJersey
+              number={player.number}
+              variant={player.isStarter ? 'lime' : 'white'}
+              size="lg"
+            />
+            <PlayerOvrBadge
+              ovr={overall}
+              position={player.position}
+              size="lg"
+              tone="lime"
+            />
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
                 <h2
@@ -157,9 +181,11 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                 >
                   {player.name}
                 </h2>
-                <span className="text-xs text-zinc-400 font-mono tabular-nums">
-                  {player.age} anos · {player.nationality} ·{' '}
-                  {player.isStarter ? 'Titular' : 'Reserva'}
+                <span className="text-sm text-white font-mono font-bold tabular-nums">
+                  {player.age} anos
+                </span>
+                <span className="text-xs text-zinc-400 font-mono">
+                  · {player.nationality} · {player.isStarter ? 'Titular' : 'Reserva'}
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] sm:text-xs text-zinc-400">
@@ -188,6 +214,21 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                   Moral:{' '}
                   <strong className={getMoraleColor(player.morale)}>
                     {player.morale}
+                  </strong>
+                </span>
+                <span>·</span>
+                <span>
+                  {player.contractType === 'EMPRESTADO' ? 'Empréstimo:' : 'Contrato:'}{' '}
+                  <strong
+                    className={`font-mono tabular-nums ${
+                      contractRemaining <= 1
+                        ? 'text-amber-300'
+                        : 'text-zinc-200'
+                    }`}
+                  >
+                    {contractRemaining}{' '}
+                    {contractRemaining === 1 ? 'ano' : 'anos'} (até fim de{' '}
+                    {contractEndYear})
                   </strong>
                 </span>
               </div>
@@ -331,6 +372,18 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
             </div>
           )}
 
+          {retirementEval.isConsideringRetirement && (
+            <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-amber-950/35 border border-amber-400/45 text-xs text-amber-100">
+              <AlertCircle className="w-4 h-4 text-amber-300 shrink-0" />
+              <div>
+                <strong className="text-amber-300">
+                  ⏳ {retirementEval.statusLabel} ({retirementEval.annualProbabilityPct}% ao fim do ano):
+                </strong>{' '}
+                {retirementEval.factorNote}
+              </div>
+            </div>
+          )}
+
           {player.injured && player.injuryNote && (
             <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-200">
               <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
@@ -420,19 +473,66 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
             </div>
           </div>
 
+          {isYouthAcademyPlayer && (onPromoteYouthPlayer || onReleaseYouthPlayer) && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#0b0c10] border border-[#b5ff00]/30">
+              <div>
+                <div className="text-xs font-bold text-white">
+                  Decisão Técnica · Categorias de Base (Sub-17 / Sub-20)
+                </div>
+                <div className="text-[11px] text-zinc-400">
+                  {player.age >= 16
+                    ? 'Atleta apto (16+ anos) para subir ao elenco profissional ou ser dispensado da base sem custos.'
+                    : `Atleta Sub-17 (${player.age} anos): aguarda completar 16 anos para subir ao profissional, ou pode ser dispensado.`}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {onPromoteYouthPlayer && (
+                  <button
+                    type="button"
+                    disabled={player.age < 16}
+                    onClick={() => {
+                      onPromoteYouthPlayer(player.id);
+                      onClose();
+                    }}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold transition-colors ${
+                      player.age >= 16
+                        ? 'bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f]'
+                        : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                    }`}
+                  >
+                    {player.age >= 16 ? 'Subir p/ Profissional' : 'Aguardar 16 anos'}
+                  </button>
+                )}
+                {onReleaseYouthPlayer && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onReleaseYouthPlayer(player.id);
+                      onClose();
+                    }}
+                    className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/35 transition-colors"
+                  >
+                    Dispensar da Base
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {!readOnly &&
+            !isYouthAcademyPlayer &&
             onTogglePlayerMarketListing &&
             player.contractType !== 'EMPRESTADO' && (
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#0b0c10] border border-white/[0.07]">
                 <div>
                   <div className="text-xs font-bold text-white">
-                    Disponibilidade no Mercado de Transferências
+                    Disponibilidade no Mercado & Decisão Contratual
                   </div>
                   <div className="text-[11px] text-zinc-400">
-                    Colocar o atleta disponível aumenta a procura por clubes da IA que precisam da posição ({player.position}) e facilita negociações.
+                    Colocar o atleta disponível aumenta a procura por clubes da IA ({player.position}). Contratos com até 2 anos podem ser marcados para não renovação.
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <button
                     type="button"
                     onClick={() =>
@@ -463,6 +563,26 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                       ? '✓ Disponível p/ Empréstimo'
                       : 'Disponibilizar p/ Empréstimo'}
                   </button>
+                  {onToggleDoNotRenewContract && contractRemaining <= 2 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onToggleDoNotRenewContract(
+                          player,
+                          player.contractRenewalStatus !== 'RECUSADO'
+                        )
+                      }
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold border transition-colors ${
+                        player.contractRenewalStatus === 'RECUSADO'
+                          ? 'bg-rose-500 text-white border-rose-400'
+                          : 'bg-rose-500/15 text-rose-300 hover:bg-rose-500/25 border-rose-500/35'
+                      }`}
+                    >
+                      {player.contractRenewalStatus === 'RECUSADO'
+                        ? '✕ Marcado: Não Renovar'
+                        : 'Não Renovar Contrato'}
+                    </button>
+                  )}
                 </div>
               </div>
             )}

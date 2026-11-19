@@ -75,6 +75,10 @@ export function evaluateAiClubSquadAndListings(
   }
 
   const gkTotal = byPos.get('GOL')?.length || 0;
+  let loanCount = 0;
+  let transferCount = 0;
+  const maxLoansPerClub = 3;
+  const maxTransfersPerClub = 3;
 
   return squad.map((player) => {
     // Players on loan from another club cannot be listed by the borrowing club
@@ -111,46 +115,52 @@ export function evaluateAiClubSquadAndListings(
     let reason: string | undefined;
 
     if (!player.isStarter) {
-      // 1. Young prospects (<= 23) on the bench -> Loan list for development
-      if (player.age <= 23 && (posCount >= 2 || sectorCount >= 5)) {
+      // 1. Young prospects (<= 23) on the bench -> Loan list for development (not dumped for sale)
+      if (
+        player.age <= 23 &&
+        (posCount >= 2 || sectorCount >= 5) &&
+        loanCount < maxLoansPerClub
+      ) {
         isLoanListed = true;
+        isTransferListed = false;
+        loanCount++;
         reason = 'Listado p/ Empréstimo: Jovem para ganhar minutagem';
-        // If 3rd option or club needs cash, also open to sale offers
-        if (rankInPos >= 2 && needsCashOrWageRelief) {
-          isTransferListed = true;
-          reason = 'Disponível p/ Empréstimo ou Compra (Excesso no setor)';
-        }
       }
-      // 2. High salary reserve when club wants wage relief
+      // 2. High salary reserve (age >= 25) when club wants wage relief -> Transfer Sale
       else if (
+        player.age >= 25 &&
         player.salary >= avgSalary * 1.05 &&
-        (needsCashOrWageRelief || player.age >= 27)
+        (needsCashOrWageRelief || player.age >= 28) &&
+        transferCount < maxTransfersPerClub
       ) {
         isTransferListed = true;
+        isLoanListed = false;
+        transferCount++;
         reason = 'Listado p/ Compra: Alívio de folha salarial';
-        if (player.age <= 28) {
-          isLoanListed = true;
-        }
       }
-      // 3. Surplus depth (2nd/3rd reserve in position or crowded sector)
-      else if (rankInPos >= 2 || (rankInPos >= 1 && sectorCount >= 6)) {
-        if (player.age >= 24) {
+      // 3. Surplus depth (3rd option in position or crowded sector)
+      else if (rankInPos >= 2 || (rankInPos >= 1 && sectorCount >= 7)) {
+        if (player.age >= 24 && transferCount < maxTransfersPerClub) {
           isTransferListed = true;
+          isLoanListed = false;
+          transferCount++;
           reason = 'Listado p/ Compra: Excesso de opções na posição';
-        }
-        if (player.age <= 26 || ovr <= targetStarterOvr - 2) {
+        } else if (player.age <= 24 && loanCount < maxLoansPerClub) {
           isLoanListed = true;
-          if (!reason) {
-            reason = 'Listado p/ Empréstimo: Reserva disponível no elenco';
-          }
+          isTransferListed = false;
+          loanCount++;
+          reason = 'Listado p/ Empréstimo: Reserva disponível no elenco';
         }
       }
-      // 4. Veteran or below-level reserve outside tactical plans
+      // 4. Veteran or below-level reserve outside tactical plans -> Transfer Sale
       else if (
-        (player.age >= 29 && ovr <= targetStarterOvr - 2) ||
-        ovr <= targetStarterOvr - 4
+        player.age >= 29 &&
+        ovr <= targetStarterOvr - 2 &&
+        transferCount < maxTransfersPerClub
       ) {
         isTransferListed = true;
+        isLoanListed = false;
+        transferCount++;
         reason = 'Listado p/ Compra: Fora dos planos titulares';
       }
     } else if (
@@ -159,9 +169,12 @@ export function evaluateAiClubSquadAndListings(
       posCount >= 2 &&
       posGroup[1] &&
       posGroup[1].ovr >= ovr - 2 &&
-      player.marketValue >= 10_000_000
+      player.marketValue >= 10_000_000 &&
+      transferCount < maxTransfersPerClub
     ) {
       isTransferListed = true;
+      isLoanListed = false;
+      transferCount++;
       reason = 'Listado p/ Compra: Clube precisa fazer caixa';
     }
 
@@ -785,23 +798,39 @@ export function maybeGenerateIncomingOfferForUser(params: {
   const forceBuyOnly = Boolean(p.isTransferListed && !p.isLoanListed);
   const isListed = picked.isListed;
 
+  const minBuyCashRequired = isListed
+    ? Math.max(2_500_000, p.marketValue * 0.85)
+    : Math.max(4_000_000, p.marketValue * 0.92);
+
+  const minLoanCashRequired = Math.max(800_000, p.marketValue * 0.12);
+
   const minCashRequired = forceLoanOnly
-    ? Math.max(800_000, p.marketValue * 0.1)
-    : isListed
-    ? Math.max(2_000_000, p.marketValue * 0.35)
-    : Math.max(3_500_000, p.marketValue * 0.45);
+    ? minLoanCashRequired
+    : forceBuyOnly
+    ? minBuyCashRequired
+    : minLoanCashRequired;
 
   const minRepRequired = isListed
-    ? Math.max(60, picked.ovr - 18)
-    : Math.max(66, picked.ovr - 12);
+    ? Math.max(60, picked.ovr - 16)
+    : Math.max(66, picked.ovr - 11);
 
   // Pick a plausible interested AI club with cash, prioritizing clubs whose strategic profile needs this exact position
-  const interestedClubs = clubs.filter(
+  let interestedClubs = clubs.filter(
     (c) =>
       c.id !== userClub.id &&
       c.cashBalance >= minCashRequired &&
       c.reputation >= minRepRequired
   );
+  // If no club can afford a definitive purchase of a high-OVR star (e.g. 88 OVR worth R$ 60M+),
+  // allow top-reputation clubs (reputation >= 80) backed by transfer financing so offers are never artificially tiny
+  if (interestedClubs.length === 0 && !forceLoanOnly) {
+    interestedClubs = clubs.filter(
+      (c) =>
+        c.id !== userClub.id &&
+        c.reputation >= Math.max(78, minRepRequired) &&
+        c.cashBalance >= Math.max(5_000_000, p.marketValue * 0.35)
+    );
+  }
   if (interestedClubs.length === 0) return null;
 
   const clubsWithNeed = aiSquads
@@ -824,29 +853,53 @@ export function maybeGenerateIncomingOfferForUser(params: {
 
   const buyerPool =
     clubsWithNeed.length > 0 && rng() < 0.88 ? clubsWithNeed : interestedClubs;
-  const buyer = buyerPool[Math.floor(rng() * buyerPool.length)];
+  // Prefer richer clubs for purchase offers
+  const sortedBuyerPool = [...buyerPool].sort(
+    (a, b) => b.cashBalance - a.cashBalance
+  );
+  const topBuyers = sortedBuyerPool.slice(
+    0,
+    Math.max(1, Math.min(4, sortedBuyerPool.length))
+  );
+  const buyer = topBuyers[Math.floor(rng() * topBuyers.length)];
   const buyerSq = aiSquads?.[buyer.id] || [];
   const buyerProfile =
     buyerSq.length > 0 ? analyzeAiClubMarketProfile(buyer, buyerSq) : null;
+
+  const buyerCanAffordFullBuy = buyer.cashBalance >= p.marketValue * 0.85;
 
   const isLoan = forceLoanOnly
     ? true
     : forceBuyOnly
     ? false
-    : buyerProfile?.preferredIncomingMode === 'EMPRESTIMO'
+    : !buyerCanAffordFullBuy && (p.isLoanListed || p.age <= 24 || !p.isStarter)
     ? true
-    : (!p.isStarter || p.age <= 22 || p.isLoanListed) && rng() < 0.4;
+    : buyerProfile?.preferredIncomingMode === 'EMPRESTIMO' && !p.isTransferListed
+    ? true
+    : (!p.isStarter || p.age <= 22 || p.isLoanListed) && rng() < 0.35;
 
-  const feeMultiplier = isListed ? 0.92 + rng() * 0.18 : 0.95 + rng() * 0.22;
+  const feeMultiplier = isListed ? 0.92 + rng() * 0.16 : 0.96 + rng() * 0.20;
+
+  // Never cap a purchase offer below 88% of the player's marketValue — OVR & marketValue dictate transfer price!
+  const targetBuyFee = Math.max(
+    750_000,
+    Math.round((p.marketValue * feeMultiplier) / 250_000) * 250_000
+  );
+  const minCoherentBuyFee = Math.max(
+    750_000,
+    Math.round((p.marketValue * 0.88) / 250_000) * 250_000
+  );
 
   const rawFee = isLoan
     ? Math.max(250_000, Math.round((p.marketValue * 0.13) / 50_000) * 50_000)
-    : Math.min(
-        Math.round((buyer.cashBalance * 0.85) / 100_000) * 100_000,
-        Math.max(
-          750_000,
-          Math.round((p.marketValue * feeMultiplier) / 250_000) * 250_000
-        )
+    : Math.max(
+        minCoherentBuyFee,
+        buyer.cashBalance >= targetBuyFee
+          ? targetBuyFee
+          : Math.max(
+              minCoherentBuyFee,
+              Math.round((buyer.cashBalance * 0.92) / 250_000) * 250_000
+            )
       );
 
   if (rawFee < 250_000) return null;

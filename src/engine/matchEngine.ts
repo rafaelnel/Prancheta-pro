@@ -55,6 +55,156 @@ export function calculateRoleSuitability(
 }
 
 /**
+ * Selects the best starting XI ("Melhor Escalação") for the given formation,
+ * prioritizing overall quality (OVR) and natural position/sector suitability,
+ * keeping injured players out unless fewer than 11 healthy players exist.
+ */
+export function pickBestLineupForFormation(
+  squad: Player[],
+  formation: FormationType
+): Player[] {
+  if (squad.length === 0) return squad;
+
+  const slotsDef = FORMATIONS[formation] || FORMATIONS['4-3-3'];
+  const healthyPool = squad.filter((p) => !p.injured);
+  const emergencyInjured = squad
+    .filter((p) => p.injured)
+    .sort(
+      (a, b) =>
+        calculatePlayerOverall(b.attributes, b.position) -
+        calculatePlayerOverall(a.attributes, a.position)
+    );
+  const candidatePool =
+    healthyPool.length >= 11
+      ? healthyPool
+      : [...healthyPool, ...emergencyInjured];
+
+  const ovrCache = new Map<string, number>();
+  const getOvr = (p: Player) => {
+    let v = ovrCache.get(p.id);
+    if (v === undefined) {
+      v = calculatePlayerOverall(p.attributes, p.position);
+      ovrCache.set(p.id, v);
+    }
+    return v;
+  };
+
+  const getFitBonus = (p: Player, slot: (typeof slotsDef)[number]): number => {
+    if (slot.sector === 'GOL') {
+      return p.position === 'GOL' ? 40 : -40;
+    }
+    if (p.position === 'GOL') {
+      return -40;
+    }
+    if (p.position === slot.label) return 6;
+    if (p.sector === slot.sector) return 2.5;
+    return 0;
+  };
+
+  // Step 1: Pick the best goalkeeper for slot 0
+  const chosenIds = new Set<string>();
+  const slotToPlayer = new Map<number, Player>();
+
+  const gkSlot = slotsDef[0];
+  const gkCandidates = [...candidatePool].sort((a, b) => {
+    const aScore = getOvr(a) + getFitBonus(a, gkSlot) + a.condition * 0.005;
+    const bScore = getOvr(b) + getFitBonus(b, gkSlot) + b.condition * 0.005;
+    return bScore - aScore;
+  });
+  if (gkCandidates[0]) {
+    chosenIds.add(gkCandidates[0].id);
+    slotToPlayer.set(gkSlot.slotIndex, gkCandidates[0]);
+  }
+
+  // Step 2: Pick the best 10 outfield starters considering OVR + remaining slot compatibility
+  const outfieldSlots = slotsDef.slice(1);
+  const remainingOutfieldSlots = [...outfieldSlots];
+
+  while (remainingOutfieldSlots.length > 0) {
+    let bestPlayer: Player | null = null;
+    let bestSlotIdxInRemaining = 0;
+    let bestScore = -Infinity;
+
+    for (const p of candidatePool) {
+      if (chosenIds.has(p.id)) continue;
+      const baseOvr = getOvr(p);
+      // Evaluate how well this player fits the best available remaining slot
+      for (let i = 0; i < remainingOutfieldSlots.length; i++) {
+        const slot = remainingOutfieldSlots[i];
+        const score = baseOvr + getFitBonus(p, slot) + p.condition * 0.005;
+        if (score > bestScore) {
+          bestScore = score;
+          bestPlayer = p;
+          bestSlotIdxInRemaining = i;
+        }
+      }
+    }
+
+    if (!bestPlayer) break;
+    const chosenSlot = remainingOutfieldSlots.splice(bestSlotIdxInRemaining, 1)[0];
+    chosenIds.add(bestPlayer.id);
+    slotToPlayer.set(chosenSlot.slotIndex, bestPlayer);
+  }
+
+  // Step 3: Optimize positional fit among the 10 chosen outfield starters via pairwise swaps
+  const outfieldIndices = outfieldSlots.map((s) => s.slotIndex);
+  const slotPosScore = (p: Player, slotIdx: number): number => {
+    const slot = slotsDef[slotIdx];
+    const roleSuit = calculateRoleSuitability(p, getRoleById(slot.defaultRole)).score;
+    return getFitBonus(p, slot) * 10 + roleSuit * 0.05;
+  };
+
+  let improved = true;
+  let guard = 0;
+  while (improved && guard < 20) {
+    improved = false;
+    guard++;
+    for (let i = 0; i < outfieldIndices.length; i++) {
+      for (let j = i + 1; j < outfieldIndices.length; j++) {
+        const sA = outfieldIndices[i];
+        const sB = outfieldIndices[j];
+        const pA = slotToPlayer.get(sA);
+        const pB = slotToPlayer.get(sB);
+        if (!pA || !pB) continue;
+        const currentScore = slotPosScore(pA, sA) + slotPosScore(pB, sB);
+        const swappedScore = slotPosScore(pA, sB) + slotPosScore(pB, sA);
+        if (swappedScore > currentScore + 0.01) {
+          slotToPlayer.set(sA, pB);
+          slotToPlayer.set(sB, pA);
+          improved = true;
+        }
+      }
+    }
+  }
+
+  const playerSlotMap = new Map<string, number>();
+  for (const [sIdx, p] of slotToPlayer.entries()) {
+    playerSlotMap.set(p.id, sIdx);
+  }
+
+  return squad.map((p) => {
+    const sIdx = playerSlotMap.get(p.id);
+    if (sIdx !== undefined) {
+      const slotDef = slotsDef[sIdx] || slotsDef[0];
+      const currentRole = getRoleById(p.assignedRole);
+      const keepExistingRole = currentRole.sector === slotDef.sector;
+      return {
+        ...p,
+        isStarter: true,
+        slotIndex: sIdx,
+        assignedRole: keepExistingRole ? p.assignedRole : slotDef.defaultRole,
+        assignedDuty: keepExistingRole ? p.assignedDuty : slotDef.defaultDuty,
+      };
+    }
+    return {
+      ...p,
+      isStarter: false,
+      slotIndex: null,
+    };
+  });
+}
+
+/**
  * Computes collective Attack, Midfield, Defense, and Synergy ratings for the user's squad.
  */
 export function calculateTeamTacticalRatings(
@@ -221,9 +371,11 @@ export function buildPitchTokens(
         const role = getRoleById(p.assignedRole);
         const parts = p.name.split(' ');
         const shortName = parts.length > 1 ? parts[parts.length - 1] : p.name;
+        const playerOvr = calculatePlayerOverall(p.attributes, p.position);
         return {
           id: p.id,
           number: p.number,
+          ovr: playerOvr,
           name: p.name,
           shortName,
           team,
@@ -241,9 +393,11 @@ export function buildPitchTokens(
         const aiP = liveAiStarters[idx];
         const parts = aiP.name.split(' ');
         const shortName = parts.length > 1 ? parts[parts.length - 1] : aiP.name;
+        const aiOvr = calculatePlayerOverall(aiP.attributes, aiP.position);
         return {
           id: aiP.id,
           number: aiP.number,
+          ovr: aiOvr,
           name: aiP.name,
           shortName,
           team,
@@ -275,9 +429,16 @@ export function buildPitchTokens(
         const shortName = parts.length > 1 ? parts[parts.length - 1] : displayName;
         const jerseyNumbers = [1, 2, 3, 4, 6, 5, 8, 10, 7, 11, 9];
         const shirtNumber = oppStarter ? oppStarter[0] : (jerseyNumbers[idx] || idx + 1);
+        const oppOvr = oppStarter
+          ? oppStarter[5]
+          : Math.round(
+              (club.overallAttack + club.overallMidfield + club.overallDefense) /
+                3
+            );
         return {
           id: chosenOpp?.id || `${club.id}-p${idx + 1}`,
           number: shirtNumber,
+          ovr: oppOvr,
           name: displayName,
           shortName,
           team,

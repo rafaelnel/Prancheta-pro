@@ -14,7 +14,10 @@ import {
   Check,
   AlertTriangle,
   MapPin,
+  Cloud,
+  UserCheck,
 } from 'lucide-react';
+import { User } from 'firebase/auth';
 import {
   INITIAL_CLUBS,
   INITIAL_STANDINGS_A,
@@ -50,6 +53,9 @@ interface CareerHubScreenProps {
   onImportCareer: (saveData: CareerSaveData) => void;
   activeCareerSlot: CareerSlotIndex | null;
   onReturnToActiveCareer?: () => void;
+  currentUser?: User | null;
+  cloudSyncStatus?: 'idle' | 'syncing' | 'synced' | 'error';
+  onOpenAccountModal?: () => void;
 }
 
 export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
@@ -60,6 +66,9 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
   onImportCareer,
   activeCareerSlot,
   onReturnToActiveCareer,
+  currentUser = null,
+  cloudSyncStatus = 'idle',
+  onOpenAccountModal,
 }) => {
   useCurrency();
   const savedCareers = useMemo(
@@ -353,13 +362,42 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <div className="hidden sm:flex">
             <CurrencyToggle />
           </div>
           <div className="flex sm:hidden">
             <CurrencyToggle compact />
           </div>
+          {onOpenAccountModal && (
+            <button
+              type="button"
+              onClick={onOpenAccountModal}
+              className={`px-3 py-2 rounded-full text-xs font-bold border transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ${
+                currentUser
+                  ? 'bg-emerald-500/15 border-emerald-500/45 text-emerald-300 hover:bg-emerald-500/25'
+                  : 'bg-cyan-500/15 border-cyan-500/45 text-cyan-300 hover:bg-cyan-500/25'
+              }`}
+            >
+              {currentUser ? (
+                <>
+                  <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="hidden sm:inline truncate max-w-[120px]">
+                    {currentUser.displayName || currentUser.email?.split('@')[0] || 'Conta Nuvem'}
+                  </span>
+                  <span className="sm:hidden">Nuvem</span>
+                </>
+              ) : (
+                <>
+                  <Cloud className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Entrar / Conta</span>
+                </>
+              )}
+              {cloudSyncStatus === 'syncing' && (
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping" />
+              )}
+            </button>
+          )}
           <input
             ref={fileInputRef}
             type="file"
@@ -370,7 +408,7 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="px-3.5 py-2 rounded-full text-xs font-semibold bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 transition-colors flex items-center gap-1.5"
+            className="px-3 py-2 rounded-full text-xs font-semibold bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 transition-colors flex items-center gap-1.5"
           >
             <Upload className="w-3.5 h-3.5 text-[#b5ff00]" />
             <span className="hidden sm:inline">Importar Save</span>

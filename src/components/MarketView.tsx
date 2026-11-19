@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search,
   ArrowUpRight,
@@ -45,6 +45,7 @@ import {
   Player,
   PlayerAttributes,
   PositionSector,
+  TransferAttemptResult,
   TransferDealMode,
   TransferDifficultyLevel,
   TransferOfferTier,
@@ -55,9 +56,10 @@ import { formatCompactBRL } from '../utils/formatters';
 import { CurrencyToggle } from '../utils/CurrencyContext';
 import { ClubBadge } from './ClubBadge';
 import { StarRating } from './StarRating';
+import { PlayerJersey, PlayerOvrBadge } from './PlayerJersey';
 
 export type MarketFeedback = {
-  type: 'success' | 'rejected' | 'error';
+  type: 'success' | 'counter' | 'rejected' | 'error';
   title: string;
   detail: string;
 } | null;
@@ -81,6 +83,9 @@ interface MarketViewProps {
   ) => void;
   lastFeedback: MarketFeedback;
   onClearFeedback: () => void;
+  lastAttemptResult?: TransferAttemptResult | null;
+  onClearAttemptResult?: () => void;
+  onAcceptCounterOffer?: (attempt: TransferAttemptResult) => void;
   onInspectPlayer: (player: Player, listing?: MarketPlayerListing) => void;
   onToggleWatchPlayer?: (listing: MarketPlayerListing) => void;
   onRemoveWatchedPlayer?: (playerId: string) => void;
@@ -88,7 +93,10 @@ interface MarketViewProps {
     listing: MarketPlayerListing;
     dealMode: TransferDealMode;
     offerTier: TransferOfferTier;
+    salaryOfferMult?: number;
     loanWageShare: LoanWageShare;
+    loanDurationYears?: 1 | 2;
+    contractYears?: 2 | 3 | 4;
   }) => void;
   onOutgoingTransfer: (params: {
     player: Player;
@@ -224,6 +232,12 @@ function formatTransferRecordBadge(rec: TransferRecord): {
       className: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
     };
   }
+  if (rec.status === 'CONTRAPROPOSTA') {
+    return {
+      label: 'CONTRAPROPOSTA',
+      className: 'bg-amber-500/15 text-amber-300 border-amber-500/35',
+    };
+  }
   if (rec.isAiTransfer) {
     return {
       label:
@@ -278,6 +292,9 @@ export const MarketView: React.FC<MarketViewProps> = ({
   onResolveIncomingOffer,
   lastFeedback,
   onClearFeedback,
+  lastAttemptResult = null,
+  onClearAttemptResult,
+  onAcceptCounterOffer,
   onInspectPlayer,
   onToggleWatchPlayer,
   onRemoveWatchedPlayer,
@@ -309,7 +326,9 @@ export const MarketView: React.FC<MarketViewProps> = ({
     'NONE' | keyof PlayerAttributes
   >('NONE');
   const [minAttributeValue, setMinAttributeValue] = useState<number>(15);
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState<boolean>(true);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 640 : false
+  );
 
   const [searchQuery, setSearchQuery] = useState('');
   const [onlyAffordable, setOnlyAffordable] = useState(false);
@@ -332,11 +351,15 @@ export const MarketView: React.FC<MarketViewProps> = ({
   // Selected listing for desktop & mobile drawer
   const [selectedListingId, setSelectedListingId] = useState<string | null>(null);
   const [mobileDeskOpen, setMobileDeskOpen] = useState(false);
+  const mobileModalScrollRef = useRef<HTMLDivElement | null>(null);
 
   // Proposal controls
   const [dealMode, setDealMode] = useState<TransferDealMode>('BUY');
   const [offerTier, setOfferTier] = useState<TransferOfferTier>('PADRAO');
+  const [salaryOfferMult, setSalaryOfferMult] = useState<number>(1.0);
   const [loanWageShare, setLoanWageShare] = useState<LoanWageShare>(0.75);
+  const [loanDurationYears, setLoanDurationYears] = useState<1 | 2>(1);
+  const [contractYears, setContractYears] = useState<2 | 3 | 4>(3);
 
   const currentPayroll = useMemo(
     () => getEffectivePayroll(squad, loanedOutPlayers),
@@ -493,7 +516,28 @@ export const MarketView: React.FC<MarketViewProps> = ({
       setDealMode('BUY');
     }
     setOfferTier('PADRAO');
+    setSalaryOfferMult(1.0);
   }, [subTab]);
+
+  useEffect(() => {
+    if (!lastAttemptResult) return;
+    if (mobileModalScrollRef.current) {
+      mobileModalScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    const raf = requestAnimationFrame(() => {
+      if (mobileModalScrollRef.current) {
+        mobileModalScrollRef.current.scrollTop = 0;
+      }
+      const el = document.querySelector('[data-testid="transfer-attempt-result"]');
+      if (el) {
+        const rect = el.getBoundingClientRect();
+        if (rect.top < 72 || rect.bottom > window.innerHeight) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [lastAttemptResult?.id]);
 
   // Quick difficulty evaluation helper using default parameters for sorting/badge
   const evaluatedListMap = useMemo(() => {
@@ -1006,7 +1050,10 @@ export const MarketView: React.FC<MarketViewProps> = ({
       listing: deskListing,
       dealMode: effectiveDealMode,
       offerTier,
+      salaryOfferMult,
       loanWageShare,
+      loanDurationYears,
+      contractYears,
     });
   }, [
     deskListing,
@@ -1015,12 +1062,16 @@ export const MarketView: React.FC<MarketViewProps> = ({
     loanedOutPlayers,
     effectiveDealMode,
     offerTier,
+    salaryOfferMult,
     loanWageShare,
+    loanDurationYears,
+    contractYears,
   ]);
 
   const handleSelectListing = (item: MarketPlayerListing) => {
     setSelectedListingId(item.player.id);
     setOfferTier('PADRAO');
+    setSalaryOfferMult(1.0);
     if (item.scope === 'LIVRES') {
       setDealMode('FREE');
     } else if (
@@ -1034,6 +1085,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
     }
     setMobileDeskOpen(true);
     onClearFeedback();
+    onClearAttemptResult?.();
   };
 
   const handleSelectWatched = (
@@ -1041,6 +1093,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
   ) => {
     setSelectedWatchedId(item.entry.playerId);
     setOfferTier('PADRAO');
+    setSalaryOfferMult(1.0);
     if (item.listing?.scope === 'LIVRES') {
       setDealMode('FREE');
     } else {
@@ -1048,14 +1101,288 @@ export const MarketView: React.FC<MarketViewProps> = ({
     }
     setMobileDeskOpen(true);
     onClearFeedback();
+    onClearAttemptResult?.();
   };
 
   const renderNegotiationDesk = (isMobileModal: boolean) => {
+    // When a negotiation attempt result exists, close/hide the previous proposal form
+    // and replace the modal content with the dedicated Outcome Screen right in the user's field of view.
+    if (lastAttemptResult) {
+      const attemptListing = lastAttemptResult.listing;
+      const attemptPlayer = attemptListing.player;
+      const isAccepted = lastAttemptResult.outcome === 'ACEITA';
+      const isCounter = lastAttemptResult.outcome === 'CONTRAPROPOSTA';
+      const counterCanAfford = lastAttemptResult.counterOffer
+        ? lastAttemptResult.counterOffer.counterFee <= userClub.cashBalance &&
+          currentPayroll + lastAttemptResult.counterOffer.counterSalary <=
+            userClub.wageBudget
+        : false;
+
+      const handleDismissOutcome = () => {
+        onClearAttemptResult?.();
+        if (isMobileModal) setMobileDeskOpen(false);
+      };
+
+      const handleReopenProposalForm = () => {
+        setSelectedListingId(attemptPlayer.id);
+        onClearAttemptResult?.();
+      };
+
+      return (
+        <div
+          data-testid="transfer-attempt-result"
+          className={`bg-[#14171f] border-2 rounded-[24px] overflow-hidden flex flex-col shadow-2xl ${
+            isAccepted
+              ? 'border-[#b5ff00]'
+              : isCounter
+              ? 'border-amber-400'
+              : 'border-rose-500'
+          }`}
+        >
+          {/* Outcome Header replacing previous form */}
+          <div
+            className={`p-4 sm:p-5 border-b flex items-start justify-between gap-3 ${
+              isAccepted
+                ? 'bg-[#b5ff00]/15 border-[#b5ff00]/40'
+                : isCounter
+                ? 'bg-amber-950/60 border-amber-400/40'
+                : 'bg-rose-950/60 border-rose-500/40'
+            }`}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <PlayerJersey
+                number={attemptPlayer.number}
+                variant={attemptListing.originClub ? 'club' : 'dark'}
+                customColor={attemptListing.originClub?.primaryColor || '#b5ff00'}
+                size="md"
+              />
+              <PlayerOvrBadge
+                ovr={attemptListing.ovr}
+                position={attemptPlayer.position}
+                size="lg"
+                tone={isAccepted ? 'lime' : isCounter ? 'amber' : 'rose'}
+              />
+
+              <div className="min-w-0">
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono font-extrabold uppercase ${
+                    isAccepted
+                      ? 'bg-[#b5ff00] text-[#090a0f]'
+                      : isCounter
+                      ? 'bg-amber-400 text-[#090a0f]'
+                      : 'bg-rose-500 text-white'
+                  }`}
+                >
+                  {isAccepted
+                    ? lastAttemptResult.dealMode === 'LOAN'
+                      ? '✓ EMPRÉSTIMO FECHADO'
+                      : '✓ CONTRATAÇÃO CONCLUÍDA'
+                    : isCounter
+                    ? '⇄ CONTRAPROPOSTA RECEBIDA'
+                    : lastAttemptResult.rejectedBy === 'JOGADOR'
+                    ? '✕ RECUSADA PELO ATLETA'
+                    : lastAttemptResult.rejectedBy === 'CLUBE'
+                    ? '✕ RECUSADA PELO CLUBE'
+                    : '✕ PROPOSTA RECUSADA'}
+                </span>
+                <h3 className="font-display text-xl sm:text-2xl font-extrabold uppercase tracking-tight text-white leading-tight mt-1">
+                  {lastAttemptResult.headline}
+                </h3>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleDismissOutcome}
+              aria-label="Fechar resultado da negociação"
+              className="p-2 rounded-full bg-black/40 text-zinc-300 hover:text-white active:scale-95 transition-transform shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Outcome Body */}
+          <div className="p-4 sm:p-5 space-y-3.5">
+            <p className="text-xs sm:text-sm text-zinc-100 leading-relaxed font-medium">
+              {lastAttemptResult.summary}
+            </p>
+
+            {/* Deal Terms Snapshot */}
+            <div className="grid grid-cols-3 gap-2 bg-[#0b0c10] border border-white/[0.07] rounded-2xl p-3 text-center">
+              <div>
+                <div className="text-[10px] font-mono uppercase text-zinc-400">
+                  Modalidade
+                </div>
+                <div className="text-xs font-extrabold text-white mt-0.5">
+                  {lastAttemptResult.dealMode === 'LOAN'
+                    ? `Empréstimo (${lastAttemptResult.loanDurationYears ?? 1}a)`
+                    : lastAttemptResult.dealMode === 'FREE'
+                    ? `Passe Livre (${lastAttemptResult.contractYears ?? 3}a)`
+                    : `Compra (${lastAttemptResult.contractYears ?? 3}a)`}
+                </div>
+              </div>
+              <div className="border-x border-white/[0.06] px-1">
+                <div className="text-[10px] font-mono uppercase text-zinc-400">
+                  Taxa / Passe
+                </div>
+                <div className="text-xs font-mono font-extrabold text-[#b5ff00] mt-0.5 tabular-nums">
+                  {lastAttemptResult.offeredFee === 0
+                    ? 'Sem Custo'
+                    : formatCompactBRL(lastAttemptResult.offeredFee)}
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] font-mono uppercase text-zinc-400">
+                  Salário Mensal
+                </div>
+                <div className="text-xs font-mono font-extrabold text-white mt-0.5 tabular-nums">
+                  {formatCompactBRL(lastAttemptResult.offeredSalary)}/mês
+                </div>
+              </div>
+            </div>
+
+            {/* Key Decision Factors */}
+            {lastAttemptResult.factors.length > 0 && (
+              <div className="bg-[#0b0c10]/80 rounded-2xl p-3 border border-white/[0.06] space-y-1.5">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 font-bold">
+                  Relatório dos Bastidores da Negociação
+                </div>
+                <ul className="space-y-1 text-[11px] text-zinc-200">
+                  {lastAttemptResult.factors.map((factor, idx) => (
+                    <li key={idx} className="flex items-start gap-1.5">
+                      <span className="text-[#b5ff00] font-bold">•</span>
+                      <span>{factor}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Counter-Offer Comparison Box */}
+            {isCounter && lastAttemptResult.counterOffer && (
+              <div className="bg-[#0b0c10] border border-amber-400/45 rounded-2xl p-3.5 space-y-3 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono uppercase text-[10px] font-bold text-amber-300">
+                    Exigência de:{' '}
+                    {lastAttemptResult.counterOffer.source === 'CLUBE'
+                      ? 'Clube Vendedor'
+                      : lastAttemptResult.counterOffer.source === 'JOGADOR'
+                      ? 'Estafe do Atleta'
+                      : 'Clube + Atleta'}
+                  </span>
+                  <span className="text-[11px] text-zinc-400">
+                    Compare os termos
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="bg-white/[0.03] rounded-xl p-2.5 border border-white/[0.05]">
+                    <div className="text-zinc-400">Sua Oferta</div>
+                    <div className="font-mono font-bold text-zinc-200 mt-0.5">
+                      {formatCompactBRL(lastAttemptResult.offeredFee)}
+                    </div>
+                    <div className="font-mono text-zinc-400">
+                      {formatCompactBRL(lastAttemptResult.offeredSalary)}/mês
+                    </div>
+                  </div>
+                  <div className="bg-amber-400/15 rounded-xl p-2.5 border border-amber-400/45">
+                    <div className="text-amber-300 font-bold">
+                      Contraproposta
+                    </div>
+                    <div className="font-mono font-extrabold text-white mt-0.5">
+                      {formatCompactBRL(
+                        lastAttemptResult.counterOffer.counterFee
+                      )}
+                    </div>
+                    <div className="font-mono font-bold text-amber-200">
+                      {formatCompactBRL(
+                        lastAttemptResult.counterOffer.counterSalary
+                      )}
+                      /mês
+                      {lastAttemptResult.counterOffer.counterLoanWageShare !==
+                        undefined &&
+                        ` (${Math.round(lastAttemptResult.counterOffer.counterLoanWageShare * 100)}%)`}
+                    </div>
+                  </div>
+                </div>
+
+                {!counterCanAfford && (
+                  <div className="text-[11px] text-rose-300 font-semibold">
+                    Saldo em caixa ou teto salarial atual insuficiente para aceitar os novos termos.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Resolution Action Buttons */}
+            <div className="pt-1 flex flex-col sm:flex-row gap-2">
+              {isAccepted ? (
+                <button
+                  type="button"
+                  onClick={handleDismissOutcome}
+                  className="w-full py-3.5 px-5 rounded-full bg-[#b5ff00] hover:bg-[#c8ff33] active:scale-[0.98] text-[#090a0f] text-xs sm:text-sm font-extrabold transition-all flex items-center justify-center gap-2 shadow-lg cursor-pointer"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Concluir & Voltar ao Mercado
+                </button>
+              ) : isCounter ? (
+                <>
+                  {onAcceptCounterOffer && (
+                    <button
+                      type="button"
+                      disabled={!counterCanAfford || !windowStatus.isOpen}
+                      onClick={() => onAcceptCounterOffer(lastAttemptResult)}
+                      className="flex-1 py-3 px-4 rounded-full bg-[#b5ff00] hover:bg-[#c8ff33] active:scale-[0.98] disabled:bg-zinc-800 disabled:text-zinc-500 text-[#090a0f] text-xs font-extrabold transition-all cursor-pointer"
+                    >
+                      Aceitar Contraproposta
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleReopenProposalForm}
+                    className="py-3 px-4 rounded-full bg-white/[0.1] hover:bg-white/[0.16] active:scale-[0.98] text-white text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Ajustar Minha Oferta
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDismissOutcome}
+                    className="py-3 px-4 rounded-full bg-black/40 hover:bg-black/60 active:scale-[0.98] text-zinc-300 text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Fechar
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleReopenProposalForm}
+                    className="flex-1 py-3 px-4 rounded-full bg-[#b5ff00] hover:bg-[#c8ff33] active:scale-[0.98] text-[#090a0f] text-xs font-extrabold transition-all cursor-pointer"
+                  >
+                    Tentar Nova Proposta (Ajustar Valores)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDismissOutcome}
+                    className="py-3 px-4 rounded-full bg-white/[0.1] hover:bg-white/[0.16] active:scale-[0.98] text-white text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Fechar Modal
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (!deskListing || !activeEvaluation) {
       return (
-        <div className="bg-[#14171f] border border-white/[0.07] rounded-[28px] p-6 text-center text-xs text-zinc-400">
-          Nenhum atleta corresponde aos filtros atuais. Ajuste os filtros
-          avançados ou clique em &ldquo;Limpar Filtros&rdquo;.
+        <div className="bg-[#14171f] border border-white/[0.07] rounded-[28px] overflow-hidden">
+          <div className="p-6 text-center text-xs text-zinc-400">
+            Nenhum atleta corresponde aos filtros atuais. Ajuste os filtros
+            avançados ou clique em &ldquo;Limpar Filtros&rdquo;.
+          </div>
         </div>
       );
     }
@@ -1069,51 +1396,68 @@ export const MarketView: React.FC<MarketViewProps> = ({
     return (
       <div className="bg-[#14171f] border border-white/[0.08] rounded-[28px] overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="p-5 bg-[#0b0c10]/70 border-b border-white/[0.07] flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-12 h-12 rounded-2xl bg-[#b5ff00] text-[#090a0f] flex flex-col items-center justify-center shrink-0 shadow">
-              <span className="text-[10px] font-mono font-bold leading-none">
-                {p.position}
-              </span>
-              <span className="font-display text-2xl font-extrabold leading-none">
-                {deskListing.ovr}
-              </span>
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-display text-2xl font-extrabold uppercase tracking-tight text-white leading-none truncate">
-                  {p.name}
-                </h3>
-                <StarRating
-                  player={p}
-                  ovr={deskListing.ovr}
-                  clubReputation={
-                    deskListing.originClub?.reputation ?? userClub.reputation
-                  }
-                  size="sm"
-                />
-              </div>
-              <div className="text-xs text-zinc-400 mt-1 flex items-center gap-1.5 truncate">
-                {deskListing.originClub && (
-                  <ClubBadge
-                    clubId={deskListing.originClub.id}
-                    abbr={deskListing.originClub.abbr}
-                    name={deskListing.originClub.name}
-                    primaryColor={deskListing.originClub.primaryColor}
-                    size="xs"
+        <div className="p-4 sm:p-5 bg-[#0b0c10]/70 border-b border-white/[0.07] space-y-2.5">
+          <div className="flex items-start justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+              <PlayerJersey
+                number={p.number}
+                variant={deskListing.originClub ? 'club' : 'dark'}
+                customColor={deskListing.originClub?.primaryColor || '#b5ff00'}
+                size="md"
+              />
+              <PlayerOvrBadge
+                ovr={deskListing.ovr}
+                position={p.position}
+                size="lg"
+                tone="lime"
+              />
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                  <h3 className="font-display text-xl sm:text-2xl font-extrabold uppercase tracking-tight text-white leading-none truncate">
+                    {p.name}
+                  </h3>
+                  <StarRating
+                    player={p}
+                    ovr={deskListing.ovr}
+                    clubReputation={
+                      deskListing.originClub?.reputation ?? userClub.reputation
+                    }
+                    size="sm"
                   />
-                )}
-                <span className="truncate">
-                  {p.age} anos · {p.nationality} ·{' '}
-                  {deskListing.originClub
-                    ? `${deskListing.originClub.shortName} (${deskListing.originClub.leagueName})`
-                    : `Passe Livre ${seasonYear}`}
-                </span>
+                </div>
+                <div className="text-[11px] sm:text-xs text-zinc-400 mt-1 flex items-center gap-1.5 truncate">
+                  {deskListing.originClub && (
+                    <ClubBadge
+                      clubId={deskListing.originClub.id}
+                      abbr={deskListing.originClub.abbr}
+                      name={deskListing.originClub.name}
+                      primaryColor={deskListing.originClub.primaryColor}
+                      size="xs"
+                    />
+                  )}
+                  <span className="truncate">
+                    {p.age} anos · {p.nationality} ·{' '}
+                    {deskListing.originClub
+                      ? `${deskListing.originClub.shortName}`
+                      : `Passe Livre ${seasonYear}`}
+                  </span>
+                </div>
               </div>
             </div>
+
+            {isMobileModal && (
+              <button
+                type="button"
+                onClick={() => setMobileDeskOpen(false)}
+                aria-label="Fechar mesa de negociação"
+                className="p-2 rounded-full bg-white/[0.08] text-zinc-300 hover:text-white shrink-0"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+          <div className="flex items-center gap-1.5 flex-wrap">
             {onToggleWatchPlayer && (
               <button
                 type="button"
@@ -1123,7 +1467,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                     ? 'Remover da Lista de Observação'
                     : 'Adicionar à Lista de Observação'
                 }
-                className={`px-3 py-2 rounded-full text-[11px] font-bold border transition-colors flex items-center gap-1 whitespace-nowrap ${
+                className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors flex items-center gap-1 whitespace-nowrap active:scale-95 ${
                   isWatched
                     ? 'bg-[#b5ff00]/20 border-[#b5ff00] text-[#b5ff00]'
                     : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/10 text-zinc-200'
@@ -1145,21 +1489,11 @@ export const MarketView: React.FC<MarketViewProps> = ({
             <button
               type="button"
               onClick={() => onInspectPlayer(p, deskListing)}
-              className="px-3 py-2 rounded-full bg-white/[0.08] hover:bg-white/[0.15] text-white text-[11px] font-semibold flex items-center gap-1 whitespace-nowrap"
+              className="px-3 py-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.15] text-white text-[11px] font-semibold flex items-center gap-1 whitespace-nowrap active:scale-95"
             >
               <Eye className="w-3.5 h-3.5 text-[#b5ff00]" />
               18 Atributos
             </button>
-            {isMobileModal && (
-              <button
-                type="button"
-                onClick={() => setMobileDeskOpen(false)}
-                aria-label="Fechar mesa de negociação"
-                className="p-2 rounded-full bg-white/[0.08] text-zinc-300 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
           </div>
         </div>
 
@@ -1213,7 +1547,10 @@ export const MarketView: React.FC<MarketViewProps> = ({
               </div>
               {deskListing.listingReason && (
                 <div className="text-[11px] text-zinc-200 font-medium">
-                  Motivo do clube: <strong className="text-[#b5ff00]">{deskListing.listingReason}</strong>
+                  Motivo do clube:{' '}
+                  <strong className="text-[#b5ff00]">
+                    {deskListing.listingReason}
+                  </strong>
                 </div>
               )}
             </div>
@@ -1265,7 +1602,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
               );
             })()}
 
-          {/* Difficulty Comparison Box (Club x Club & Player x Squad) */}
+          {/* Difficulty Comparison Box (Club x Club, Player x Squad & Ambition/Age/OVR) */}
           <div className={`rounded-2xl border p-3.5 space-y-2.5 ${diffStyle.bg}`}>
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-300 font-bold">
@@ -1286,6 +1623,12 @@ export const MarketView: React.FC<MarketViewProps> = ({
               />
             </div>
 
+            {activeEvaluation.willHardRejectByPlayer && (
+              <div className="rounded-xl bg-rose-500/20 border border-rose-500/40 px-2.5 py-1.5 text-[11px] text-rose-200 font-semibold">
+                Alerta de Recusa: jovem com potencial/OVR alto tende a rejeitar clubes mais fracos que não impulsionam sua evolução.
+              </div>
+            )}
+
             <div className="space-y-1.5 text-[11px] text-zinc-200 leading-relaxed">
               <div>
                 <span className="text-zinc-400 font-semibold">
@@ -1296,9 +1639,21 @@ export const MarketView: React.FC<MarketViewProps> = ({
               </div>
               <div>
                 <span className="text-zinc-400 font-semibold">
-                  Nível do Atleta:{' '}
+                  Vontade do Atleta ({activeEvaluation.playerWillingnessChance}%):{' '}
+                </span>
+                {activeEvaluation.playerAmbitionNote}
+              </div>
+              <div>
+                <span className="text-zinc-400 font-semibold">
+                  Nível Técnico:{' '}
                 </span>
                 {activeEvaluation.playerGapNote}
+              </div>
+              <div>
+                <span className="text-zinc-400 font-semibold">
+                  Dinheiro na Mesa:{' '}
+                </span>
+                {activeEvaluation.moneyInfluenceNote}
               </div>
             </div>
           </div>
@@ -1336,56 +1691,138 @@ export const MarketView: React.FC<MarketViewProps> = ({
             </div>
           )}
 
-          {/* Loan Wage Share */}
-          {isLoan && (
+          {/* Loan Duration + Loan Wage Share OR Contract Length */}
+          {isLoan ? (
+            <div className="space-y-3">
+              <div>
+                <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1.5">
+                  <span>Duração do Empréstimo</span>
+                  <span className="font-mono text-zinc-300">
+                    Vence fim de {seasonYear + loanDurationYears - 1}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {([1, 2] as const).map((dur) => (
+                    <button
+                      key={dur}
+                      type="button"
+                      onClick={() => setLoanDurationYears(dur)}
+                      className={`py-2 px-2 rounded-xl text-xs font-mono font-bold border transition-colors ${
+                        loanDurationYears === dur
+                          ? 'bg-[#b5ff00]/20 border-[#b5ff00] text-[#b5ff00]'
+                          : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
+                      }`}
+                    >
+                      {dur === 1 ? '1 Temporada' : '2 Temporadas (+taxa)'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1.5">
+                  <span>Divisão do Salário no Empréstimo</span>
+                  <span className="font-mono text-zinc-300">
+                    Base: {formatCompactBRL(p.salary)}/mês
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {([0.5, 0.75, 1.0] as LoanWageShare[]).map((share) => (
+                    <button
+                      key={share}
+                      type="button"
+                      onClick={() => setLoanWageShare(share)}
+                      className={`py-2 px-2 rounded-xl text-xs font-mono font-bold border transition-colors ${
+                        loanWageShare === share
+                          ? 'bg-[#b5ff00]/20 border-[#b5ff00] text-[#b5ff00]'
+                          : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
+                      }`}
+                    >
+                      {Math.round(share * 100)}% salário
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
             <div>
               <div className="flex items-center justify-between text-[11px] text-zinc-400 mb-1.5">
-                <span>Divisão do Salário no Empréstimo</span>
+                <span>Duração do Contrato</span>
                 <span className="font-mono text-zinc-300">
-                  Base: {formatCompactBRL(p.salary)}/mês
+                  Vence fim de {seasonYear + contractYears - 1}
                 </span>
               </div>
               <div className="grid grid-cols-3 gap-1.5">
-                {([0.5, 0.75, 1.0] as LoanWageShare[]).map((share) => (
+                {([2, 3, 4] as const).map((yrs) => (
                   <button
-                    key={share}
+                    key={yrs}
                     type="button"
-                    onClick={() => setLoanWageShare(share)}
+                    onClick={() => setContractYears(yrs)}
                     className={`py-2 px-2 rounded-xl text-xs font-mono font-bold border transition-colors ${
-                      loanWageShare === share
+                      contractYears === yrs
                         ? 'bg-[#b5ff00]/20 border-[#b5ff00] text-[#b5ff00]'
                         : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
                     }`}
                   >
-                    {Math.round(share * 100)}% salário
+                    {yrs} Anos
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Offer Boost */}
+          {/* Offer Boost (Fee / Luvas) */}
           <div>
             <div className="text-[11px] text-zinc-400 font-medium mb-1.5">
               {isFree
-                ? 'Proposta Salarial / Luvas'
-                : 'Agressividade da Proposta (melhora chance de aceite)'}
+                ? 'Pacote de Luvas / Bônus de Assinatura'
+                : 'Agressividade na Taxa ao Clube (melhora aceite)'}
             </div>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-4 gap-1.5">
               {(
                 [
                   ['PADRAO', 'Padrão'],
-                  ['BONUS_15', '+15% Oferta'],
-                  ['AGRESSIVA_30', '+30% Firme'],
+                  ['BONUS_15', '+15%'],
+                  ['AGRESSIVA_30', '+30%'],
+                  ['FORTE_50', '+50%'],
                 ] as const
               ).map(([tier, label]) => (
                 <button
                   key={tier}
                   type="button"
                   onClick={() => setOfferTier(tier)}
-                  className={`py-2 px-2 rounded-xl text-xs font-bold border transition-colors ${
+                  className={`py-2 px-1.5 rounded-xl text-xs font-bold border transition-colors ${
                     offerTier === tier
                       ? 'bg-white text-[#090a0f] border-white'
+                      : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Player Salary Offer Boost */}
+          <div>
+            <div className="text-[11px] text-zinc-400 font-medium mb-1.5">
+              Salário Oferecido ao Atleta (convence o jogador)
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(
+                [
+                  [1.0, 'Salário Base'],
+                  [1.2, '+20% Salário'],
+                  [1.4, '+40% Salário'],
+                ] as const
+              ).map(([mult, label]) => (
+                <button
+                  key={mult}
+                  type="button"
+                  onClick={() => setSalaryOfferMult(mult)}
+                  className={`py-2 px-2 rounded-xl text-xs font-bold border transition-colors ${
+                    salaryOfferMult === mult
+                      ? 'bg-[#b5ff00]/20 border-[#b5ff00] text-[#b5ff00]'
                       : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
                   }`}
                 >
@@ -1492,7 +1929,10 @@ export const MarketView: React.FC<MarketViewProps> = ({
                 listing: deskListing,
                 dealMode: effectiveDealMode,
                 offerTier,
+                salaryOfferMult,
                 loanWageShare,
+                loanDurationYears,
+                contractYears,
               })
             }
             className="w-full py-3.5 px-5 rounded-full text-xs sm:text-sm font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] disabled:bg-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed text-[#090a0f] transition-colors flex items-center justify-center gap-2 shadow-lg"
@@ -1516,71 +1956,73 @@ export const MarketView: React.FC<MarketViewProps> = ({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3 sm:space-y-5">
       {/* Editorial Section Header */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-2 border-b border-white/[0.07]">
-        <div>
-          <span className="block text-xs sm:text-sm font-normal text-zinc-400 tracking-wide">
-            Janela de transferências {seasonYear} · Mercado Vivo & Filtros Avançados
-          </span>
-          <h2 className="font-display text-3xl sm:text-5xl font-extrabold uppercase tracking-tight text-white leading-[0.95] mt-0.5">
-            MERCADO
-          </h2>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-2 sm:gap-4 pb-1.5 sm:pb-2 border-b border-white/[0.07]">
+        <div className="flex items-center justify-between md:block">
+          <div>
+            <span className="hidden sm:block text-xs sm:text-sm font-normal text-zinc-400 tracking-wide">
+              Janela de transferências {seasonYear} · Mercado Vivo & Filtros Avançados
+            </span>
+            <h2 className="font-display text-2xl sm:text-5xl font-extrabold uppercase tracking-tight text-white leading-[0.95]">
+              MERCADO
+            </h2>
+          </div>
+          <div className="sm:hidden">
+            <CurrencyToggle compact />
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 text-xs text-zinc-400 font-mono">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2.5 text-[11px] sm:text-xs text-zinc-400 font-mono">
           <span
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono font-bold border ${
+            className={`inline-flex items-center gap-1 px-2.5 py-0.5 sm:px-3 sm:py-1 rounded-full text-[10px] sm:text-[11px] font-mono font-bold border ${
               windowStatus.isOpen
                 ? 'bg-[#b5ff00]/15 border-[#b5ff00]/45 text-[#b5ff00]'
                 : 'bg-rose-500/15 border-rose-500/35 text-rose-300'
             }`}
           >
             {windowStatus.isOpen ? (
-              <CheckCircle2 className="w-3.5 h-3.5" />
+              <CheckCircle2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
             ) : (
-              <Lock className="w-3.5 h-3.5" />
+              <Lock className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
             )}
-            {windowStatus.badgeLabel} · {windowStatus.name}
+            {windowStatus.badgeLabel}
           </span>
-          <span className="hidden sm:inline">·</span>
           <span>
-            Reputação do {userClub.shortName}:{' '}
+            Rep. {userClub.shortName}:{' '}
             <strong className="text-[#b5ff00]">{userClub.reputation}/100</strong>
           </span>
-          <div className="sm:hidden ml-auto">
-            <CurrencyToggle compact />
-          </div>
         </div>
       </div>
 
-      {/* Top Financial KPIs Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-[#b5ff00] text-[#090a0f] rounded-[24px] p-4 sm:p-5 shadow-lg">
-          <div className="flex items-center justify-between text-[11px] font-bold uppercase font-mono opacity-80">
-            <span>Saldo em Caixa</span>
-            <Coins className="w-4 h-4" />
+      {/* Top Financial KPIs Strip (3 columns side-by-side even on mobile for high density) */}
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <div className="bg-[#b5ff00] text-[#090a0f] rounded-2xl sm:rounded-[24px] p-2.5 sm:p-5 shadow-lg">
+          <div className="flex items-center justify-between text-[9px] sm:text-[11px] font-bold uppercase font-mono opacity-80">
+            <span className="truncate">Caixa</span>
+            <Coins className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
           </div>
-          <div className="font-display text-3xl sm:text-4xl font-extrabold tabular-nums mt-1 leading-none">
+          <div className="font-display text-lg sm:text-4xl font-extrabold tabular-nums mt-0.5 sm:mt-1 leading-none truncate">
             {formatCompactBRL(userClub.cashBalance)}
           </div>
-          <div className="text-[11px] opacity-80 mt-1.5 font-semibold">
+          <div className="hidden sm:block text-[11px] opacity-80 mt-1.5 font-semibold">
             Disponível para compras e taxas de empréstimo
           </div>
         </div>
 
-        <div className="bg-[#14171f] border border-white/[0.08] rounded-[24px] p-4 sm:p-5">
-          <div className="flex items-center justify-between text-[11px] font-mono uppercase text-zinc-400">
-            <span>Folha Mensal / Teto ({wageUsagePct}%)</span>
-            <TrendingUp className="w-4 h-4 text-[#b5ff00]" />
+        <div className="bg-[#14171f] border border-white/[0.08] rounded-2xl sm:rounded-[24px] p-2.5 sm:p-5">
+          <div className="flex items-center justify-between text-[9px] sm:text-[11px] font-mono uppercase text-zinc-400">
+            <span className="truncate">Folha ({wageUsagePct}%)</span>
+            <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#b5ff00] shrink-0" />
           </div>
-          <div className="font-display text-3xl font-extrabold tabular-nums text-white mt-1 leading-none">
-            {formatCompactBRL(currentPayroll)}{' '}
-            <span className="text-sm font-sans font-medium text-zinc-400">
+          <div className="font-display text-lg sm:text-3xl font-extrabold tabular-nums text-white mt-0.5 sm:mt-1 leading-none truncate">
+            {formatCompactBRL(currentPayroll)}
+            <span className="hidden sm:inline text-sm font-sans font-medium text-zinc-400">
+              {' '}
               / {formatCompactBRL(userClub.wageBudget)}
             </span>
           </div>
-          <div className="w-full h-1.5 bg-[#0b0c10] rounded-full overflow-hidden mt-2.5">
+          <div className="w-full h-1 sm:h-1.5 bg-[#0b0c10] rounded-full overflow-hidden mt-1.5 sm:mt-2.5">
             <div
               className={`h-full ${
                 wageUsagePct >= 95 ? 'bg-rose-400' : 'bg-[#b5ff00]'
@@ -1588,23 +2030,21 @@ export const MarketView: React.FC<MarketViewProps> = ({
               style={{ width: `${Math.min(100, wageUsagePct)}%` }}
             />
           </div>
-          <div className="text-[11px] text-zinc-400 mt-1.5 font-mono tabular-nums">
+          <div className="hidden sm:block text-[11px] text-zinc-400 mt-1.5 font-mono tabular-nums">
             Margem livre mensal: {formatCompactBRL(wageFreeSpace)}
           </div>
         </div>
 
-        <div className="bg-[#14171f] border border-white/[0.08] rounded-[24px] p-4 sm:p-5">
-          <div className="flex items-center justify-between text-[11px] font-mono uppercase text-zinc-400">
-            <span>Plantel & Movimentações</span>
-            <UserCheck className="w-4 h-4 text-[#b5ff00]" />
+        <div className="bg-[#14171f] border border-white/[0.08] rounded-2xl sm:rounded-[24px] p-2.5 sm:p-5">
+          <div className="flex items-center justify-between text-[9px] sm:text-[11px] font-mono uppercase text-zinc-400">
+            <span className="truncate">Plantel</span>
+            <UserCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#b5ff00] shrink-0" />
           </div>
-          <div className="font-display text-3xl font-extrabold tabular-nums text-white mt-1 leading-none">
+          <div className="font-display text-lg sm:text-3xl font-extrabold tabular-nums text-white mt-0.5 sm:mt-1 leading-none truncate">
             {squad.length} Atletas
           </div>
-          <div className="text-[11px] text-zinc-400 mt-2">
-            {transferHistoryStats.incomingCount} chegadas ·{' '}
-            {transferHistoryStats.outgoingCount} saídas · Mínimo{' '}
-            {MIN_SQUAD_SIZE}
+          <div className="text-[9px] sm:text-[11px] text-zinc-400 mt-1 sm:mt-2 truncate">
+            +{transferHistoryStats.incomingCount} / -{transferHistoryStats.outgoingCount}
           </div>
         </div>
       </div>
@@ -1628,12 +2068,16 @@ export const MarketView: React.FC<MarketViewProps> = ({
           className={`rounded-2xl border px-4 py-3 flex items-start justify-between gap-3 text-xs ${
             lastFeedback.type === 'success'
               ? 'bg-[#b5ff00]/15 border-[#b5ff00]/50 text-white'
+              : lastFeedback.type === 'counter'
+              ? 'bg-amber-950/45 border-amber-400/50 text-amber-100'
               : 'bg-rose-950/40 border-rose-500/40 text-rose-100'
           }`}
         >
           <div className="flex items-start gap-2.5">
             {lastFeedback.type === 'success' ? (
               <CheckCircle2 className="w-4 h-4 text-[#b5ff00] shrink-0 mt-0.5" />
+            ) : lastFeedback.type === 'counter' ? (
+              <Handshake className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
             ) : (
               <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
             )}
@@ -1676,6 +2120,11 @@ export const MarketView: React.FC<MarketViewProps> = ({
               >
                 <div className="flex items-start justify-between gap-2.5">
                   <div className="flex items-center gap-2.5 min-w-0">
+                    <PlayerOvrBadge
+                      ovr={offer.playerOvr}
+                      position={offer.playerPosition}
+                      size="sm"
+                    />
                     <ClubBadge
                       clubId={offer.fromClubId}
                       abbr={offer.fromClubAbbr}
@@ -1688,8 +2137,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                         {offer.fromClubName} quer {offer.playerName}
                       </div>
                       <div className="text-[11px] font-mono text-zinc-400">
-                        {offer.playerPosition} · OVR {offer.playerOvr} ·{' '}
-                        {offer.playerAge}a · {offer.playerPotentialStars}★ ·{' '}
+                        <strong className="text-white">{offer.playerAge} anos</strong> · {offer.playerPotentialStars}★ ·{' '}
                         {offer.dealType === 'LOAN' ? 'Empréstimo' : 'Compra'}
                       </div>
                     </div>
@@ -1811,9 +2259,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-white/[0.07] bg-[#0b0c10]/60 text-[11px] text-zinc-400">
-                    <th className="py-3 px-4 font-medium">Atleta</th>
-                    <th className="py-3 px-2 font-medium">Pos</th>
-                    <th className="py-3 px-2 font-medium text-right">OVR</th>
+                    <th className="py-3 px-4 font-medium">Atleta · OVR & Posição</th>
                     <th className="py-3 px-3 font-medium">Status no Mercado</th>
                     <th className="py-3 px-3 font-medium text-right">
                       Salário Atual
@@ -1844,58 +2290,66 @@ export const MarketView: React.FC<MarketViewProps> = ({
                           className="hover:bg-white/[0.03] transition-colors"
                         >
                           <td className="py-3 px-4">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <button
-                                type="button"
-                                onClick={() => onInspectPlayer(player)}
-                                className="font-semibold text-white hover:text-[#b5ff00] text-left"
-                              >
-                                #{player.number} {player.name}
-                              </button>
-                              <StarRating
-                                player={player}
-                                ovr={ovr}
-                                clubReputation={userClub.reputation}
-                                size="xs"
+                            <div className="flex items-center gap-2.5">
+                              <PlayerJersey
+                                number={player.number}
+                                variant={player.isStarter ? 'lime' : 'white'}
+                                size="sm"
                               />
-                              {player.isTransferListed && (
-                                <span className="px-1.5 py-0.5 rounded bg-amber-400/15 border border-amber-400/35 text-[9px] font-mono font-bold text-amber-300">
-                                  DISP. VENDA
-                                </span>
-                              )}
-                              {player.isLoanListed && (
-                                <span className="px-1.5 py-0.5 rounded bg-sky-400/15 border border-sky-400/35 text-[9px] font-mono font-bold text-sky-300">
-                                  DISP. EMPRÉSTIMO
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[11px] text-zinc-400">
-                              {player.age} anos ·{' '}
-                              {player.isStarter ? 'Titular' : 'Reserva'} ·{' '}
-                              {player.contractType === 'EMPRESTADO'
-                                ? `Emprestado (${player.loanOriginClubName || 'Clube'})`
-                                : 'Vínculo Definitivo'}
-                            </div>
-                          </td>
-                          <td className="py-3 px-2 font-mono font-bold text-white">
-                            {player.position}
-                          </td>
-                          <td className="py-3 px-2 text-right font-mono tabular-nums font-bold text-[#b5ff00]">
-                            <div className="inline-flex items-center justify-end gap-1">
-                              <span>{ovr}</span>
-                              {player.exceededExpectations ? (
-                                <span className="text-[10px] text-amber-300 font-bold" title={`⚡ Superou expectativas! Rompeu o teto (+${player.recentOvrDelta} OVR)`}>
-                                  ⚡+{player.recentOvrDelta}
-                                </span>
-                              ) : player.recentOvrDelta !== undefined && player.recentOvrDelta > 0 ? (
-                                <span className="text-[10px] text-[#b5ff00] font-bold" title={`Evolução: +${player.recentOvrDelta} OVR`}>
-                                  ▲+{player.recentOvrDelta}
-                                </span>
-                              ) : player.recentOvrDelta !== undefined && player.recentOvrDelta < 0 ? (
-                                <span className="text-[10px] text-rose-400 font-bold" title={`Regressão: ${player.recentOvrDelta} OVR`}>
-                                  ▼{player.recentOvrDelta}
-                                </span>
-                              ) : null}
+                              <PlayerOvrBadge
+                                ovr={ovr}
+                                position={player.position}
+                                size="md"
+                              />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => onInspectPlayer(player)}
+                                    className="font-bold text-sm text-white hover:text-[#b5ff00] text-left"
+                                  >
+                                    {player.name}
+                                  </button>
+                                  <span className="font-mono font-bold text-xs text-white tabular-nums">
+                                    {player.age} anos
+                                  </span>
+                                  <StarRating
+                                    player={player}
+                                    ovr={ovr}
+                                    clubReputation={userClub.reputation}
+                                    size="xs"
+                                  />
+                                  {player.exceededExpectations ? (
+                                    <span className="text-[10px] text-amber-300 font-mono font-bold" title={`⚡ Superou expectativas! Rompeu o teto (+${player.recentOvrDelta} OVR)`}>
+                                      ⚡+{player.recentOvrDelta}
+                                    </span>
+                                  ) : player.recentOvrDelta !== undefined && player.recentOvrDelta > 0 ? (
+                                    <span className="text-[10px] text-[#b5ff00] font-mono font-bold" title={`Evolução: +${player.recentOvrDelta} OVR`}>
+                                      ▲+{player.recentOvrDelta}
+                                    </span>
+                                  ) : player.recentOvrDelta !== undefined && player.recentOvrDelta < 0 ? (
+                                    <span className="text-[10px] text-rose-400 font-mono font-bold" title={`Regressão: ${player.recentOvrDelta} OVR`}>
+                                      ▼{player.recentOvrDelta}
+                                    </span>
+                                  ) : null}
+                                  {player.isTransferListed && (
+                                    <span className="px-1.5 py-0.5 rounded bg-amber-400/15 border border-amber-400/35 text-[9px] font-mono font-bold text-amber-300">
+                                      DISP. VENDA
+                                    </span>
+                                  )}
+                                  {player.isLoanListed && (
+                                    <span className="px-1.5 py-0.5 rounded bg-sky-400/15 border border-sky-400/35 text-[9px] font-mono font-bold text-sky-300">
+                                      DISP. EMPRÉSTIMO
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-zinc-400">
+                                  {player.isStarter ? 'Titular' : 'Reserva'} ·{' '}
+                                  {player.contractType === 'EMPRESTADO'
+                                    ? `Emprestado (${player.loanOriginClubName || 'Clube'})`
+                                    : 'Vínculo Definitivo'}
+                                </div>
+                              </div>
                             </div>
                           </td>
                           <td className="py-3 px-3">
@@ -2476,15 +2930,23 @@ export const MarketView: React.FC<MarketViewProps> = ({
                               : 'hover:bg-white/[0.03]'
                           }`}
                         >
-                          <div className="flex items-start gap-3 min-w-0">
-                            <div className="w-11 h-11 rounded-xl bg-[#0b0c10] border border-white/[0.08] flex flex-col items-center justify-center shrink-0">
-                              <span className="font-mono tabular-nums text-sm font-extrabold text-[#b5ff00] leading-none">
-                                {item.currentOvr}
-                              </span>
-                              <span className="text-[9px] font-mono text-zinc-400 mt-0.5 leading-none">
-                                {item.entry.position}
-                              </span>
-                            </div>
+                          <div className="flex items-start gap-2.5 sm:gap-3 min-w-0">
+                            {item.currentPlayer && (
+                              <PlayerJersey
+                                number={item.currentPlayer.number}
+                                variant={item.listing?.originClub ? 'club' : 'dark'}
+                                customColor={
+                                  item.listing?.originClub?.primaryColor ||
+                                  '#b5ff00'
+                                }
+                                size="sm"
+                              />
+                            )}
+                            <PlayerOvrBadge
+                              ovr={item.currentOvr}
+                              position={item.entry.position}
+                              size="md"
+                            />
 
                             <div className="min-w-0 space-y-1">
                               <div className="flex items-center gap-1.5 flex-wrap">
@@ -2844,21 +3306,21 @@ export const MarketView: React.FC<MarketViewProps> = ({
       {subTab !== 'MEU_ELENCO' &&
         subTab !== 'HISTORICO' &&
         subTab !== 'OBSERVADOS' && (
-        <div className="space-y-4">
+        <div className="space-y-3 sm:space-y-4">
           {/* Primary & Advanced Filter Panel */}
-          <div className="bg-[#14171f] border border-white/[0.08] rounded-[24px] p-4 space-y-3.5">
+          <div className="bg-[#14171f] border border-white/[0.08] rounded-2xl sm:rounded-[24px] p-2.5 sm:p-4 space-y-2 sm:space-y-3.5">
             {/* Top Search & Sector Row */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-              <div className="flex flex-wrap items-center gap-2 flex-1">
-                <div className="relative flex-1 min-w-[200px] sm:max-w-xs">
-                  <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 sm:gap-3">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 flex-1">
+                <div className="relative flex-1 min-w-[140px] sm:min-w-[200px] sm:max-w-xs">
+                  <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Buscar atleta, clube ou país..."
                     aria-label="Buscar no mercado de transferências"
-                    className="w-full bg-[#0b0c10] border border-white/[0.08] rounded-full pl-9 pr-4 py-2 text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-[#b5ff00]"
+                    className="w-full bg-[#0b0c10] border border-white/[0.08] rounded-full pl-8 pr-3 py-1.5 sm:py-2 text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-[#b5ff00]"
                   />
                 </div>
 
@@ -2869,18 +3331,16 @@ export const MarketView: React.FC<MarketViewProps> = ({
                     onChange={(e) =>
                       setDomesticScope(e.target.value as DomesticScopeFilter)
                     }
-                    className="bg-[#0b0c10] border border-white/[0.08] rounded-full px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#b5ff00]"
+                    className="bg-[#0b0c10] border border-white/[0.08] rounded-full px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs text-white focus:outline-none focus:border-[#b5ff00]"
                   >
-                    <option value="ALL">Todas Ligas (A / B / Lib)</option>
-                    <option value="SERIE_A">Brasileirão Série A</option>
-                    <option value="SERIE_B">Brasileirão Série B</option>
-                    <option value="LIBERTADORES">
-                      Libertadores (CONMEBOL)
-                    </option>
+                    <option value="ALL">Todas Ligas (A/B/Lib)</option>
+                    <option value="SERIE_A">Série A</option>
+                    <option value="SERIE_B">Série B</option>
+                    <option value="LIBERTADORES">Libertadores</option>
                   </select>
                 )}
 
-                <div className="flex items-center gap-1 bg-[#0b0c10] p-1 rounded-full border border-white/[0.07]">
+                <div className="flex items-center gap-0.5 sm:gap-1 bg-[#0b0c10] p-0.5 sm:p-1 rounded-full border border-white/[0.07]">
                   {(['ALL', 'GOL', 'DEF', 'MEI', 'ATA'] as const).map((sec) => (
                     <button
                       key={sec}
@@ -2889,7 +3349,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                         setSectorFilter(sec);
                         if (sec !== 'ALL') setPositionFilter('ALL');
                       }}
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-colors ${
+                      className={`px-2 sm:px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-bold transition-colors ${
                         sectorFilter === sec
                           ? 'bg-[#b5ff00] text-[#090a0f]'
                           : 'text-zinc-400 hover:text-white'
@@ -2901,11 +3361,11 @@ export const MarketView: React.FC<MarketViewProps> = ({
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-0.5 sm:pb-0">
                 <button
                   type="button"
                   onClick={() => setShowAdvancedFilters((v) => !v)}
-                  className={`px-3.5 py-2 rounded-full text-xs font-bold border transition-colors flex items-center gap-1.5 whitespace-nowrap ${
+                  className={`px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-bold border transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                     showAdvancedFilters || activeAdvancedFilterCount > 0
                       ? 'bg-[#b5ff00]/15 border-[#b5ff00] text-[#b5ff00]'
                       : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
@@ -2913,7 +3373,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                 >
                   <SlidersHorizontal className="w-3.5 h-3.5" />
                   <span>
-                    Filtros Avançados
+                    Filtros
                     {activeAdvancedFilterCount > 0
                       ? ` (${activeAdvancedFilterCount})`
                       : ''}
@@ -2923,22 +3383,20 @@ export const MarketView: React.FC<MarketViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setOnlyAffordable((v) => !v)}
-                  className={`px-3.5 py-2 rounded-full text-xs font-bold border transition-colors whitespace-nowrap ${
+                  className={`px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-bold border transition-colors whitespace-nowrap shrink-0 ${
                     onlyAffordable
                       ? 'bg-[#b5ff00] border-[#b5ff00] text-[#090a0f]'
                       : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
                   }`}
                 >
-                  {onlyAffordable
-                    ? '✓ Dentro do Orçamento'
-                    : 'Filtrar Acessíveis'}
+                  {onlyAffordable ? '✓ Acessíveis' : 'Acessíveis'}
                 </button>
 
                 <select
                   aria-label="Ordenar mercado"
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as SortKey)}
-                  className="bg-[#0b0c10] border border-white/[0.08] rounded-full px-3.5 py-2 text-xs text-white focus:outline-none focus:border-[#b5ff00]"
+                  className="bg-[#0b0c10] border border-white/[0.08] rounded-full px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs text-white focus:outline-none focus:border-[#b5ff00] shrink-0"
                 >
                   <option value="OVR_DESC">Maior Nível (OVR)</option>
                   <option value="EASIEST">Menor Dificuldade</option>
@@ -2953,31 +3411,31 @@ export const MarketView: React.FC<MarketViewProps> = ({
 
             {/* Club Availability Filter Bar (Placed for Purchase or Loan by Opponent Clubs) + Opponent Club Needs Radar Toggle */}
             {subTab !== 'LIVRES' && (
-              <div className="pt-2.5 border-t border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mr-1">
+              <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between gap-1.5 overflow-x-auto pb-0.5 sm:pb-0">
+                <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                  <span className="hidden sm:inline text-[10px] font-mono uppercase tracking-wider text-zinc-400 mr-1">
                     Disponibilizados pelos Clubes:
                   </span>
                   {(
                     [
                       {
                         id: 'ALL',
-                        label: 'Todos do Mercado',
+                        label: 'Todos',
                         badgeClass: 'bg-[#b5ff00] text-[#090a0f] border-[#b5ff00]',
                       },
                       {
                         id: 'LISTED_ANY',
-                        label: `Colocados pelos Clubes (${clubListingCounts.listedAny})`,
+                        label: `Listados (${clubListingCounts.listedAny})`,
                         badgeClass: 'bg-[#b5ff00] text-[#090a0f] border-[#b5ff00]',
                       },
                       {
                         id: 'LISTED_BUY',
-                        label: `Listados p/ Compra (${clubListingCounts.listedBuy})`,
+                        label: `Compra (${clubListingCounts.listedBuy})`,
                         badgeClass: 'bg-amber-400 text-[#090a0f] border-amber-400',
                       },
                       {
                         id: 'LISTED_LOAN',
-                        label: `Listados p/ Empréstimo (${clubListingCounts.listedLoan})`,
+                        label: `Empréstimo (${clubListingCounts.listedLoan})`,
                         badgeClass: 'bg-sky-400 text-[#090a0f] border-sky-400',
                       },
                     ] as const
@@ -2990,7 +3448,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                         if (opt.id === 'LISTED_LOAN') setDealMode('LOAN');
                         if (opt.id === 'LISTED_BUY') setDealMode('BUY');
                       }}
-                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors whitespace-nowrap ${
+                      className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full text-[10px] sm:text-[11px] font-bold border transition-colors whitespace-nowrap shrink-0 ${
                         clubListingFilter === opt.id
                           ? opt.badgeClass
                           : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
@@ -3004,15 +3462,13 @@ export const MarketView: React.FC<MarketViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowClubRadar((v) => !v)}
-                  className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors whitespace-nowrap self-start sm:self-auto ${
+                  className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full text-[10px] sm:text-[11px] font-bold border transition-colors whitespace-nowrap shrink-0 ${
                     showClubRadar
                       ? 'bg-[#b5ff00]/20 border-[#b5ff00] text-[#b5ff00]'
                       : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
                   }`}
                 >
-                  {showClubRadar
-                    ? 'Ocultar Necessidades dos Clubes'
-                    : 'Radar dos Clubes Adversários (Necessidades & Listas)'}
+                  {showClubRadar ? 'Ocultar Radar IA' : 'Radar Clubes IA'}
                 </button>
               </div>
             )}
@@ -3412,15 +3868,15 @@ export const MarketView: React.FC<MarketViewProps> = ({
                             handleSelectListing(item);
                           }
                         }}
-                        className={`w-full text-left px-4 sm:px-5 py-3.5 flex items-center justify-between gap-3 cursor-pointer transition-colors ${
+                        className={`w-full text-left px-3 sm:px-5 py-2.5 sm:py-3.5 flex items-center justify-between gap-2 sm:gap-3 cursor-pointer active:scale-[0.99] transition-all ${
                           isSelected
                             ? 'bg-[#b5ff00]/10 border-l-2 border-l-[#b5ff00]'
                             : 'hover:bg-white/[0.03]'
                         }`}
                       >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-10 h-10 rounded-xl bg-[#0b0c10] border border-white/[0.08] flex flex-col items-center justify-center shrink-0">
-                            <span className="font-mono tabular-nums text-sm font-extrabold text-[#b5ff00] leading-none">
+                        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#0b0c10] border border-white/[0.08] flex flex-col items-center justify-center shrink-0">
+                            <span className="font-mono tabular-nums text-xs sm:text-sm font-extrabold text-[#b5ff00] leading-none">
                               {item.ovr}
                             </span>
                             <span className="text-[9px] font-mono text-zinc-400 mt-0.5 leading-none">
@@ -3430,7 +3886,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
 
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-semibold text-sm text-white truncate">
+                              <span className="font-semibold text-xs sm:text-sm text-white truncate">
                                 {item.player.name}
                               </span>
                               <StarRating
@@ -3482,7 +3938,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                                 </span>
                               )}
                             </div>
-                            <div className="text-[11px] text-zinc-400 truncate mt-0.5 flex items-center gap-1.5">
+                            <div className="text-[10px] sm:text-[11px] text-zinc-400 truncate mt-0.5 flex items-center gap-1.5">
                               {item.originClub && (
                                 <ClubBadge
                                   clubId={item.originClub.id}
@@ -3493,22 +3949,25 @@ export const MarketView: React.FC<MarketViewProps> = ({
                                 />
                               )}
                               <span className="truncate">
-                                {item.player.age} anos ·{' '}
+                                {item.player.age}a ·{' '}
                                 {item.originClub
-                                  ? `${item.originClub.shortName} · ${item.originClub.country}`
-                                  : `${item.player.nationality} · Agente Livre`}
-                                {item.listingReason ? ` · ${item.listingReason}` : ''}
+                                  ? item.originClub.shortName
+                                  : 'Agente Livre'}
+                                {' · '}
+                                <span className={`font-bold ${diffStyle.text}`}>
+                                  {ev.level} ({ev.acceptanceChance}%)
+                                </span>
                               </span>
                             </div>
                           </div>
                         </div>
 
-                        <div className="text-right shrink-0 flex items-center gap-2.5 sm:gap-3">
+                        <div className="text-right shrink-0 flex items-center gap-2 sm:gap-3">
                           <div>
                             <div className="font-mono tabular-nums text-xs font-bold text-white">
                               {feeDisplay}
                             </div>
-                            <div className="text-[11px] font-mono tabular-nums text-zinc-400">
+                            <div className="text-[10px] sm:text-[11px] font-mono tabular-nums text-zinc-400">
                               {formatCompactBRL(
                                 subTab === 'EMPRESTIMOS'
                                   ? Math.round(item.player.salary * 0.75)
@@ -3598,7 +4057,10 @@ export const MarketView: React.FC<MarketViewProps> = ({
           aria-modal="true"
           aria-label="Mesa de Negociação"
         >
-          <div className="w-full max-w-lg max-h-[90vh] overflow-y-auto space-y-3">
+          <div
+            ref={mobileModalScrollRef}
+            className="w-full max-w-lg max-h-[90vh] overflow-y-auto space-y-3"
+          >
             {subTab === 'OBSERVADOS' && selectedWatchedItem && !selectedWatchedItem.listing ? (
               <div className="bg-[#14171f] border border-white/[0.08] rounded-[24px] p-5 space-y-3 text-xs">
                 <div className="flex items-center justify-between">

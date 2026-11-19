@@ -28,6 +28,7 @@ import {
 } from '../engine/economyAndEvolution';
 import { formatCompactBRL, formatBRL } from '../utils/formatters';
 import { StarRating } from './StarRating';
+import { PlayerJersey, PlayerOvrBadge } from './PlayerJersey';
 
 interface YouthAcademyViewProps {
   club: Club;
@@ -366,49 +367,54 @@ export const YouthAcademyView: React.FC<YouthAcademyViewProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           {[
             {
-              stars: '3,0★',
-              title: 'Útil / Regular',
-              baseRange: '76–78 OVR',
-              dynamicCeiling: '80 OVR',
+              stars: '1,0★ a 2,5★',
+              title: 'Composição Base',
+              initialOvr: '60–70 OVR',
+              baseRange: '70–75 OVR',
+              dynamicCeiling: '77 OVR',
               borderCls: 'border-white/10',
               accentCls: 'text-zinc-200',
-              desc: 'Composição de elenco e suplente confiável.',
+              desc: 'Atletas de formação inicial para compor elenco.',
             },
             {
-              stars: '3,5★',
+              stars: '3,0★ a 3,5★',
               title: 'Bom Titular',
-              baseRange: '81–83 OVR',
+              initialOvr: '70–74 OVR',
+              baseRange: '76–83 OVR',
               dynamicCeiling: '85 OVR',
               borderCls: 'border-sky-500/30',
               accentCls: 'text-sky-300',
-              desc: 'Titular de Série A com regularidade e consistência.',
+              desc: 'Chegam prontos para disputar vaga e evoluir na Série A.',
             },
             {
               stars: '4,0★',
               title: 'Destaque Nacional',
+              initialOvr: '72–75 OVR',
               baseRange: '86–88 OVR',
               dynamicCeiling: '90 OVR',
               borderCls: 'border-amber-500/40',
               accentCls: 'text-amber-300',
-              desc: 'Protagonista de mata-matas e postulante a Seleção.',
+              desc: 'Promessa de impacto imediato e titularidade.',
             },
             {
               stars: '4,5★',
               title: 'Craque de Elite',
+              initialOvr: '74–80 OVR',
               baseRange: '91–93 OVR',
               dynamicCeiling: '95 OVR',
               borderCls: 'border-emerald-500/40',
               accentCls: 'text-emerald-300',
-              desc: 'Ídolo continental e jogador com nível de futebol europeu.',
+              desc: 'Surge na base já com até 80 de OVR e nível continental.',
             },
             {
               stars: '5,0★',
               title: 'Joia Geracional',
+              initialOvr: '75–85 OVR',
               baseRange: '95–96 OVR',
               dynamicCeiling: '99 OVR',
               borderCls: 'border-[#b5ff00]/60 ring-1 ring-[#b5ff00]/40',
               accentCls: 'text-[#b5ff00]',
-              desc: 'Fenômeno mundial. Só alcança 99 se jogar e render em campo.',
+              desc: 'Fenômeno mundial: surge entre 75 e 85 OVR já na base.',
             },
           ].map((item) => (
             <div
@@ -425,6 +431,10 @@ export const YouthAcademyView: React.FC<YouthAcademyViewProps> = ({
                   </span>
                 </div>
                 <div className="mt-2 space-y-1 font-mono text-[11px]">
+                  <div className="flex items-center justify-between text-zinc-400">
+                    <span>OVR Inicial Base:</span>
+                    <strong className={item.accentCls}>{item.initialOvr}</strong>
+                  </div>
                   <div className="flex items-center justify-between text-zinc-400">
                     <span>Potencial Base:</span>
                     <strong className="text-white font-bold">{item.baseRange}</strong>
@@ -466,7 +476,7 @@ export const YouthAcademyView: React.FC<YouthAcademyViewProps> = ({
         </div>
       </div>
 
-      {/* Interactive U-20 Squad Table (Promote 16+ to Senior Team) */}
+      {/* Interactive U-20 Squad Table (Promote 16+ to Senior Team or Release) */}
       <div className="bg-[#14171f] border border-white/[0.07] rounded-[28px] overflow-hidden">
         <div className="p-5 border-b border-white/[0.07] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
@@ -474,11 +484,11 @@ export const YouthAcademyView: React.FC<YouthAcademyViewProps> = ({
               Plantel da Base · Sub-17 & Sub-20 ({youthRoster.length} Atletas)
             </h3>
             <p className="text-xs text-zinc-400 mt-0.5">
-              Avalie os 18 atributos das promessas e promova ao elenco profissional os jogadores a partir de 16 anos que vão ajudar a equipe.
+              Avalie os atributos, promova ao profissional atletas com 16+ anos ou dispense jogadores que não fazem parte dos planos do clube.
             </p>
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+          <div className="flex flex-wrap items-center gap-1.5">
             {(
               [
                 { id: 'ALL', label: `Todos (${youthRoster.length})` },
@@ -510,165 +520,275 @@ export const YouthAcademyView: React.FC<YouthAcademyViewProps> = ({
             Nenhum jovem encontrado neste filtro. Novas safras de atletas chegam à Base na virada de cada temporada de acordo com o investimento mensal.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="border-b border-white/[0.07] bg-[#0b0c10]/60 text-[11px] text-zinc-400">
-                  <th className="py-3 px-4 font-medium">Jovem Promessa</th>
-                  <th className="py-3 px-2 font-medium">Idade / Categoria</th>
-                  <th className="py-3 px-2 font-medium">Pos</th>
-                  <th className="py-3 px-2 font-medium text-right">OVR Atual</th>
-                  <th className="py-3 px-3 font-medium">Potencial (Teto)</th>
-                  <th className="py-3 px-2 font-medium text-right" title="Passe">PAS</th>
-                  <th className="py-3 px-2 font-medium text-right" title="Finalização">FIN</th>
-                  <th className="py-3 px-2 font-medium text-right" title="Drible">DRI</th>
-                  <th className="py-3 px-2 font-medium text-right" title="Desarme">DES</th>
-                  <th className="py-3 px-2 font-medium text-right" title="Velocidade">VEL</th>
-                  <th className="py-3 px-3 font-medium text-right">Valor / Bolsa</th>
-                  <th className="py-3 px-4 font-medium text-right">Decisão Técnica</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.05]">
-                {filteredRoster.map((player) => {
-                  const ovr = calculatePlayerOverall(
-                    player.attributes,
-                    player.position
-                  );
-                  const canPromote = player.age >= 16;
+          <>
+            {/* Mobile Compact Youth Cards (< md) */}
+            <div className="md:hidden divide-y divide-white/[0.06]">
+              {filteredRoster.map((player) => {
+                const ovr = calculatePlayerOverall(
+                  player.attributes,
+                  player.position
+                );
+                const canPromote = player.age >= 16;
 
-                  return (
-                    <tr
-                      key={player.id}
-                      className="hover:bg-white/[0.03] transition-colors"
-                    >
-                      <td className="py-3 px-4">
-                        <button
-                          type="button"
-                          onClick={() => onInspectPlayer(player)}
-                          className="font-semibold text-white hover:text-[#b5ff00] text-left transition-colors"
-                        >
-                          {player.name}
-                        </button>
-                        <div className="text-[11px] text-zinc-400">
-                          Safra {player.regenBatchYear || seasonYear} · {player.nationality}
+                return (
+                  <div key={player.id} className="p-3.5 space-y-2.5">
+                    <div className="flex items-start justify-between gap-2.5">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <PlayerJersey
+                          number={player.number}
+                          variant={canPromote ? 'lime' : 'white'}
+                          size="sm"
+                        />
+                        <PlayerOvrBadge
+                          ovr={ovr}
+                          position={player.position}
+                          size="sm"
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => onInspectPlayer(player)}
+                              className="font-bold text-sm text-white hover:text-[#b5ff00] text-left truncate"
+                            >
+                              {player.name}
+                            </button>
+                            <span className="text-xs font-mono font-bold text-white tabular-nums">
+                              · {player.age} anos
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            <StarRating
+                              stars={player.potentialStars}
+                              player={player}
+                              ovr={ovr}
+                              clubReputation={club.reputation}
+                              size="xs"
+                            />
+                            <span className="text-[11px] font-mono text-amber-300 font-bold">
+                              {player.potentialStars ?? 3}★
+                            </span>
+                            <span className="text-[10px] font-mono text-zinc-400">
+                              Teto {player.dynamicCeilingOvr ?? getDynamicPotentialProfile(player.potentialStars ?? 3).dynamicCeilingOvr}
+                            </span>
+                          </div>
                         </div>
-                      </td>
+                      </div>
 
-                      <td className="py-3 px-2 whitespace-nowrap">
-                        <div className="font-mono font-bold text-white">
-                          {player.age} anos
-                        </div>
-                        {canPromote ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-mono text-[#b5ff00]">
-                            ● Sub-20 (Apto 16+)
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-mono text-amber-300">
-                            <Clock className="w-3 h-3" />
-                            Sub-17 (Sobe aos 16a)
-                          </span>
-                        )}
-                      </td>
-
-                      <td className="py-3 px-2 font-mono font-bold text-white">
-                        {player.position}
-                      </td>
-
-                      <td className="py-3 px-2 text-right font-mono tabular-nums font-bold text-[#b5ff00]">
-                        {ovr}
-                      </td>
-
-                      <td className="py-3 px-3">
-                        <div className="flex items-center gap-1.5">
-                          <StarRating
-                            stars={player.potentialStars}
-                            player={player}
-                            ovr={ovr}
-                            clubReputation={club.reputation}
-                            size="xs"
-                          />
-                          <span className="text-[11px] font-mono text-amber-300 font-bold">
-                            {player.potentialStars ?? 3}★
-                          </span>
-                        </div>
-                        <div className="text-[10px] font-mono text-zinc-400 mt-0.5">
-                          Base {player.basePotentialOvr ?? getDynamicPotentialProfile(player.potentialStars ?? 3).basePotentialOvr} · Teto {player.dynamicCeilingOvr ?? getDynamicPotentialProfile(player.potentialStars ?? 3).dynamicCeilingOvr}
-                        </div>
-                      </td>
-
-                      <td className="py-3 px-2 text-right font-mono tabular-nums text-zinc-300">
-                        {player.attributes.passe}
-                      </td>
-                      <td className="py-3 px-2 text-right font-mono tabular-nums text-zinc-300">
-                        {player.attributes.finalizacao}
-                      </td>
-                      <td className="py-3 px-2 text-right font-mono tabular-nums text-zinc-300">
-                        {player.attributes.drible}
-                      </td>
-                      <td className="py-3 px-2 text-right font-mono tabular-nums text-zinc-300">
-                        {player.attributes.desarme}
-                      </td>
-                      <td className="py-3 px-2 text-right font-mono tabular-nums text-zinc-300">
-                        {player.attributes.velocidade}
-                      </td>
-
-                      <td className="py-3 px-3 text-right font-mono tabular-nums whitespace-nowrap">
-                        <div className="text-white font-semibold">
+                      <div className="text-right font-mono tabular-nums shrink-0">
+                        <div className="text-xs font-bold text-white">
                           {formatCompactBRL(player.marketValue)}
                         </div>
-                        <div className="text-[10px] text-zinc-400">
+                        <div className="text-[10px] text-zinc-400 mt-0.5">
                           {formatCompactBRL(player.salary)}/mês
                         </div>
-                      </td>
+                      </div>
+                    </div>
 
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => onInspectPlayer(player)}
-                            className="px-2.5 py-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.14] text-white text-[11px] font-semibold flex items-center gap-1 whitespace-nowrap"
-                          >
-                            <Eye className="w-3 h-3 text-[#b5ff00]" />
-                            <span>Atributos</span>
-                          </button>
+                    <div className="flex flex-wrap items-center justify-end gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => onInspectPlayer(player)}
+                        className="px-2.5 py-1.5 rounded-full bg-white/[0.08] text-white text-[11px] font-semibold flex items-center gap-1"
+                      >
+                        <Eye className="w-3 h-3 text-[#b5ff00]" />
+                        <span>Atributos</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!canPromote}
+                        onClick={() => handlePromoteClick(player)}
+                        className={`px-3 py-1.5 rounded-full text-[11px] font-extrabold flex items-center gap-1 ${
+                          canPromote
+                            ? 'bg-[#b5ff00] text-[#090a0f]'
+                            : 'bg-zinc-800/80 text-zinc-500 cursor-not-allowed'
+                        }`}
+                      >
+                        <ArrowUpRight className="w-3.5 h-3.5" />
+                        <span>{canPromote ? 'Promover' : 'Aguardar 16a'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleReleaseClick(player)}
+                        className="px-2.5 py-1.5 rounded-full bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/35 text-[11px] font-bold flex items-center gap-1 transition-colors"
+                      >
+                        <UserMinus className="w-3.5 h-3.5" />
+                        <span>Dispensar</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
 
-                          <button
-                            type="button"
-                            disabled={!canPromote}
-                            onClick={() => handlePromoteClick(player)}
-                            title={
-                              canPromote
-                                ? `Promover ${player.name} ao elenco profissional`
-                                : 'Apenas atletas com 16 anos ou mais podem subir ao profissional'
-                            }
-                            className={`px-3 py-1.5 rounded-full text-[11px] font-extrabold flex items-center gap-1 whitespace-nowrap transition-colors ${
-                              canPromote
-                                ? 'bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] shadow-sm'
-                                : 'bg-zinc-800/80 text-zinc-500 cursor-not-allowed'
-                            }`}
-                          >
-                            <ArrowUpRight className="w-3.5 h-3.5" />
-                            <span>
-                              {canPromote ? 'Subir p/ Profissional' : 'Aguardar 16a'}
+            {/* Desktop Analytical Table (md+) */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-white/[0.07] bg-[#0b0c10]/60 text-[11px] text-zinc-400">
+                    <th className="py-3 px-4 font-medium">Jovem · OVR & Posição</th>
+                    <th className="py-3 px-2 font-medium">Categoria</th>
+                    <th className="py-3 px-3 font-medium">Potencial (Teto)</th>
+                    <th className="py-3 px-2 font-medium text-right" title="Passe">PAS</th>
+                    <th className="py-3 px-2 font-medium text-right" title="Finalização">FIN</th>
+                    <th className="py-3 px-2 font-medium text-right" title="Drible">DRI</th>
+                    <th className="py-3 px-2 font-medium text-right" title="Desarme">DES</th>
+                    <th className="py-3 px-2 font-medium text-right" title="Velocidade">VEL</th>
+                    <th className="py-3 px-3 font-medium text-right">Valor / Bolsa</th>
+                    <th className="py-3 px-4 font-medium text-right">Decisão Técnica</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.05]">
+                  {filteredRoster.map((player) => {
+                    const ovr = calculatePlayerOverall(
+                      player.attributes,
+                      player.position
+                    );
+                    const canPromote = player.age >= 16;
+
+                    return (
+                      <tr
+                        key={player.id}
+                        className="hover:bg-white/[0.03] transition-colors"
+                      >
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-2.5">
+                            <PlayerJersey
+                              number={player.number}
+                              variant={canPromote ? 'lime' : 'white'}
+                              size="sm"
+                            />
+                            <PlayerOvrBadge
+                              ovr={ovr}
+                              position={player.position}
+                              size="md"
+                            />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => onInspectPlayer(player)}
+                                  className="font-bold text-sm text-white hover:text-[#b5ff00] text-left transition-colors"
+                                >
+                                  {player.name}
+                                </button>
+                                <span className="font-mono font-bold text-xs text-white tabular-nums">
+                                  {player.age} anos
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-zinc-400">
+                                Safra {player.regenBatchYear || seasonYear} · {player.nationality}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-2 whitespace-nowrap">
+                          {canPromote ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-mono font-bold text-[#b5ff00]">
+                              Sub-20 (Apto 16+)
                             </span>
-                          </button>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-mono text-amber-300">
+                              <Clock className="w-3 h-3" />
+                              Sub-17 (Sobe aos 16a)
+                            </span>
+                          )}
+                        </td>
 
-                          <button
-                            type="button"
-                            onClick={() => handleReleaseClick(player)}
-                            title="Dispensar jovem da base Sub-20"
-                            className="p-1.5 rounded-full bg-[#0b0c10] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 border border-white/10 transition-colors"
-                          >
-                            <UserMinus className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        <td className="py-3 px-3">
+                          <div className="flex items-center gap-1.5">
+                            <StarRating
+                              stars={player.potentialStars}
+                              player={player}
+                              ovr={ovr}
+                              clubReputation={club.reputation}
+                              size="xs"
+                            />
+                            <span className="text-[11px] font-mono text-amber-300 font-bold">
+                              {player.potentialStars ?? 3}★
+                            </span>
+                          </div>
+                          <div className="text-[10px] font-mono text-zinc-400 mt-0.5">
+                            Base {player.basePotentialOvr ?? getDynamicPotentialProfile(player.potentialStars ?? 3).basePotentialOvr} · Teto {player.dynamicCeilingOvr ?? getDynamicPotentialProfile(player.potentialStars ?? 3).dynamicCeilingOvr}
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-2 text-right font-mono tabular-nums text-zinc-300">
+                          {player.attributes.passe}
+                        </td>
+                        <td className="py-3 px-2 text-right font-mono tabular-nums text-zinc-300">
+                          {player.attributes.finalizacao}
+                        </td>
+                        <td className="py-3 px-2 text-right font-mono tabular-nums text-zinc-300">
+                          {player.attributes.drible}
+                        </td>
+                        <td className="py-3 px-2 text-right font-mono tabular-nums text-zinc-300">
+                          {player.attributes.desarme}
+                        </td>
+                        <td className="py-3 px-2 text-right font-mono tabular-nums text-zinc-300">
+                          {player.attributes.velocidade}
+                        </td>
+
+                        <td className="py-3 px-3 text-right font-mono tabular-nums whitespace-nowrap">
+                          <div className="text-white font-semibold">
+                            {formatCompactBRL(player.marketValue)}
+                          </div>
+                          <div className="text-[10px] text-zinc-400">
+                            {formatCompactBRL(player.salary)}/mês
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => onInspectPlayer(player)}
+                              className="px-2.5 py-1.5 rounded-full bg-white/[0.08] hover:bg-white/[0.14] text-white text-[11px] font-semibold flex items-center gap-1 whitespace-nowrap"
+                            >
+                              <Eye className="w-3 h-3 text-[#b5ff00]" />
+                              <span>Atributos</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={!canPromote}
+                              onClick={() => handlePromoteClick(player)}
+                              title={
+                                canPromote
+                                  ? `Promover ${player.name} ao elenco profissional`
+                                  : 'Apenas atletas com 16 anos ou mais podem subir ao profissional'
+                              }
+                              className={`px-3 py-1.5 rounded-full text-[11px] font-extrabold flex items-center gap-1 whitespace-nowrap transition-colors ${
+                                canPromote
+                                  ? 'bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] shadow-sm'
+                                  : 'bg-zinc-800/80 text-zinc-500 cursor-not-allowed'
+                              }`}
+                            >
+                              <ArrowUpRight className="w-3.5 h-3.5" />
+                              <span>
+                                {canPromote ? 'Subir p/ Profissional' : 'Aguardar 16a'}
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleReleaseClick(player)}
+                              title="Dispensar jovem da base Sub-20"
+                              className="px-2.5 py-1.5 rounded-full bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/35 text-[11px] font-bold flex items-center gap-1 whitespace-nowrap transition-colors"
+                            >
+                              <UserMinus className="w-3.5 h-3.5" />
+                              <span>Dispensar</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     </div>

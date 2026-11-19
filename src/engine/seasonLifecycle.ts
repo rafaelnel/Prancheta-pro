@@ -10,9 +10,14 @@ import { calculatePlayerOverall } from './playerOverall';
 import {
   applyAntiInflationSeasonMaintenance,
   calculateDynamicSponsorship,
+  evaluatePlayerRetirementProbability,
   processSeasonEvolutionAndAging,
 } from './economyAndEvolution';
 import { generateYouthRegens } from './youthAcademyEngine';
+import {
+  getRenewalEligiblePlayers,
+  processSeasonEndContracts,
+} from './contractEngine';
 import { createInitialMatchState } from './matchEngine';
 import { formatCompactBRL } from '../utils/formatters';
 import {
@@ -326,15 +331,22 @@ export function buildSeasonEndSummary(params: {
 
   let userSeasonPrize = 0;
   if (userDiv === 'A') {
-    if (userRank === 1) userSeasonPrize = 48_000_000;
-    else if (userRank <= 4) userSeasonPrize = 32_000_000;
-    else if (userRank <= 8) userSeasonPrize = 20_000_000;
-    else if (userRank <= 16) userSeasonPrize = 12_000_000;
-    else userSeasonPrize = 6_000_000;
+    // Premiação oficial escalonada do Brasileirão Série A (R$ 50M ao Campeão até cota de consolação ao Z-4)
+    if (userRank === 1) userSeasonPrize = 50_000_000;
+    else if (userRank === 2) userSeasonPrize = 46_000_000;
+    else if (userRank === 3) userSeasonPrize = 43_000_000;
+    else if (userRank === 4) userSeasonPrize = 40_000_000;
+    else if (userRank <= 6) userSeasonPrize = 35_000_000;
+    else if (userRank <= 8) userSeasonPrize = 30_000_000;
+    else if (userRank <= 12) userSeasonPrize = 23_000_000;
+    else if (userRank <= 16) userSeasonPrize = 17_000_000;
+    else userSeasonPrize = 8_000_000;
   } else {
-    if (userRank === 1) userSeasonPrize = 12_000_000;
-    else if (userRank <= 4) userSeasonPrize = 8_000_000;
-    else userSeasonPrize = 3_500_000;
+    // Premiação e bônus de acesso da Série B
+    if (userRank === 1) userSeasonPrize = 16_000_000;
+    else if (userRank <= 4) userSeasonPrize = 11_000_000;
+    else if (userRank <= 10) userSeasonPrize = 6_500_000;
+    else userSeasonPrize = 4_500_000;
   }
 
   const awards = buildSeasonAwardsSummary({
@@ -370,6 +382,9 @@ export function buildSeasonEndSummary(params: {
     libertadoresQualifiedBrIds,
     awards,
     userEvolutionHighlights: previewEvolutionHighlights,
+    thinkingRetirementNames: userSquad
+      .filter((p) => evaluatePlayerRetirementProbability(p).isConsideringRetirement)
+      .map((p) => `${p.name} (${p.position}, ${p.age}a)`),
   };
 }
 
@@ -456,17 +471,7 @@ export function executeNewSeasonRollover(params: {
     libertadores,
   });
 
-  // 1. Return loaned-out players to user squad & expire loaned-in players cleanly
-  const returningFromLoan = loanedOutPlayers.map((p) => ({
-    ...p,
-    contractType: 'DEFINITIVO' as const,
-    wageSharePaid: 1,
-    loanDestinationClubName: undefined,
-  }));
-
-  const consolidatedUserSquad = [...userSquad, ...returningFromLoan];
-
-  // 2. Apply promotion/relegation, titles, and reputation updates before evolution/sponsorship
+  // 1. Apply promotion/relegation, titles, and reputation updates before evolution/sponsorship
   const relegatedSet = new Set(baseReport.relegatedClubIds);
   const promotedSet = new Set(baseReport.promotedClubIds);
 
@@ -511,15 +516,26 @@ export function executeNewSeasonRollover(params: {
     };
   });
 
-  // 3. Evolve & Age (+1) all players across the entire world
+  // 2. Evolve & Age (+1) all players across the entire world
   const evoResult = processSeasonEvolutionAndAging({
     clubs: clubsWithMovement,
     userClubId,
-    userSquad: consolidatedUserSquad,
+    userSquad,
     aiSquads,
     freeAgents,
-    loanedOutPlayers: [],
+    loanedOutPlayers,
     rng,
+  });
+
+  // 3. Process contract & loan duration expirations (-1 year, return/expire loans & unrenewed contracts)
+  const contractRollover = processSeasonEndContracts({
+    userSquad: evoResult.updatedUserSquad,
+    aiSquads: evoResult.updatedAiSquads,
+    loanedOutPlayers: evoResult.updatedLoanedOut,
+    freeAgents: evoResult.updatedFreeAgents,
+    clubs: evoResult.updatedClubs,
+    userClubId,
+    nextYear,
   });
 
   // 4. Apply Anti-Inflation seasonal operational maintenance & cash/wage caps across ALL clubs
@@ -527,8 +543,8 @@ export function executeNewSeasonRollover(params: {
   const maintainedClubs = evoResult.updatedClubs.map((club) => {
     const sq =
       club.id === userClubId
-        ? evoResult.updatedUserSquad
-        : evoResult.updatedAiSquads[club.id] || [];
+        ? contractRollover.updatedUserSquad
+        : contractRollover.updatedAiSquads[club.id] || [];
     const { updatedClub, annualMaintenanceCost } =
       applyAntiInflationSeasonMaintenance(club, sq);
     if (club.id === userClubId) {
@@ -544,10 +560,10 @@ export function executeNewSeasonRollover(params: {
 
   // 5. Dynamic Sponsorship for new season
   const avgUserOvr =
-    evoResult.updatedUserSquad.reduce(
+    contractRollover.updatedUserSquad.reduce(
       (s, p) => s + calculatePlayerOverall(p.attributes, p.position),
       0
-    ) / Math.max(1, evoResult.updatedUserSquad.length);
+    ) / Math.max(1, contractRollover.updatedUserSquad.length);
   const newSponsorship = calculateDynamicSponsorship(
     updatedUserClub,
     avgUserOvr,
@@ -623,7 +639,7 @@ export function executeNewSeasonRollover(params: {
     rng,
   });
 
-  const finalUserSquad = evoResult.updatedUserSquad;
+  const finalUserSquad = contractRollover.updatedUserSquad;
   const nextYouthAcademy = {
     ...youthAcademy,
     accumulatedSeasonInvestment: youthAcademy.monthlyCost,
@@ -640,17 +656,30 @@ export function executeNewSeasonRollover(params: {
     finalUserSquad,
     userClubId,
     [],
-    evoResult.updatedAiSquads
+    contractRollover.updatedAiSquads
   );
 
   const sortedEvoHighlights = [...evoResult.userEvolutionReport].sort(
     (a, b) => Math.abs(b.deltaOvr) - Math.abs(a.deltaOvr)
   );
 
+  const upcomingRenewals = getRenewalEligiblePlayers(
+    finalUserSquad,
+    finalUserClub,
+    nextYear
+  );
+
   const fullReport: SeasonEndReport = {
     ...baseReport,
     userEvolutionHighlights: sortedEvoHighlights,
     promotedYouthRegens: youthResult.reportItems,
+    expiringContractsCount: upcomingRenewals.length,
+    expiredPlayerNames: [
+      ...contractRollover.expiredDefinitiveNames,
+      ...contractRollover.expiredLoanInNames,
+    ],
+    returnedLoanNames: contractRollover.returnedLoanOutNames,
+    retiredPlayers: evoResult.retiredUserPlayers,
   };
 
   const archiveEntry: SeasonArchiveEntry = {
@@ -702,7 +731,77 @@ export function executeNewSeasonRollover(params: {
     actionTargetTab: 'youth',
   } : null;
 
+  const contractsInboxMsg: InboxMessage | null =
+    upcomingRenewals.length > 0 ||
+    contractRollover.expiredDefinitiveNames.length > 0 ||
+    contractRollover.expiredLoanInNames.length > 0 ||
+    contractRollover.returnedLoanOutNames.length > 0
+      ? {
+          id: `msg-contracts-${nextYear}`,
+          date: `28 Jan ${nextYear} · 09:30`,
+          sender: 'Departamento Jurídico',
+          senderRole: 'Contratos & Empréstimos',
+          subject: `Lista Anual de Contratos ${nextYear}: ${upcomingRenewals.length} renovação(ões) disponíveis`,
+          category: 'Diretoria',
+          priority: upcomingRenewals.some((r) => r.remainingYears <= 1)
+            ? 'warning'
+            : 'normal',
+          read: false,
+          body: [
+            `Na virada para ${nextYear}, ${upcomingRenewals.length} jogador(es) entraram na lista anual de renovação (vence em ${nextYear} ou elegíveis com 1 ano de antecedência).`,
+            contractRollover.expiredDefinitiveNames.length > 0
+              ? `Contratos encerrados sem renovação (saíram livres): ${contractRollover.expiredDefinitiveNames.join(', ')}.`
+              : 'Nenhum vínculo definitivo expirou sem renovação.',
+            contractRollover.expiredLoanInNames.length > 0
+              ? `Empréstimos concluídos: ${contractRollover.expiredLoanInNames.join(', ')}.`
+              : contractRollover.continuingLoanNames.length > 0
+              ? `Empréstimos plurianuais mantidos no elenco: ${contractRollover.continuingLoanNames.join(', ')}.`
+              : 'Sem empréstimos encerrados nesta janela.',
+          ],
+          bulletPoints: upcomingRenewals.slice(0, 6).map(
+            (r) =>
+              `${r.player.name} (${r.player.position} · OVR ${r.expectation.currentOvr}) — ${
+                r.remainingYears <= 1
+                  ? `Expira fim de ${r.endYear}`
+                  : `Antecipada (até ${r.endYear})`
+              } · Flexibilidade ${r.expectation.flexibility} · Pedida ${formatCompactBRL(
+                r.expectation.desiredSalary
+              )}/mês`
+          ),
+          actionLabel: 'Abrir Renovações no Elenco',
+          actionTargetTab: 'squad',
+        }
+      : null;
+
+  const retirementInboxMsg: InboxMessage | null =
+    evoResult.retiredUserPlayers.length > 0
+      ? {
+          id: `msg-retirements-${nextYear}`,
+          date: `28 Jan ${nextYear} · 09:45`,
+          sender: 'Diretoria & Comissão Técnica',
+          senderRole: 'Encerramento de Carreira',
+          subject: `Aposentadorias (${nextYear}): ${evoResult.retiredUserPlayers
+            .map((r) => r.playerName)
+            .join(', ')}`,
+          category: 'Diretoria',
+          priority: 'warning',
+          read: false,
+          body: [
+            `${evoResult.retiredUserPlayers.length} atleta(s) do ${finalUserClub.shortName} anunciaram oficialmente a aposentadoria na virada para ${nextYear}.`,
+            `O clube garantiu a integridade do plantel (mínimo de elenco e goleiro) e ajustou a lista de titulares para a pré-temporada.`,
+          ],
+          bulletPoints: evoResult.retiredUserPlayers.map(
+            (r) =>
+              `${r.playerName} (${r.position} · ${r.ageAtRetirement} anos · OVR ${r.lastOvr} · ${r.matchesPlayed}j) — ${r.reasonNote}`
+          ),
+          actionLabel: 'Ver Elenco',
+          actionTargetTab: 'squad',
+        }
+      : null;
+
   const nextMessages: InboxMessage[] = [
+    ...(retirementInboxMsg ? [retirementInboxMsg] : []),
+    ...(contractsInboxMsg ? [contractsInboxMsg] : []),
     ...(youthInboxMsg ? [youthInboxMsg] : []),
     {
       id: `msg-newseason-${nextYear}-1`,
@@ -760,9 +859,9 @@ export function executeNewSeasonRollover(params: {
     archiveEntry,
     updatedClubs: clubsAfterSponsor,
     updatedUserSquad: finalUserSquad,
-    updatedAiSquads: evoResult.updatedAiSquads,
-    updatedFreeAgents: evoResult.updatedFreeAgents,
-    updatedLoanedOut: [],
+    updatedAiSquads: contractRollover.updatedAiSquads,
+    updatedFreeAgents: contractRollover.updatedFreeAgents,
+    updatedLoanedOut: contractRollover.updatedLoanedOut,
     nextStandings,
     nextFixtures,
     nextSecondaryStandings,

@@ -8,6 +8,7 @@ import {
   PlayerAttributes,
   PlayerEvolutionReportItem,
   PotentialStars,
+  RetiredPlayerReportItem,
   SponsorshipContract,
   StandingsRow,
   InboxMessage,
@@ -31,86 +32,93 @@ export interface DynamicPotentialProfile {
 }
 
 /**
- * Dynamic Potential Mechanism (Performance Ceiling):
- * 3.0★: Base Potential 76–78 (Dynamic Ceiling: 80)
- * 3.5★: Base Potential 81–83 (Dynamic Ceiling: 85)
- * 4.0★: Base Potential 86–88 (Dynamic Ceiling: 90)
- * 4.5★: Base Potential 91–93 (Dynamic Ceiling: 95)
- * 5.0★: Base Potential 95–96 (Dynamic Ceiling: 99)
+ * Dynamic Potential Mechanism (Performance Ceiling calibrated to EA FC / PES):
+ * 3.0★: Base Potential 74–76 (Dynamic Ceiling: 78)
+ * 3.5★: Base Potential 77–79 (Dynamic Ceiling: 81)
+ * 4.0★: Base Potential 80–83 (Dynamic Ceiling: 85)
+ * 4.5★: Base Potential 84–87 (Dynamic Ceiling: 89)
+ * 5.0★: Base Potential 88–92 (Dynamic Ceiling: 94)
  */
 export function getDynamicPotentialProfile(
   stars: PotentialStars,
-  rng: () => number = Math.random
+  rng: () => number = Math.random,
+  currentOvr?: number,
+  age?: number
 ): DynamicPotentialProfile {
+  let baseMin = 63;
+  let baseMax = 66;
+  let ceiling = 68;
+  let normalizedStars: PotentialStars = stars ?? 1;
+
   if (stars >= 5) {
-    return {
-      stars: 5,
-      basePotentialMin: 95,
-      basePotentialMax: 96,
-      basePotentialOvr: rng() < 0.5 ? 95 : 96,
-      dynamicCeilingOvr: 99,
-    };
+    normalizedStars = 5;
+    baseMin = 88;
+    baseMax = 92;
+    ceiling = 94;
+  } else if (stars >= 4.5) {
+    normalizedStars = 4.5;
+    baseMin = 84;
+    baseMax = 87;
+    ceiling = 89;
+  } else if (stars >= 4) {
+    normalizedStars = 4;
+    baseMin = 80;
+    baseMax = 83;
+    ceiling = 85;
+  } else if (stars >= 3.5) {
+    normalizedStars = 3.5;
+    baseMin = 77;
+    baseMax = 79;
+    ceiling = 81;
+  } else if (stars >= 3) {
+    normalizedStars = 3;
+    baseMin = 74;
+    baseMax = 76;
+    ceiling = 78;
+  } else if (stars >= 2.5) {
+    normalizedStars = 2.5;
+    baseMin = 70;
+    baseMax = 72;
+    ceiling = 74;
+  } else if (stars >= 2) {
+    normalizedStars = 2;
+    baseMin = 66;
+    baseMax = 69;
+    ceiling = 71;
+  } else if (stars >= 1.5) {
+    normalizedStars = 1.5;
+    baseMin = 64;
+    baseMax = 66;
+    ceiling = 68;
   }
-  if (stars >= 4.5) {
-    return {
-      stars: 4.5,
-      basePotentialMin: 91,
-      basePotentialMax: 93,
-      basePotentialOvr: 91 + Math.floor(rng() * 3),
-      dynamicCeilingOvr: 95,
-    };
+
+  let basePotentialOvr = baseMin + Math.floor(rng() * (baseMax - baseMin + 1));
+  let dynamicCeilingOvr = ceiling;
+
+  if (typeof currentOvr === 'number' && typeof age === 'number') {
+    if (age >= 30) {
+      basePotentialOvr = currentOvr;
+      dynamicCeilingOvr = currentOvr;
+    } else if (age >= 26) {
+      const margin = age <= 27 ? 3 : 1;
+      basePotentialOvr = Math.max(currentOvr, Math.min(basePotentialOvr, currentOvr + margin));
+      dynamicCeilingOvr = Math.max(basePotentialOvr, Math.min(dynamicCeilingOvr, currentOvr + margin + 1));
+    } else {
+      const maxGrowth = age <= 19 ? 14 : age <= 21 ? 11 : age <= 23 ? 8 : 6;
+      basePotentialOvr = Math.max(currentOvr, Math.min(basePotentialOvr, currentOvr + maxGrowth));
+      dynamicCeilingOvr = Math.max(basePotentialOvr, Math.min(dynamicCeilingOvr, basePotentialOvr + (age <= 21 ? 3 : 2)));
+    }
+  } else if (typeof currentOvr === 'number') {
+    basePotentialOvr = Math.max(currentOvr, basePotentialOvr);
+    dynamicCeilingOvr = Math.max(basePotentialOvr, dynamicCeilingOvr);
   }
-  if (stars >= 4) {
-    return {
-      stars: 4,
-      basePotentialMin: 86,
-      basePotentialMax: 88,
-      basePotentialOvr: 86 + Math.floor(rng() * 3),
-      dynamicCeilingOvr: 90,
-    };
-  }
-  if (stars >= 3.5) {
-    return {
-      stars: 3.5,
-      basePotentialMin: 81,
-      basePotentialMax: 83,
-      basePotentialOvr: 81 + Math.floor(rng() * 3),
-      dynamicCeilingOvr: 85,
-    };
-  }
-  if (stars >= 3) {
-    return {
-      stars: 3,
-      basePotentialMin: 76,
-      basePotentialMax: 78,
-      basePotentialOvr: 76 + Math.floor(rng() * 3),
-      dynamicCeilingOvr: 80,
-    };
-  }
-  if (stars >= 2.5) {
-    return {
-      stars: 2.5,
-      basePotentialMin: 70,
-      basePotentialMax: 72,
-      basePotentialOvr: 70 + Math.floor(rng() * 3),
-      dynamicCeilingOvr: 75,
-    };
-  }
-  if (stars >= 2) {
-    return {
-      stars: 2,
-      basePotentialMin: 67,
-      basePotentialMax: 69,
-      basePotentialOvr: 67 + Math.floor(rng() * 3),
-      dynamicCeilingOvr: 72,
-    };
-  }
+
   return {
-    stars: stars ?? 1,
-    basePotentialMin: 63,
-    basePotentialMax: 66,
-    basePotentialOvr: 63 + Math.floor(rng() * 4),
-    dynamicCeilingOvr: 68,
+    stars: normalizedStars,
+    basePotentialMin: baseMin,
+    basePotentialMax: baseMax,
+    basePotentialOvr,
+    dynamicCeilingOvr,
   };
 }
 
@@ -118,19 +126,23 @@ export function getDynamicPotentialProfile(
  * Maps Potential Stars (1..5, with half-stars) to the maximum realistic dynamic OVR ceiling (60..99 scale).
  */
 export function getPotentialCeilingOvr(stars: PotentialStars): number {
-  if (stars >= 5) return 99;
-  if (stars >= 4.5) return 95;
-  if (stars >= 4) return 90;
-  if (stars >= 3.5) return 85;
-  if (stars >= 3) return 80;
-  if (stars >= 2.5) return 75;
-  if (stars >= 2) return 72;
+  if (stars >= 5) return 94;
+  if (stars >= 4.5) return 89;
+  if (stars >= 4) return 85;
+  if (stars >= 3.5) return 81;
+  if (stars >= 3) return 78;
+  if (stars >= 2.5) return 74;
+  if (stars >= 2) return 71;
   return 68;
 }
 
 /**
  * Returns the maximum realistic OVR a player can have at a given age and star potential.
- * Young players (15–20) scale naturally and only reach peak 90+ in their twenties if they perform on pitch.
+ * Supports high-potential youth academy prospects appearing with up to:
+ * - 1.0★ to 2.5★: up to 70 OVR from youth
+ * - 3.0★ to 4.0★: up to 75 OVR from youth
+ * - 4.5★: up to 80 OVR from youth
+ * - 5.0★: up to 85 OVR from youth
  */
 export function getMaxRealisticOvrForAgeAndPotential(
   age: number,
@@ -140,23 +152,22 @@ export function getMaxRealisticOvrForAgeAndPotential(
   const profile = getDynamicPotentialProfile(stars);
   const careerCeiling = player?.dynamicCeilingOvr ?? profile.dynamicCeilingOvr;
 
+  const youthStarCap =
+    stars >= 5 ? 85 : stars >= 4.5 ? 80 : stars >= 3 ? 75 : 70;
+
   let ageCap = careerCeiling;
-  if (age <= 15) {
-    ageCap = stars >= 5 ? 67 : stars >= 4 ? 64 : 62;
-  } else if (age === 16) {
-    ageCap = stars >= 5 ? 70 : stars >= 4 ? 66 : 64;
-  } else if (age === 17) {
-    ageCap = stars >= 5 ? 73 : stars >= 4 ? 69 : 66;
+  if (age <= 17) {
+    ageCap = youthStarCap;
   } else if (age === 18) {
-    ageCap = stars >= 5 ? 76 : stars >= 4 ? 72 : 68;
+    ageCap = Math.max(youthStarCap, stars >= 5 ? 86 : stars >= 4.5 ? 82 : stars >= 3 ? 77 : 71);
   } else if (age === 19) {
-    ageCap = stars >= 5 ? 80 : stars >= 4 ? 76 : 71;
+    ageCap = Math.max(youthStarCap, stars >= 5 ? 87 : stars >= 4.5 ? 83 : stars >= 3 ? 78 : 72);
   } else if (age === 20) {
-    ageCap = stars >= 5 ? 84 : stars >= 4 ? 80 : 74;
+    ageCap = Math.max(youthStarCap, stars >= 5 ? 88 : stars >= 4.5 ? 85 : stars >= 3 ? 80 : 73);
   } else if (age === 21) {
-    ageCap = stars >= 5 ? 88 : stars >= 4 ? 84 : 77;
+    ageCap = Math.max(youthStarCap, stars >= 5 ? 90 : stars >= 4.5 ? 86 : stars >= 3 ? 82 : 74);
   } else if (age === 22) {
-    ageCap = stars >= 5 ? 92 : stars >= 4 ? 87 : 80;
+    ageCap = Math.max(youthStarCap, stars >= 5 ? 91 : stars >= 4.5 ? 88 : stars >= 3 ? 83 : 74);
   }
 
   return Math.min(careerCeiling, ageCap);
@@ -178,7 +189,6 @@ export function calibrateAttributesToTargetOvr(
   // First, if any attributes are exaggerated (e.g., 19-20 on a young player), scale toward a sensible base
   const curOvr = calculatePlayerOverall(next, position);
   if (curOvr > maxOvr + 4) {
-    // Convert targetOvr (60..89) to approximate 1..20 raw weighted average (12.0..18.5)
     const t = Math.max(0, Math.min(1, (targetOvr - 60) / 39));
     const targetRaw = 12.0 + Math.pow(t, 1 / 1.42) * 8.0;
     const avgAttr =
@@ -216,9 +226,14 @@ export function calibrateAttributesToTargetOvr(
         const anyKey = allKeys[guard % allKeys.length];
         if (next[anyKey] > 5) next[anyKey] -= 1;
       }
-    } else if (current < targetOvr - 1) {
+    } else if (current < targetOvr) {
       const k = posKeys[guard % posKeys.length];
-      if (next[k] < 19) next[k] += 1;
+      if (next[k] < 19) {
+        next[k] += 1;
+      } else {
+        const anyKey = allKeys[guard % allKeys.length];
+        if (next[anyKey] < 19) next[anyKey] += 1;
+      }
     } else {
       break;
     }
@@ -229,7 +244,14 @@ export function calibrateAttributesToTargetOvr(
 
 /**
  * Deterministic initial star potential (1..5) based on current OVR, age, club reputation, and player ID.
- * 5★ is reserved for true elite stars or rare young phenomena.
+ * Calibrated to EA FC / eFootball (PES) standards:
+ * - 5.0★: Rare U21 world-class wonderkids (Endrick, Estêvão, Arda Güler, Savinho) or 85+ OVR superstars
+ * - 4.5★: Elite U23 prospects (Vitor Roque, Beraldo, Vitor Reis, Moscardo) or prime 81-84 OVR stars (Arrascaeta, Pedro, Paquetá, Martinelli)
+ * - 4.0★: Top Série A / Libertadores starters (77-80 OVR) or promising U23 talents (72-75 OVR)
+ * - 3.5★: Solid Série A starters (74-76 OVR) or good U23 prospects (68-71 OVR)
+ * - 3.0★: Série A rotation / strong Série B starters (70-73 OVR)
+ * - 2.5★: Série B regulars (66-69 OVR)
+ * - 2.0★: Série B backups (<= 65 OVR)
  */
 export function assignPotentialStars(
   ovr: number,
@@ -238,32 +260,59 @@ export function assignPotentialStars(
   playerId: string = 'p'
 ): PotentialStars {
   const roll = (hashStr(playerId) % 100) / 100;
-  let score = 2.4;
+  let score = 2.5;
 
-  if (ovr >= 85) score = 4.8;
-  else if (ovr >= 81) score = 4.2;
-  else if (ovr >= 77) score = 3.6;
-  else if (ovr >= 72) score = 3.1;
-  else if (ovr >= 67) score = 2.6;
-  else score = 1.9;
-
-  // Controlled youth upside
   if (age <= 20) {
-    score += 0.55 + (clubReputation >= 82 ? 0.2 : 0) + (roll > 0.88 ? 0.6 : roll > 0.65 ? 0.3 : 0);
+    if (ovr >= 76) score = 4.9;
+    else if (ovr >= 72) score = 4.5;
+    else if (ovr >= 69) score = 4.0;
+    else if (ovr >= 66) score = 3.5;
+    else if (ovr >= 63) score = 3.0;
+    else score = 2.5;
+    if (clubReputation >= 84 && roll > 0.65) score += 0.25;
   } else if (age <= 23) {
-    score += 0.35 + (roll > 0.82 ? 0.35 : 0);
-  } else if (age >= 32) {
-    score = Math.min(score, ovr >= 82 ? 4 : ovr >= 76 ? 3.5 : 2.5);
+    if (ovr >= 79) score = 4.9;
+    else if (ovr >= 75) score = 4.5;
+    else if (ovr >= 72) score = 4.0;
+    else if (ovr >= 69) score = 3.5;
+    else if (ovr >= 65) score = 3.0;
+    else score = 2.5;
+    if (clubReputation >= 85 && roll > 0.75) score += 0.2;
+  } else if (age <= 28) {
+    if (ovr >= 85) score = 5.0;
+    else if (ovr >= 81) score = 4.5;
+    else if (ovr >= 77) score = 4.0;
+    else if (ovr >= 74) score = 3.5;
+    else if (ovr >= 70) score = 3.0;
+    else if (ovr >= 66) score = 2.5;
+    else score = 2.0;
+  } else if (age <= 32) {
+    if (ovr >= 85) score = 5.0;
+    else if (ovr >= 81) score = 4.5;
+    else if (ovr >= 77) score = 4.0;
+    else if (ovr >= 74) score = 3.5;
+    else if (ovr >= 70) score = 3.0;
+    else if (ovr >= 66) score = 2.5;
+    else score = 2.0;
+  } else {
+    // 33+ veterans
+    if (ovr >= 83) score = 4.5;
+    else if (ovr >= 78) score = 4.0;
+    else if (ovr >= 74) score = 3.5;
+    else if (ovr >= 70) score = 3.0;
+    else if (ovr >= 66) score = 2.5;
+    else score = 2.0;
   }
 
   const roundedHalf = Math.round(score * 2) / 2;
-  const clamped = Math.max(1, Math.min(5, roundedHalf)) as PotentialStars;
-  return clamped;
+  return Math.max(1, Math.min(5, roundedHalf)) as PotentialStars;
 }
 
 /**
- * Healthy market value and monthly salary calculation based on OVR + Potential Upside + Age +
- * Club Relevance + Position, using a smooth curve (no discontinuous OVR bracket plateaus).
+ * Healthy market value and monthly salary calculation based primarily on OVR + Potential Upside +
+ * moderate Age curve + Club Relevance + Position.
+ * OVR is the decisive factor: even a 36–39yo superstar with 85–88+ OVR retains high market value
+ * (e.g. R$ 50M–65M+ for an 88 OVR 38yo star), while still being worth less than a 21yo of the exact same OVR.
  * Base currency is BRL (1 EUR ≈ R$ 6,00).
  */
 export function calculateBalancedValuationAndWage(params: {
@@ -276,60 +325,71 @@ export function calculateBalancedValuationAndWage(params: {
 }): { marketValue: number; salary: number } {
   const { ovr, age, clubReputation, division, potentialStars, position } = params;
 
-  // Blend current OVR with potential upside for younger players so elite U23 prospects
-  // (e.g. Endrick 19yo OVR 78 5★) are worth substantially more than older peak-out players of the same OVR.
+  // Blend current OVR with potential upside for younger players so elite U24 prospects
+  // are worth more than older players of the same OVR.
   const ceiling = getPotentialCeilingOvr(potentialStars);
   const upsideWeight =
     age <= 19
-      ? 0.34
+      ? 0.30
       : age <= 21
-      ? 0.26
+      ? 0.24
       : age <= 23
-      ? 0.16
-      : age <= 24
+      ? 0.15
+      : age <= 25
       ? 0.08
       : 0;
   const upsideBonus =
     ceiling > ovr && upsideWeight > 0
-      ? Math.min(7.5, (ceiling - ovr) * upsideWeight)
+      ? Math.min(7.0, (ceiling - ovr) * upsideWeight)
       : 0;
   const effectiveOvr = Math.min(99, ovr + upsideBonus);
 
-  // Smooth continuous exponential curve on effective OVR 60..99 (no discontinuous step caps)
+  // Smooth continuous exponential curve on effective OVR 60..99 (OVR is the dominant driver)
   const u = Math.max(0, effectiveOvr - 60);
   const baseVal = 650_000 + Math.pow(u, 2.38) * 32_000;
 
-  // Smooth age curve: U26 resale value holds premium; 30+ depreciates realistically
+  // Moderate age curve: age influences value, but OVR remains the heavyweight factor
   let ageMult = 1.0;
   if (age <= 20) {
-    ageMult = 1.22;
+    ageMult = 1.20;
   } else if (age <= 23) {
-    ageMult = 1.16;
-  } else if (age <= 26) {
+    ageMult = 1.14;
+  } else if (age <= 25) {
     ageMult = 1.08;
-  } else if (age <= 28) {
-    ageMult = 0.98;
+  } else if (age <= 27) {
+    ageMult = 1.02;
+  } else if (age === 28) {
+    ageMult = 0.97;
   } else if (age === 29) {
-    ageMult = 0.90;
+    ageMult = 0.92;
   } else if (age === 30) {
-    ageMult = 0.78;
+    ageMult = 0.86;
   } else if (age === 31) {
-    ageMult = 0.66;
+    ageMult = 0.80;
   } else if (age === 32) {
-    ageMult = 0.54;
+    ageMult = 0.75;
   } else if (age === 33) {
-    ageMult = 0.42;
+    ageMult = 0.70;
   } else if (age === 34) {
-    ageMult = 0.31;
+    ageMult = 0.65;
   } else if (age === 35) {
-    ageMult = 0.22;
+    ageMult = 0.60;
   } else if (age === 36) {
-    ageMult = 0.16;
+    ageMult = 0.56;
+  } else if (age === 37) {
+    ageMult = 0.52;
   } else {
-    ageMult = Math.max(0.08, 0.13 - (age - 37) * 0.025);
+    ageMult = Math.max(0.45, 0.49 - (age - 38) * 0.02);
   }
 
-  // Subtle star aura multiplier (main potential upside is already priced via effectiveOvr)
+  // High-OVR veterans (80+ OVR) retain extra immediate technical market value
+  if (age >= 30 && ovr >= 80) {
+    const eliteOvrRetention =
+      ovr >= 87 ? 0.14 : ovr >= 84 ? 0.10 : ovr >= 82 ? 0.06 : 0.03;
+    ageMult = Math.min(0.90, ageMult + eliteOvrRetention);
+  }
+
+  // Subtle star aura multiplier
   const potMult = 0.94 + potentialStars * 0.024;
 
   // Position market premium (attackers & creative mids command higher fees than goalkeepers)
@@ -349,23 +409,50 @@ export function calculateBalancedValuationAndWage(params: {
   }
 
   // Club relevance & division factor
-  const divMult = division === 'B' ? 0.60 : division === 'LIB' ? 0.96 : 1.0;
+  const divMult = division === 'B' ? 0.62 : division === 'LIB' ? 0.96 : 1.0;
   const repMult = Math.max(
-    0.65,
-    Math.min(1.38, Math.pow(clubReputation / 84, 1.35))
+    0.68,
+    Math.min(1.38, Math.pow(clubReputation / 84, 1.3))
   );
 
-  const rawValue = baseVal * ageMult * potMult * posMult * divMult * repMult;
+  // Pure OVR minimum value floor so an 85-88+ OVR player is never sold for a pittance regardless of age/club
+  const pureOvrBase = 650_000 + Math.pow(Math.max(0, ovr - 60), 2.38) * 32_000;
+  const ovrFloor =
+    ovr >= 86
+      ? pureOvrBase * 0.56
+      : ovr >= 82
+      ? pureOvrBase * 0.48
+      : ovr >= 78
+      ? pureOvrBase * 0.40
+      : 300_000;
+
+  const rawValue = Math.max(
+    ovrFloor,
+    baseVal * ageMult * potMult * posMult * divMult * repMult
+  );
   const step = rawValue < 1_500_000 ? 50_000 : 250_000;
   const marketValue = Math.min(
     280_000_000,
     Math.max(300_000, Math.round(rawValue / step) * step)
   );
 
-  // Balanced monthly salary aligned with real Série A/B/CONMEBOL club payrolls (~65-88% of wageBudget)
+  // Balanced monthly salary aligned with real Série A/B/CONMEBOL club payrolls:
+  // Older / experienced players command HIGHER salaries than young players of equal OVR,
+  // even while their resale marketValue is lower.
   const t = Math.max(0, ovr - 60);
-  const baseSalary = 15_000 + Math.pow(t, 1.92) * 860;
-  const salaryAgeMult = age >= 34 ? 0.78 : age >= 32 ? 0.88 : age <= 20 ? 0.72 : 1.0;
+  const baseSalary = 15_000 + Math.pow(t, 1.92) * 820;
+  const salaryAgeMult =
+    age >= 34
+      ? 1.32
+      : age >= 31
+      ? 1.22
+      : age >= 28
+      ? 1.12
+      : age >= 24
+      ? 1.0
+      : age >= 21
+      ? 0.82
+      : 0.68;
   const salaryDivMult = division === 'B' ? 0.65 : division === 'LIB' ? 0.88 : 1.0;
   const salaryRepMult = Math.max(
     0.58,
@@ -391,35 +478,85 @@ export function calculateBalancedValuationAndWage(params: {
   return { marketValue, salary };
 }
 
+export function assignDefaultContractTerms(
+  player: Player,
+  currentYear: number = 2026
+): {
+  contractType: 'DEFINITIVO' | 'EMPRESTADO';
+  contractYearsRemaining: number;
+  contractEndYear: number;
+  loanDurationYears?: 1 | 2;
+} {
+  const contractType = player.contractType ?? 'DEFINITIVO';
+  if (contractType === 'EMPRESTADO') {
+    const loanDuration: 1 | 2 =
+      player.loanDurationYears ??
+      (player.contractYearsRemaining && player.contractYearsRemaining >= 2 ? 2 : 1);
+    const remaining = Math.max(
+      1,
+      Math.min(2, player.contractYearsRemaining ?? loanDuration)
+    );
+    return {
+      contractType: 'EMPRESTADO',
+      contractYearsRemaining: remaining,
+      contractEndYear: player.contractEndYear ?? currentYear + remaining - 1,
+      loanDurationYears: loanDuration,
+    };
+  }
+
+  if (
+    typeof player.contractYearsRemaining === 'number' &&
+    player.contractYearsRemaining >= 1
+  ) {
+    const rem = Math.min(5, Math.max(1, Math.round(player.contractYearsRemaining)));
+    return {
+      contractType: 'DEFINITIVO',
+      contractYearsRemaining: rem,
+      contractEndYear: player.contractEndYear ?? currentYear + rem - 1,
+    };
+  }
+
+  const h = hashStr(`${player.id}-${player.name}-contract`) % 10;
+  let years: number;
+  if (player.age >= 32) {
+    years = h < 5 ? 1 : h < 9 ? 2 : 3;
+  } else if (player.age <= 21) {
+    years = h < 2 ? 1 : h < 5 ? 2 : h < 8 ? 3 : 4;
+  } else {
+    years = h < 3 ? 1 : h < 6 ? 2 : h < 9 ? 3 : 4;
+  }
+
+  return {
+    contractType: 'DEFINITIVO',
+    contractYearsRemaining: years,
+    contractEndYear: currentYear + years - 1,
+  };
+}
+
 export function ensurePlayerDefaults(
   player: Player,
   clubReputation: number = 78,
-  division: 'A' | 'B' | 'LIB' = 'A'
+  division: 'A' | 'B' | 'LIB' = 'A',
+  currentYear: number = 2026
 ): Player {
   let attributes = player.attributes;
   let ovr = calculatePlayerOverall(attributes, player.position);
   const potentialStars =
     player.potentialStars ??
     assignPotentialStars(ovr, player.age, clubReputation, player.id);
+  const contractTerms = assignDefaultContractTerms(player, currentYear);
 
-  // Sanitize any young player or regen whose OVR is unrealistically high for their age/stars
+  // Sanitize any young player or regen whose OVR exceeds the realistic cap for their star tier
   const maxAllowedForAge = getMaxRealisticOvrForAgeAndPotential(
     player.age,
-    potentialStars
+    potentialStars,
+    player
   );
   if ((player.age <= 22 || player.isRegen) && ovr > maxAllowedForAge) {
-    const realisticTarget = player.isRegen
-      ? Math.min(
-          maxAllowedForAge,
-          61 +
-            Math.max(0, player.age - 15) * 2 +
-            (potentialStars === 5 ? 4 : potentialStars === 4 ? 2 : 0)
-        )
-      : maxAllowedForAge;
     attributes = calibrateAttributesToTargetOvr(
       attributes,
       player.position,
-      realisticTarget,
+      maxAllowedForAge,
       maxAllowedForAge
     );
     ovr = calculatePlayerOverall(attributes, player.position);
@@ -431,12 +568,14 @@ export function ensurePlayerDefaults(
       potentialStars,
       position: player.position,
     });
+    const dynRecalc = getDynamicPotentialProfile(potentialStars, Math.random, ovr, player.age);
     return {
       ...player,
+      ...contractTerms,
       attributes,
       potentialStars,
-      basePotentialOvr: player.basePotentialOvr ?? getDynamicPotentialProfile(potentialStars).basePotentialOvr,
-      dynamicCeilingOvr: player.dynamicCeilingOvr ?? getDynamicPotentialProfile(potentialStars).dynamicCeilingOvr,
+      basePotentialOvr: player.basePotentialOvr ?? dynRecalc.basePotentialOvr,
+      dynamicCeilingOvr: player.dynamicCeilingOvr ?? dynRecalc.dynamicCeilingOvr,
       marketValue: recalc.marketValue,
       salary: player.isRegen
         ? Math.max(15_000, Math.round((recalc.salary * 0.45) / 5_000) * 5_000)
@@ -444,7 +583,7 @@ export function ensurePlayerDefaults(
     };
   }
 
-  const dynProfile = getDynamicPotentialProfile(potentialStars);
+  const dynProfile = getDynamicPotentialProfile(potentialStars, Math.random, ovr, player.age);
   const basePotentialOvr = player.basePotentialOvr ?? dynProfile.basePotentialOvr;
   const dynamicCeilingOvr = player.dynamicCeilingOvr ?? dynProfile.dynamicCeilingOvr;
 
@@ -461,24 +600,31 @@ export function ensurePlayerDefaults(
       ? -1
       : 0;
 
+  const balancedValuation = calculateBalancedValuationAndWage({
+    ovr,
+    age: player.age,
+    clubReputation,
+    division,
+    potentialStars,
+    position: player.position,
+  }).marketValue;
+
+  // Upgrade any veteran player whose saved marketValue was severely undervalued by legacy age multipliers
+  const effectiveMarketValue =
+    player.marketValue <= 0 ||
+    (player.age >= 30 && player.marketValue < balancedValuation * 0.72)
+      ? balancedValuation
+      : player.marketValue;
+
   return {
     ...player,
+    ...contractTerms,
     attributes,
     potentialStars,
     basePotentialOvr,
     dynamicCeilingOvr,
     recentOvrDelta: initialOvrDelta,
-    marketValue:
-      player.marketValue > 0
-        ? player.marketValue
-        : calculateBalancedValuationAndWage({
-            ovr,
-            age: player.age,
-            clubReputation,
-            division,
-            potentialStars,
-            position: player.position,
-          }).marketValue,
+    marketValue: effectiveMarketValue,
   };
 }
 
@@ -538,7 +684,7 @@ export function calculateDynamicSponsorship(
   squadAvgOvr: number,
   seasonYear: number
 ): SponsorshipContract {
-  const titlesBonus = Math.min(12, (club.recentTitles?.length ?? 0) * 3.5);
+  const titlesBonus = Math.min(14, (club.recentTitles?.length ?? 0) * 3.5);
   const divBonus = club.division === 'A' ? 6 : 0;
   const compositeScore =
     club.reputation * 0.58 + squadAvgOvr * 0.42 + titlesBonus + divBonus;
@@ -550,16 +696,17 @@ export function calculateDynamicSponsorship(
   const sponsorIdx = (hashStr(club.id) + seasonYear) % tier.sponsors.length;
   const sponsorName = tier.sponsors[sponsorIdx];
 
-  // Annual contract scales smoothly from ~R$ 9M (small Série B) to ~R$ 95M (giant champion)
+  // Annual sponsorship + commercial package calibrated to 2025/2026 Brasileirão Série A & B realities:
+  // Série B: ~R$ 9M to R$ 24M/year · Série A: ~R$ 24M (newly promoted) to R$ 135M/year (elite champions)
   const baseAnnual =
     club.division === 'B'
-      ? 7_500_000 + Math.max(0, compositeScore - 58) * 650_000
-      : 18_000_000 + Math.max(0, compositeScore - 68) * 2_450_000;
+      ? 8_500_000 + Math.max(0, compositeScore - 58) * 750_000
+      : 22_000_000 + Math.max(0, compositeScore - 68) * 2_850_000;
 
-  const titleMultiplier = 1 + Math.min(0.32, (club.recentTitles?.length ?? 0) * 0.08);
+  const titleMultiplier = 1 + Math.min(0.35, (club.recentTitles?.length ?? 0) * 0.08);
   const annualValue = Math.min(
-    110_000_000,
-    Math.max(6_000_000, Math.round((baseAnnual * titleMultiplier) / 500_000) * 500_000)
+    135_000_000,
+    Math.max(7_000_000, Math.round((baseAnnual * titleMultiplier) / 500_000) * 500_000)
   );
   const monthlyInstallment = Math.round(annualValue / 12 / 50_000) * 50_000;
 
@@ -860,8 +1007,12 @@ export interface DynamicPerformanceGrowthResult {
 }
 
 /**
- * Aplica a mecânica de Potencial Dinâmico com multiplicador de crescimento baseado no desempenho (média de notas e estatísticas),
- * permitindo que o Overall do atleta rompa o teto de potencial de sua estrela caso seu rendimento seja extraordinário.
+ * Curva de evolução e regressão por faixa etária e desempenho em campo:
+ * - Até 25 anos (currentAge <= 25): Evolui muito bem (+1 a +4 OVR com bom desempenho),
+ *   mas pode evoluir pouco (0 a +1) ou até regredir (-1 OVR) mesmo jovem se for mal, tiver baixa minutagem ou sofrer oscilação.
+ * - De 26 até 30 anos (26 <= currentAge <= 30): Evolução média (+1 a +2 OVR em boa temporada, 0 regular, -1 se for mal).
+ * - De 31 até 35 anos (31 <= currentAge <= 35): Evolução baixa (raramente sobe +1 OVR apenas em temporada excepcional; senão mantém 0 ou cai -1/-2 OVR).
+ * - Acima de 35 anos (currentAge > 35): Quase não evolui, mais regride (-1 a -3 OVR, com queda acentuada nos atributos físicos).
  */
 export function calculateDynamicPerformanceGrowth(
   params: DynamicPerformanceGrowthParams
@@ -954,99 +1105,216 @@ export function calculateDynamicPerformanceGrowth(
   let developmentStatus: DynamicPerformanceGrowthResult['developmentStatus'] = 'EVOLUCAO_NORMAL';
   let reasonNote = isMidSeason ? 'Primeiro turno regular' : 'Temporada regular';
 
-  if (isExceptional) {
-    // ⚡ SUPEROU EXPECTATIVAS: O Overall excede o teto de potencial de sua estrela!
-    canExceedCeiling = true;
-    developmentStatus = 'SUPEROU_EXPECTATIVAS';
+  const gaText =
+    goals > 0 || assists > 0
+      ? ` (${goals > 0 ? `${goals}g` : ''}${goals > 0 && assists > 0 ? ', ' : ''}${assists > 0 ? `${assists}a` : ''})`
+      : '';
 
-    // Bônus adicional acima do teto conforme a magnitude do multiplicador
-    const superExcellence =
-      avgRating >= 7.35 || relativePerf >= 0.80 || goalsAndAssists >= (isMidSeason ? 10 : 16);
-    bonusOvrBeyondCeiling = superExcellence ? (isMidSeason ? 2 : 3) : (isMidSeason ? 1 : 2);
-
-    effectiveCeiling = Math.min(
-      99,
-      Math.max(oldOvr + (isMidSeason ? 1 : 2), standardAgeCeiling + bonusOvrBeyondCeiling)
-    );
-
-    const baseDelta = isMidSeason ? 1.0 : 2.0;
-    desiredDelta = Math.min(
-      isMidSeason ? 2 : 4,
-      Math.max(isMidSeason ? 1 : 2, Math.round(baseDelta * Math.max(1.1, growthMultiplier)))
-    );
-
-    if (stars < 5) {
-      promotedStars = Math.min(5, stars + (stars <= 3 ? 1 : 0.5)) as PotentialStars;
-      starsPromoted = promotedStars > stars;
-    }
-
-    const gaText =
-      goals > 0 || assists > 0
-        ? ` (${goals > 0 ? `${goals}g` : ''}${goals > 0 && assists > 0 ? ', ' : ''}${assists > 0 ? `${assists}a` : ''})`
-        : '';
-    reasonNote = `⚡ Superou expectativas! Multiplicador de ${growthMultiplier.toFixed(2)}x (nota ${avgRating.toFixed(2)}${gaText}) rompeu o teto de potencial de ${stars}★ (+${desiredDelta} OVR)!`;
-  } else if (hasPoorPerformance) {
-    growthMultiplier = Math.min(-0.5, growthMultiplier);
-    desiredDelta = -1;
-    developmentStatus = 'DECLINIO_TECNICO';
-    if (stars >= 3.5 && matches >= (isMidSeason ? 8 : 14) && avgRating < 6.50) {
-      promotedStars = Math.max(1, stars - 0.5) as PotentialStars;
-      starsPromoted = false;
-    }
-    reasonNote = `Baixo rendimento em campo (${matches}j, nota ${avgRating.toFixed(2)}, mult. ${growthMultiplier.toFixed(2)}x) gerou declínio técnico (-1 OVR).`;
-  } else if (hasLowMinutes) {
-    growthMultiplier = 0;
-    desiredDelta = 0;
-    developmentStatus = 'ESTAGNADO';
-    reasonNote = `Minutagem insuficiente em campo (${matches}j, mult. 0.0x) manteve o potencial inativo (+0 OVR).`;
-  } else if (currentAge <= 22) {
-    // Jovem regular
-    if (oldOvr >= standardAgeCeiling) {
-      desiredDelta = 0;
-      developmentStatus = 'ESTAGNADO';
-      reasonNote = 'Rendimento regular atingiu o limite padrão da categoria';
-    } else {
-      const scaledStep = Math.max(0, Math.round(1.0 * growthMultiplier));
-      desiredDelta = Math.min(
-        scaledStep,
-        Math.max(0, standardAgeCeiling - oldOvr)
+  // =========================================================================
+  // FAIXA 1: ATÉ 25 ANOS (currentAge <= 25)
+  // Evolui muito bem, mas pode evoluir pouco ou até regredir mesmo com pouca idade
+  // =========================================================================
+  if (currentAge <= 25) {
+    if (isExceptional) {
+      canExceedCeiling = true;
+      developmentStatus = 'SUPEROU_EXPECTATIVAS';
+      const superExcellence =
+        avgRating >= 7.35 || relativePerf >= 0.80 || goalsAndAssists >= (isMidSeason ? 10 : 16);
+      bonusOvrBeyondCeiling = superExcellence ? (isMidSeason ? 2 : 3) : (isMidSeason ? 1 : 2);
+      effectiveCeiling = Math.min(
+        99,
+        Math.max(oldOvr + (isMidSeason ? 1 : 2), standardAgeCeiling + bonusOvrBeyondCeiling)
       );
-      if (desiredDelta === 0 && oldOvr < standardAgeCeiling && growthMultiplier >= 0.8 && rng() < 0.6) {
-        desiredDelta = 1;
+      const baseDelta = isMidSeason ? 1.15 : 2.15;
+      desiredDelta = Math.min(
+        isMidSeason ? 2 : 4,
+        Math.max(isMidSeason ? 1 : 2, Math.round(baseDelta * Math.max(1.1, growthMultiplier)))
+      );
+      if (stars < 5) {
+        promotedStars = Math.min(5, stars + (stars <= 3 ? 1 : 0.5)) as PotentialStars;
+        starsPromoted = promotedStars > stars;
       }
-      developmentStatus = desiredDelta > 0 ? 'EVOLUCAO_NORMAL' : 'ESTAGNADO';
-      reasonNote = `Evolução regular com base no desempenho (${matches}j, nota ${avgRating.toFixed(2)}, mult. ${growthMultiplier.toFixed(2)}x)`;
-    }
-  } else if (currentAge <= 28) {
-    // Auge regular
-    if (growthMultiplier >= 1.5 && oldOvr < standardAgeCeiling) {
-      desiredDelta = 1;
-      reasonNote = `Fase inspirada no auge (${matches}j, nota ${avgRating.toFixed(2)}, mult. ${growthMultiplier.toFixed(2)}x)`;
-    } else {
-      desiredDelta = 0;
-      reasonNote = `Desempenho mantido no auge da carreira (mult. ${growthMultiplier.toFixed(2)}x)`;
-    }
-    developmentStatus = 'EVOLUCAO_NORMAL';
-  } else if (currentAge <= 32) {
-    // 29-32
-    if (matches >= (isMidSeason ? 9 : 18) && relativePerf >= 0.20 && growthMultiplier >= 1.2) {
-      desiredDelta = 0;
-      developmentStatus = 'EVOLUCAO_NORMAL';
-      reasonNote = `Experiência e boa média (${avgRating.toFixed(2)}) mantiveram o nível`;
-    } else {
+      reasonNote = `⚡ Superou expectativas (Até 25a)! Multiplicador de ${growthMultiplier.toFixed(2)}x (nota ${avgRating.toFixed(2)}${gaText}) rompeu o teto de ${stars}★ (+${desiredDelta} OVR)!`;
+    } else if (hasPoorPerformance) {
+      growthMultiplier = Math.min(-0.5, growthMultiplier);
       desiredDelta = -1;
+      developmentStatus = 'DECLINIO_TECNICO';
+      if (stars >= 3.5 && matches >= (isMidSeason ? 8 : 14) && avgRating < 6.50) {
+        promotedStars = Math.max(1, stars - 0.5) as PotentialStars;
+      }
+      reasonNote = `Mesmo jovem (${currentAge}a), o baixo rendimento em campo (${matches}j, nota ${avgRating.toFixed(2)}) gerou regressão técnica (-1 OVR).`;
+    } else if (hasLowMinutes) {
+      growthMultiplier = 0;
+      // Jovem sem jogar quase nada pode estagnar (+0) ou até regredir (-1) por falta de ritmo/oscilação
+      if (avgRating < 6.68 && rng() < 0.25) {
+        desiredDelta = -1;
+        developmentStatus = 'DECLINIO_TECNICO';
+        reasonNote = `Falta de ritmo de jogo (${matches}j) e oscilação na faixa jovem causaram leve regressão (-1 OVR).`;
+      } else {
+        desiredDelta = 0;
+        developmentStatus = 'ESTAGNADO';
+        reasonNote = `Minutagem insuficiente (${matches}j) impediu evolução nesta temporada (+0 OVR).`;
+      }
+    } else {
+      // Evolução regular muito boa até os 25 anos (+1 a +3 OVR), com chance de oscilação/pouca evolução
+      if (oldOvr >= standardAgeCeiling) {
+        desiredDelta = 0;
+        developmentStatus = 'ESTAGNADO';
+        reasonNote = 'Rendimento regular atingiu o teto padrão atual da categoria.';
+      } else if (avgRating < 6.74 && rng() < 0.18) {
+        // Oscilação natural mesmo jovem: evolui zero ou até regride -1 se temporada foi irregular
+        desiredDelta = rng() < 0.35 ? -1 : 0;
+        developmentStatus = desiredDelta < 0 ? 'DECLINIO_TECNICO' : 'ESTAGNADO';
+        reasonNote =
+          desiredDelta < 0
+            ? `Temporada irregular (${avgRating.toFixed(2)}) provocou oscilação negativa mesmo aos ${currentAge} anos (-1 OVR).`
+            : `Oscilação natural aos ${currentAge} anos resultou em pouca evolução neste ciclo (+0 OVR).`;
+      } else {
+        const ageBoost = currentAge <= 21 ? 1.25 : 1.1;
+        const rawStep = Math.round(ageBoost * growthMultiplier);
+        const maxRegularStep = isMidSeason ? 2 : 3;
+        desiredDelta = Math.min(
+          maxRegularStep,
+          Math.max(0, Math.min(rawStep, standardAgeCeiling - oldOvr))
+        );
+        if (desiredDelta === 0 && oldOvr < standardAgeCeiling && growthMultiplier >= 0.8 && rng() < 0.65) {
+          desiredDelta = 1;
+        }
+        developmentStatus = desiredDelta > 0 ? 'EVOLUCAO_NORMAL' : 'ESTAGNADO';
+        reasonNote = `Forte evolução na faixa até 25 anos (${matches}j, nota ${avgRating.toFixed(2)}, mult. ${growthMultiplier.toFixed(2)}x).`;
+      }
+    }
+  }
+  // =========================================================================
+  // FAIXA 2: DE 26 ATÉ 30 ANOS (26 <= currentAge <= 30) — EVOLUÇÃO MÉDIA
+  // =========================================================================
+  else if (currentAge <= 30) {
+    if (isExceptional) {
+      canExceedCeiling = true;
+      developmentStatus = 'SUPEROU_EXPECTATIVAS';
+      bonusOvrBeyondCeiling = isMidSeason ? 1 : 2;
+      effectiveCeiling = Math.min(
+        99,
+        Math.max(oldOvr + 1, standardAgeCeiling + bonusOvrBeyondCeiling)
+      );
+      desiredDelta = isMidSeason
+        ? 1
+        : growthMultiplier >= 1.65 && avgRating >= 7.3
+        ? 2
+        : 1;
+      if (stars < 5 && avgRating >= 7.3) {
+        promotedStars = Math.min(5, stars + 0.5) as PotentialStars;
+        starsPromoted = promotedStars > stars;
+      }
+      reasonNote = `⚡ Grande fase no auge (${currentAge}a)! Rendimento de ${avgRating.toFixed(2)}${gaText} rendeu evolução média-alta (+${desiredDelta} OVR).`;
+    } else if (hasPoorPerformance) {
+      growthMultiplier = Math.min(-0.5, growthMultiplier);
+      desiredDelta = -1;
+      developmentStatus = 'DECLINIO_TECNICO';
+      reasonNote = `Baixo rendimento na faixa de 26–30 anos (${matches}j, nota ${avgRating.toFixed(2)}) gerou queda técnica (-1 OVR).`;
+    } else if (hasLowMinutes) {
+      growthMultiplier = 0;
+      if (rng() < 0.3) {
+        desiredDelta = -1;
+        developmentStatus = 'DECLINIO_TECNICO';
+        reasonNote = `Pouca minutagem (${matches}j) aos ${currentAge} anos causou perda de ritmo e queda (-1 OVR).`;
+      } else {
+        desiredDelta = 0;
+        developmentStatus = 'ESTAGNADO';
+        reasonNote = `Minutagem reduzida (${matches}j) manteve os atributos estáveis (+0 OVR).`;
+      }
+    } else {
+      // Evolução média (26–30 anos): +1 OVR (ou +2 se excelente multiplicador) quando abaixo do teto
+      if (oldOvr < standardAgeCeiling && growthMultiplier >= 1.45 && !isMidSeason) {
+        desiredDelta = Math.min(2, standardAgeCeiling - oldOvr);
+        developmentStatus = 'EVOLUCAO_NORMAL';
+        reasonNote = `Evolução média consistente no auge (${currentAge}a, nota ${avgRating.toFixed(2)}, +${desiredDelta} OVR).`;
+      } else if (oldOvr < standardAgeCeiling && growthMultiplier >= 0.95 && rng() < 0.65) {
+        desiredDelta = 1;
+        developmentStatus = 'EVOLUCAO_NORMAL';
+        reasonNote = `Evolução média na faixa 26–30 anos (${matches}j, nota ${avgRating.toFixed(2)}, +1 OVR).`;
+      } else {
+        desiredDelta = 0;
+        developmentStatus = 'EVOLUCAO_NORMAL';
+        reasonNote = `Nível consolidado no auge da carreira (${currentAge}a, mult. ${growthMultiplier.toFixed(2)}x).`;
+      }
+    }
+  }
+  // =========================================================================
+  // FAIXA 3: DE 31 ATÉ 35 ANOS (31 <= currentAge <= 35) — EVOLUÇÃO BAIXA
+  // Pouca chance de subir atributos (+1 apenas em grande temporada), maior chance de manter ou cair
+  // =========================================================================
+  else if (currentAge <= 35) {
+    if (isExceptional) {
+      // Mesmo em temporada excepcional, entre 31 e 35 anos a evolução é baixa (máx +1 OVR)
+      const canGainOne = currentAge <= 33 ? rng() < 0.75 : rng() < 0.45;
+      if (canGainOne) {
+        canExceedCeiling = true;
+        bonusOvrBeyondCeiling = 1;
+        effectiveCeiling = Math.min(99, Math.max(oldOvr + 1, standardAgeCeiling + 1));
+        desiredDelta = 1;
+        developmentStatus = 'SUPEROU_EXPECTATIVAS';
+        reasonNote = `⚡ Temporada de alto nível aos ${currentAge} anos (nota ${avgRating.toFixed(2)}${gaText}) garantiu evolução pontual (+1 OVR).`;
+      } else {
+        desiredDelta = 0;
+        developmentStatus = 'EVOLUCAO_NORMAL';
+        reasonNote = `Grande temporada aos ${currentAge} anos (nota ${avgRating.toFixed(2)}) blindou o atleta contra declínio físico (+0 OVR).`;
+      }
+    } else if (hasPoorPerformance || hasLowMinutes) {
+      growthMultiplier = Math.min(-0.5, growthMultiplier);
+      desiredDelta = currentAge >= 34 && hasPoorPerformance ? -2 : -1;
       isPhysicalDecline = true;
       developmentStatus = 'REGRESSAO_FISICA';
-      reasonNote = 'Início de declínio físico natural pela idade';
+      reasonNote = `Faixa de 31–35 anos (${currentAge}a) com ${hasLowMinutes ? `baixa minutagem (${matches}j)` : `rendimento abaixo (${avgRating.toFixed(2)})`} reduziu atributos físicos (${desiredDelta} OVR).`;
+    } else {
+      // Temporada normal entre 31 e 35 anos: evolução baixa (rara chance de +1 aos 31-32, senão 0 ou -1)
+      if (
+        currentAge <= 32 &&
+        growthMultiplier >= 1.35 &&
+        oldOvr < standardAgeCeiling &&
+        rng() < 0.25
+      ) {
+        desiredDelta = 1;
+        developmentStatus = 'EVOLUCAO_NORMAL';
+        reasonNote = `Evolução baixa pontual aos ${currentAge} anos graças à regularidade (${avgRating.toFixed(2)}, +1 OVR).`;
+      } else if (
+        growthMultiplier >= 1.08 &&
+        matches >= (isMidSeason ? 8 : 16) &&
+        (currentAge <= 33 || rng() < 0.55)
+      ) {
+        desiredDelta = 0;
+        developmentStatus = 'EVOLUCAO_NORMAL';
+        reasonNote = `Experiência e boa média (${avgRating.toFixed(2)}) mantiveram os atributos estáveis aos ${currentAge} anos (+0 OVR).`;
+      } else {
+        desiredDelta = -1;
+        isPhysicalDecline = true;
+        developmentStatus = 'REGRESSAO_FISICA';
+        reasonNote = `Desgaste físico gradual na faixa de 31–35 anos (${currentAge}a, -1 OVR).`;
+      }
     }
-  } else {
-    // 33+
-    const ageSeverity = currentAge >= 37 ? 3 : currentAge >= 35 ? 2 : 1;
-    const perfMitigation = matches >= 20 && growthMultiplier >= 1.35 ? 0 : 1;
-    desiredDelta = -Math.min(4, ageSeverity + perfMitigation);
-    isPhysicalDecline = true;
-    developmentStatus = 'REGRESSAO_FISICA';
-    reasonNote = 'Declínio físico natural pela idade avançada';
+  }
+  // =========================================================================
+  // FAIXA 4: A PARTIR DE 36+ ANOS (currentAge > 35)
+  // Quase não evolui, mais regride (-1 a -3 OVR)
+  // =========================================================================
+  else {
+    if (isExceptional && avgRating >= 7.35 && matches >= (isMidSeason ? 10 : 20)) {
+      // Quase não evolui: mesmo em temporada lendária segura 0 OVR (ou -1 se 38+)
+      desiredDelta = currentAge >= 38 && rng() < 0.5 ? -1 : 0;
+      isPhysicalDecline = desiredDelta < 0;
+      developmentStatus = desiredDelta < 0 ? 'REGRESSAO_FISICA' : 'EVOLUCAO_NORMAL';
+      reasonNote =
+        desiredDelta === 0
+          ? `Temporada extraordinária aos ${currentAge} anos (${avgRating.toFixed(2)}${gaText}) segurou a regressão física (+0 OVR).`
+          : `Mesmo atuando em alto nível (${avgRating.toFixed(2)}), o peso dos ${currentAge} anos causou leve regressão física (-1 OVR).`;
+    } else {
+      const ageSeverity = currentAge >= 38 ? 2 : 1;
+      const usagePenalty = hasLowMinutes || hasPoorPerformance ? 1 : growthMultiplier >= 1.25 ? 0 : 1;
+      desiredDelta = -Math.min(3, Math.max(1, ageSeverity + usagePenalty));
+      isPhysicalDecline = true;
+      developmentStatus = 'REGRESSAO_FISICA';
+      reasonNote = `Acima dos 35 anos (${currentAge}a), o atleta quase não evolui e sofre regressão física natural (${desiredDelta} OVR).`;
+    }
   }
 
   return {
@@ -1066,9 +1334,331 @@ export function calculateDynamicPerformanceGrowth(
   };
 }
 
+export interface PlayerRetirementEvaluation {
+  ageWindowStart: number;
+  annualProbability: number; // 0..0.98
+  annualProbabilityPct: number; // 0..98
+  isConsideringRetirement: boolean;
+  isHighRisk: boolean;
+  statusLabel: string;
+  factorNote: string;
+}
+
 /**
- * Executes end-of-season aging (+1 year) and attribute/OVR evolution & regression for ALL players
- * across the user squad, AI club squads, loaned-out players, and free agents.
+ * Evaluates annual retirement probability:
+ * - Outfield players: start considering retirement at age 35..40+, probability increasing every year.
+ * - Goalkeepers ('GOL'): start considering retirement around age 40..50+, probability increasing every year.
+ * - Frequent match usage (`seasonStats.matches` / `isStarter`) and high OVR noticeably reduce retirement odds.
+ */
+export function evaluatePlayerRetirementProbability(
+  player: Player,
+  ovrOverride?: number,
+  ageOverride?: number
+): PlayerRetirementEvaluation {
+  const age = ageOverride ?? player.age;
+  const ovr =
+    ovrOverride ?? calculatePlayerOverall(player.attributes, player.position);
+  const isGk = player.position === 'GOL';
+  const ageWindowStart = isGk ? 40 : 35;
+
+  if (age < ageWindowStart) {
+    return {
+      ageWindowStart,
+      annualProbability: 0,
+      annualProbabilityPct: 0,
+      isConsideringRetirement: false,
+      isHighRisk: false,
+      statusLabel: 'Em plena atividade',
+      factorNote: isGk
+        ? 'Goleiro abaixo da faixa de aposentadoria (40+ anos).'
+        : 'Atleta abaixo da faixa de aposentadoria (35+ anos).',
+    };
+  }
+
+  let baseProb = 0;
+  if (!isGk) {
+    const outfieldCurve: Record<number, number> = {
+      35: 0.1,
+      36: 0.18,
+      37: 0.28,
+      38: 0.4,
+      39: 0.54,
+      40: 0.7,
+      41: 0.84,
+    };
+    baseProb =
+      outfieldCurve[age] ?? Math.min(0.98, 0.9 + Math.max(0, age - 42) * 0.04);
+  } else {
+    const gkCurve: Record<number, number> = {
+      40: 0.07,
+      41: 0.12,
+      42: 0.18,
+      43: 0.25,
+      44: 0.33,
+      45: 0.42,
+      46: 0.52,
+      47: 0.63,
+      48: 0.74,
+      49: 0.85,
+    };
+    baseProb =
+      gkCurve[age] ?? Math.min(0.98, 0.93 + Math.max(0, age - 50) * 0.025);
+  }
+
+  const matches = player.seasonStats?.matches ?? 0;
+  let usageMult = 1.0;
+  if (matches >= 28) usageMult = 0.48;
+  else if (matches >= 18) usageMult = 0.62;
+  else if (matches >= 10) usageMult = 0.78;
+  else if (player.isStarter) usageMult = 0.76;
+  else if (matches >= 4) usageMult = 1.0;
+  else usageMult = 1.28;
+
+  let ovrMult = 1.0;
+  if (ovr >= 82) ovrMult = 0.5;
+  else if (ovr >= 77) ovrMult = 0.66;
+  else if (ovr >= 73) ovrMult = 0.82;
+  else if (ovr >= 69) ovrMult = 1.0;
+  else ovrMult = 1.22;
+
+  const annualProbability = Number(
+    Math.max(0.02, Math.min(0.98, baseProb * usageMult * ovrMult)).toFixed(3)
+  );
+  const annualProbabilityPct = Math.round(annualProbability * 100);
+  const isHighRisk = annualProbability >= 0.45;
+
+  const statusLabel =
+    annualProbability >= 0.55
+      ? 'Aposentadoria muito provável'
+      : annualProbability >= 0.28
+      ? 'Pensando em se aposentar'
+      : 'Avaliando futuro (em atividade)';
+
+  const protections: string[] = [];
+  if (usageMult < 0.95) {
+    protections.push(
+      matches >= 10
+        ? `em uso (${matches} jogos)`
+        : 'titular em atividade'
+    );
+  }
+  if (ovrMult < 0.95) {
+    protections.push(`bom OVR (${ovr})`);
+  }
+
+  const factorNote =
+    protections.length > 0
+      ? `${age} anos (${isGk ? 'Goleiro 40+' : 'Linha 35+'}) · ${protections.join(' e ')} reduzem chance anual para ${annualProbabilityPct}%.`
+      : `${age} anos (${isGk ? 'Goleiro 40+' : 'Linha 35+'}) · baixa minutagem (${matches}j) ou queda técnica eleva chance anual para ${annualProbabilityPct}%.`;
+
+  return {
+    ageWindowStart,
+    annualProbability,
+    annualProbabilityPct,
+    isConsideringRetirement: true,
+    isHighRisk,
+    statusLabel,
+    factorNote,
+  };
+}
+
+const EMERGENCY_FIRST_NAMES = [
+  'Lucas',
+  'Gabriel',
+  'Matheus',
+  'Rafael',
+  'Bruno',
+  'Cauã',
+  'João',
+  'Pedro',
+  'Enzo',
+  'Henrique',
+];
+const EMERGENCY_LAST_NAMES = [
+  'Silva',
+  'Santos',
+  'Oliveira',
+  'Pereira',
+  'Costa',
+  'Almeida',
+  'Ferreira',
+  'Ribeiro',
+  'Cardoso',
+  'Nunes',
+];
+
+function createEmergencyAcademyBackup(
+  clubId: string,
+  position: NaturalPosition,
+  existingNumbers: Set<number>,
+  seedOffset: number
+): Player {
+  const sector: Player['sector'] =
+    position === 'GOL'
+      ? 'GOL'
+      : position === 'ZAG' || position === 'LD' || position === 'LE'
+      ? 'DEF'
+      : position === 'VOL' || position === 'MC' || position === 'MEI'
+      ? 'MEI'
+      : 'ATA';
+
+  const baseAttr = position === 'GOL' ? 11 : 10;
+  const attrs: PlayerAttributes = {
+    passe: baseAttr,
+    finalizacao: position === 'ATA' ? 12 : baseAttr - 1,
+    drible: baseAttr,
+    desarme: sector === 'DEF' ? 12 : baseAttr - 1,
+    primeiroToque: baseAttr,
+    cruzamento: baseAttr - 1,
+    decisoes: baseAttr,
+    visaoDeJogo: baseAttr,
+    compostura: baseAttr,
+    semBola: baseAttr,
+    posicionamento: position === 'GOL' || sector === 'DEF' ? 12 : baseAttr,
+    indiceDeTrabalho: 12,
+    velocidade: position === 'GOL' ? 9 : 12,
+    aceleracao: position === 'GOL' ? 9 : 12,
+    resistencia: 12,
+    forca: 11,
+    impulsao: position === 'GOL' ? 12 : 11,
+    agilidade: position === 'GOL' ? 12 : 11,
+  };
+
+  let jersey = 31;
+  while (existingNumbers.has(jersey) && jersey < 99) {
+    jersey++;
+  }
+  existingNumbers.add(jersey);
+
+  const first =
+    EMERGENCY_FIRST_NAMES[(seedOffset + hashStr(clubId)) % EMERGENCY_FIRST_NAMES.length];
+  const last =
+    EMERGENCY_LAST_NAMES[(seedOffset * 3 + hashStr(position)) % EMERGENCY_LAST_NAMES.length];
+
+  const defaultRole =
+    position === 'GOL'
+      ? 'gk_classic'
+      : position === 'ZAG'
+      ? 'cb_stopper'
+      : position === 'LD' || position === 'LE'
+      ? 'fb_support'
+      : position === 'VOL'
+      ? 'dm_anchor'
+      : position === 'MC' || position === 'MEI'
+      ? 'cm_box'
+      : 'st_poacher';
+
+  return {
+    id: `${clubId}-acad-${Date.now()}-${seedOffset}`,
+    number: jersey,
+    name: `${first} ${last}`,
+    age: 19,
+    nationality: 'Brasil',
+    position,
+    sector,
+    condition: 96,
+    morale: 'Bom',
+    marketValue: 1_200_000,
+    salary: 25_000,
+    potentialStars: 2.5,
+    basePotentialOvr: 73,
+    dynamicCeilingOvr: 76,
+    attributes: attrs,
+    isStarter: false,
+    slotIndex: null,
+    assignedRole: defaultRole,
+    assignedDuty: sector === 'DEF' || sector === 'GOL' ? 'Defender' : 'Apoiar',
+    injured: false,
+    contractType: 'DEFINITIVO',
+    contractYearsRemaining: 3,
+    seasonStats: {
+      matches: 0,
+      goals: 0,
+      assists: 0,
+      yellowCards: 0,
+      avgRating: 6.75,
+    },
+    isRegen: true,
+    recentOvrDelta: 0,
+  };
+}
+
+function healClubRosterAfterRetirements(
+  survivingSquad: Player[],
+  clubId: string
+): Player[] {
+  const squad = [...survivingSquad];
+  const usedNumbers = new Set(squad.map((p) => p.number));
+  let seedOffset = 1;
+
+  // Guarantee at least 1 goalkeeper
+  if (!squad.some((p) => p.position === 'GOL')) {
+    squad.push(
+      createEmergencyAcademyBackup(clubId, 'GOL', usedNumbers, seedOffset++)
+    );
+  }
+
+  // Guarantee minimum 16 players for match & market safety
+  const fillerPositions: NaturalPosition[] = ['ZAG', 'MC', 'ATA', 'LD', 'MEI'];
+  while (squad.length < 16) {
+    const pos = fillerPositions[(seedOffset - 1) % fillerPositions.length];
+    squad.push(
+      createEmergencyAcademyBackup(clubId, pos, usedNumbers, seedOffset++)
+    );
+  }
+
+  // Guarantee valid 11 starters (slots 0..10) if any starter retired
+  const starterMap = new Map<number, Player>();
+  const unassigned: Player[] = [];
+
+  for (const p of squad) {
+    if (
+      p.isStarter &&
+      typeof p.slotIndex === 'number' &&
+      p.slotIndex >= 0 &&
+      p.slotIndex <= 10 &&
+      !starterMap.has(p.slotIndex)
+    ) {
+      starterMap.set(p.slotIndex, p);
+    } else {
+      unassigned.push({ ...p, isStarter: false, slotIndex: null });
+    }
+  }
+
+  if (starterMap.size < 11) {
+    for (let sIdx = 0; sIdx <= 10; sIdx++) {
+      if (starterMap.has(sIdx)) continue;
+      // Pick best remaining candidate (slot 0 prefers GOL, otherwise outfield)
+      unassigned.sort((a, b) => {
+        const aOvr = calculatePlayerOverall(a.attributes, a.position);
+        const bOvr = calculatePlayerOverall(b.attributes, b.position);
+        const aBias = sIdx === 0 ? (a.position === 'GOL' ? 40 : -40) : a.position === 'GOL' ? -40 : 0;
+        const bBias = sIdx === 0 ? (b.position === 'GOL' ? 40 : -40) : b.position === 'GOL' ? -40 : 0;
+        return bOvr + bBias - (aOvr + aBias);
+      });
+      const promoted = unassigned.shift();
+      if (promoted) {
+        starterMap.set(sIdx, {
+          ...promoted,
+          isStarter: true,
+          slotIndex: sIdx,
+        });
+      }
+    }
+  }
+
+  const starterIds = new Set(Array.from(starterMap.values()).map((p) => p.id));
+  return [
+    ...Array.from(starterMap.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([, p]) => p),
+    ...unassigned.filter((p) => !starterIds.has(p.id)),
+  ];
+}
+
+/**
+ * Executes end-of-season aging (+1 year), attribute/OVR evolution & regression,
+ * and age/usage/OVR-weighted player retirements across ALL squads and free agency.
  */
 export function processSeasonEvolutionAndAging(params: {
   clubs: Club[];
@@ -1085,6 +1675,8 @@ export function processSeasonEvolutionAndAging(params: {
   updatedFreeAgents: Player[];
   updatedLoanedOut: Player[];
   userEvolutionReport: PlayerEvolutionReportItem[];
+  retiredUserPlayers: RetiredPlayerReportItem[];
+  retiredAiCount: number;
 } {
   const {
     clubs,
@@ -1123,7 +1715,11 @@ export function processSeasonEvolutionAndAging(params: {
     player: Player,
     clubRep: number,
     division: 'A' | 'B' | 'LIB'
-  ): { evolved: Player; report: PlayerEvolutionReportItem } => {
+  ): {
+    evolved: Player;
+    report: PlayerEvolutionReportItem;
+    retiredItem: RetiredPlayerReportItem | null;
+  } => {
     const oldOvr = calculatePlayerOverall(player.attributes, player.position);
     const oldAge = player.age;
     const newAge = oldAge + 1;
@@ -1169,6 +1765,28 @@ export function processSeasonEvolutionAndAging(params: {
       position: player.position,
     });
 
+    // Check retirement decision using original pre-reset seasonStats & active status
+    const retirementEval = evaluatePlayerRetirementProbability(
+      player,
+      newOvr,
+      newAge
+    );
+    let retiredItem: RetiredPlayerReportItem | null = null;
+    if (
+      retirementEval.isConsideringRetirement &&
+      rng() < retirementEval.annualProbability
+    ) {
+      retiredItem = {
+        playerId: player.id,
+        playerName: player.name,
+        position: player.position,
+        ageAtRetirement: newAge,
+        lastOvr: newOvr,
+        matchesPlayed: player.seasonStats.matches,
+        reasonNote: retirementEval.factorNote,
+      };
+    }
+
     const evolved: Player = {
       ...player,
       age: newAge,
@@ -1196,6 +1814,7 @@ export function processSeasonEvolutionAndAging(params: {
 
     return {
       evolved,
+      retiredItem,
       report: {
         playerId: player.id,
         playerName: player.name,
@@ -1221,50 +1840,87 @@ export function processSeasonEvolutionAndAging(params: {
   const userEvoPairs = userSquad.map((p) =>
     evolveSinglePlayer(p, userClub.reputation, userClub.division)
   );
-  const updatedUserSquad = userEvoPairs.map((pair) => pair.evolved);
-  const userEvolutionReport = userEvoPairs.map((pair) => pair.report);
+  const retiredUserPlayers: RetiredPlayerReportItem[] = [];
+  const survivingUserRaw: Player[] = [];
+  const userEvolutionReport: PlayerEvolutionReportItem[] = [];
 
+  for (const pair of userEvoPairs) {
+    if (pair.retiredItem) {
+      retiredUserPlayers.push(pair.retiredItem);
+    } else {
+      survivingUserRaw.push(pair.evolved);
+      userEvolutionReport.push(pair.report);
+    }
+  }
+  const updatedUserSquad = healClubRosterAfterRetirements(
+    survivingUserRaw,
+    userClubId
+  );
+
+  let retiredAiCount = 0;
   const updatedAiSquads: Record<string, Player[]> = {};
   for (const [cid, list] of Object.entries(aiSquads)) {
     const c = clubMap.get(cid);
-    updatedAiSquads[cid] = list.map(
-      (p) =>
-        evolveSinglePlayer(
-          p,
-          c?.reputation ?? 74,
-          c?.division ?? 'A'
-        ).evolved
-    );
+    const survivors: Player[] = [];
+    for (const p of list) {
+      const res = evolveSinglePlayer(
+        p,
+        c?.reputation ?? 74,
+        c?.division ?? 'A'
+      );
+      if (res.retiredItem) {
+        retiredAiCount++;
+      } else {
+        survivors.push(res.evolved);
+      }
+    }
+    updatedAiSquads[cid] = healClubRosterAfterRetirements(survivors, cid);
   }
 
-  const updatedLoanedOut = loanedOutPlayers.map(
-    (p) =>
-      evolveSinglePlayer(p, userClub.reputation, userClub.division).evolved
-  );
+  const updatedLoanedOut: Player[] = [];
+  for (const p of loanedOutPlayers) {
+    const res = evolveSinglePlayer(p, userClub.reputation, userClub.division);
+    if (res.retiredItem) {
+      retiredUserPlayers.push(res.retiredItem);
+    } else {
+      updatedLoanedOut.push(res.evolved);
+    }
+  }
 
-  // Free agents: age +1, retire >= 41 by refreshing with younger available talents
-  const updatedFreeAgents = freeAgents.map((fa) => {
-    const res = evolveSinglePlayer(fa, 72, 'A').evolved;
-    if (res.age >= 41) {
-      const ovr = calculatePlayerOverall(res.attributes, res.position);
-      const stars: PotentialStars = 2;
+  // Free agents: age +1, retire veterans smoothly and replace with new younger free agents
+  const updatedFreeAgents = freeAgents.map((fa, idx) => {
+    const pair = evolveSinglePlayer(fa, 72, 'A');
+    if (pair.retiredItem) {
+      const ovr = calculatePlayerOverall(
+        pair.evolved.attributes,
+        pair.evolved.position
+      );
+      const stars: PotentialStars = 2.5;
+      const newAge = 23 + (idx % 4);
       const { marketValue, salary } = calculateBalancedValuationAndWage({
-        ovr,
-        age: 26,
+        ovr: Math.max(65, Math.min(75, ovr)),
+        age: newAge,
         clubReputation: 72,
         division: 'A',
         potentialStars: stars,
-        position: res.position,
+        position: pair.evolved.position,
       });
+      const first =
+        EMERGENCY_FIRST_NAMES[(idx + 2) % EMERGENCY_FIRST_NAMES.length];
+      const last =
+        EMERGENCY_LAST_NAMES[(idx * 5 + 1) % EMERGENCY_LAST_NAMES.length];
       return {
-        ...res,
-        age: 26,
+        ...pair.evolved,
+        id: `fa-regen-${Date.now()}-${idx}`,
+        name: `${first} ${last}`,
+        age: newAge,
         potentialStars: stars,
         marketValue,
         salary,
+        recentOvrDelta: 0,
       };
     }
-    return res;
+    return pair.evolved;
   });
 
   // Recalculate club sector ratings (Attack / Midfield / Defense) from evolved squads
@@ -1307,6 +1963,8 @@ export function processSeasonEvolutionAndAging(params: {
     updatedFreeAgents,
     updatedLoanedOut,
     userEvolutionReport,
+    retiredUserPlayers,
+    retiredAiCount,
   };
 }
 

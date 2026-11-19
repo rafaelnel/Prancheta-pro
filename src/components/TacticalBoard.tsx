@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye } from 'lucide-react';
+import { Eye, Sparkles } from 'lucide-react';
 import {
   ATTRIBUTE_LABELS,
   FORMATIONS,
@@ -29,6 +29,7 @@ import {
   getAttributeColorClass,
   getConditionColor,
 } from '../utils/formatters';
+import { PlayerJersey, PlayerOvrBadge } from './PlayerJersey';
 
 interface TacticalBoardProps {
   squad: Player[];
@@ -43,6 +44,7 @@ interface TacticalBoardProps {
   ) => void;
   onSwapPlayers: (playerAId: string, playerBId: string) => void;
   onInspectPlayer: (player: Player) => void;
+  onAutoPickBestXI?: () => void;
 }
 
 export const TacticalBoard: React.FC<TacticalBoardProps> = ({
@@ -54,6 +56,7 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
   onUpdateRoleDuty,
   onSwapPlayers,
   onInspectPlayer,
+  onAutoPickBestXI,
 }) => {
   const starters = [...squad]
     .filter((p) => p.isStarter)
@@ -63,6 +66,43 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
   const [selectedSlotIndex, setSelectedSlotIndex] = useState<number>(5);
   const [showMobileInstructions, setShowMobileInstructions] =
     useState<boolean>(false);
+  const [draggedPlayerId, setDraggedPlayerId] = useState<string | null>(null);
+  const [dragOverPlayerId, setDragOverPlayerId] = useState<string | null>(null);
+
+  const handlePlayerDragStart = (e: React.DragEvent, playerId: string) => {
+    setDraggedPlayerId(playerId);
+    e.dataTransfer.setData('text/plain', playerId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handlePlayerDragOver = (e: React.DragEvent, targetPlayerId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverPlayerId !== targetPlayerId) {
+      setDragOverPlayerId(targetPlayerId);
+    }
+  };
+
+  const handlePlayerDrop = (
+    e: React.DragEvent,
+    targetPlayerId: string,
+    targetSlotIndex?: number
+  ) => {
+    e.preventDefault();
+    const sourceId = draggedPlayerId || e.dataTransfer.getData('text/plain');
+    setDraggedPlayerId(null);
+    setDragOverPlayerId(null);
+    if (!sourceId || sourceId === targetPlayerId) return;
+    onSwapPlayers(sourceId, targetPlayerId);
+    if (typeof targetSlotIndex === 'number') {
+      setSelectedSlotIndex(targetSlotIndex);
+    }
+  };
+
+  const handlePlayerDragEnd = () => {
+    setDraggedPlayerId(null);
+    setDragOverPlayerId(null);
+  };
 
   const slots = FORMATIONS[formation];
   const selectedPlayer =
@@ -144,7 +184,7 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
           </h2>
         </div>
 
-        {/* Formation Pill Selector (4-3-3, 4-2-3-1, 4-4-2, 3-5-2) + Mobile Instructions Toggle */}
+        {/* Formation Pill Selector (4-3-3, 4-2-3-1, 4-4-2, 3-5-2) + Best XI + Mobile Instructions Toggle */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div
             className="flex items-center gap-1 bg-[#151821] p-1.5 rounded-full border border-white/[0.07]"
@@ -167,6 +207,17 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
               )
             )}
           </div>
+
+          {onAutoPickBestXI && (
+            <button
+              type="button"
+              onClick={onAutoPickBestXI}
+              className="px-4 py-2 rounded-full text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] active:scale-95 text-[#090a0f] transition-all flex items-center justify-center gap-1.5 whitespace-nowrap shadow-sm"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Melhor Escalação
+            </button>
+          )}
 
           <button
             type="button"
@@ -349,7 +400,7 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white">
-                Prancheta Tática 2D — Clique em uma Camisa no Campo
+                Prancheta Tática 2D — Arraste ou Clique nas Camisas
               </h3>
               <p className="text-xs text-zinc-400">
                 Direção de ataque: Esquerda → Direita · Linha Defensiva:{' '}
@@ -368,10 +419,19 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
             </div>
           </div>
 
+          {draggedPlayerId && (
+            <div className="flex items-center justify-between bg-[#b5ff00]/15 border border-[#b5ff00]/40 rounded-2xl px-3.5 py-2 text-xs">
+              <span className="text-[#b5ff00] font-bold">
+                Arrastando camisa: solte sobre qualquer titular no campo ou reserva no banco para trocar!
+              </span>
+            </div>
+          )}
+
           {/* Dark Obsidian 2D SVG Pitch with Curved Dotted Tactical Links & Jersey Icons */}
-          <div className="relative w-full aspect-[16/10] bg-[#101217] rounded-[24px] overflow-hidden border border-white/10 select-none shadow-inner">
+          <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] bg-[#101217] rounded-[24px] overflow-hidden border border-white/10 select-none shadow-inner">
             <svg
               viewBox="0 0 1000 625"
+              preserveAspectRatio="none"
               className="w-full h-full block"
               aria-label="Campo tático 2D interativo"
             >
@@ -522,77 +582,94 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
 
               const role = getRoleById(player.assignedRole);
               const fit = calculateRoleSuitability(player, role);
+              const playerOvr = calculatePlayerOverall(
+                player.attributes,
+                player.position
+              );
               const isSelected = selectedSlotIndex === slot.slotIndex;
+              const isDragged = draggedPlayerId === player.id;
+              const isDropTarget =
+                dragOverPlayerId === player.id && draggedPlayerId !== player.id;
               const lastName =
                 player.name.split(' ').slice(-1)[0] || player.name;
 
-              // Match Reference Screen 3: Lime shirts for Attack/Support or Selected; White shirts for Defensive roles
               const isLimeShirt =
                 isSelected ||
                 player.assignedDuty === 'Atacar' ||
                 player.assignedDuty === 'Apoiar';
 
-              const shirtFill = isLimeShirt ? '#b5ff00' : '#ffffff';
-              const collarFill = '#0b0c10';
-
               return (
                 <button
                   key={slot.slotIndex}
                   type="button"
+                  draggable
+                  onDragStart={(e) => handlePlayerDragStart(e, player.id)}
+                  onDragOver={(e) => handlePlayerDragOver(e, player.id)}
+                  onDragLeave={() => {
+                    if (dragOverPlayerId === player.id) {
+                      setDragOverPlayerId(null);
+                    }
+                  }}
+                  onDrop={(e) =>
+                    handlePlayerDrop(e, player.id, slot.slotIndex)
+                  }
+                  onDragEnd={handlePlayerDragEnd}
                   onClick={() => setSelectedSlotIndex(slot.slotIndex)}
-                  aria-label={`Selecionar ${player.name} (${role.name} - ${player.assignedDuty})`}
+                  aria-label={`Selecionar ${player.name}, ${player.position}, OVR ${playerOvr}, ${player.age} anos`}
+                  title={`#${player.number} ${player.name} · ${player.position} · OVR ${playerOvr} · ${player.age} anos · ${role.name} (${fit.score}%)`}
                   style={{
                     left: `${slot.x}%`,
                     top: `${slot.y}%`,
                   }}
-                  className={`absolute -translate-x-1/2 -translate-y-1/2 group flex flex-col items-center focus:outline-none transition-transform ${
-                    isSelected ? 'scale-110 z-20' : 'hover:scale-105 z-10'
-                  }`}
+                  className={`absolute -translate-x-1/2 -translate-y-1/2 group flex flex-col items-center focus:outline-none transition-transform cursor-grab active:cursor-grabbing ${
+                    isSelected || isDropTarget
+                      ? 'scale-110 z-20'
+                      : 'hover:scale-105 z-10'
+                  } ${isDragged ? 'opacity-45 scale-95' : ''}`}
                 >
-                  {/* Custom Football Jersey SVG Icon with Shirt Number */}
-                  <div
-                    className={`relative w-8 h-8 sm:w-10 sm:h-10 lg:w-11 lg:h-11 flex items-center justify-center rounded-xl transition-all ${
-                      isSelected
-                        ? 'ring-2 sm:ring-4 ring-[#b5ff00]/50 shadow-[0_0_20px_rgba(181,255,0,0.35)]'
-                        : 'drop-shadow-md'
-                    }`}
-                  >
-                    <svg
-                      viewBox="0 0 36 32"
-                      className="w-full h-full overflow-visible"
-                      aria-hidden="true"
-                    >
-                      <path
-                        d="M11 2 L25 2 L34 9 L29 15 L25 12 L25 30 L11 30 L11 12 L7 15 L2 9 Z"
-                        fill={shirtFill}
-                        stroke="#0b0c10"
-                        strokeWidth="1.8"
-                        strokeLinejoin="round"
-                      />
-                      <path
-                        d="M14.5 2 Q18 6.5 21.5 2"
-                        fill="none"
-                        stroke={collarFill}
-                        strokeWidth="2.2"
-                      />
-                    </svg>
-                    <span className="absolute inset-0 flex items-center justify-center font-mono font-extrabold text-[10px] sm:text-xs text-[#090a0f] pt-1">
-                      {player.number}
-                    </span>
-                  </div>
+                  <PlayerJersey
+                    number={player.number}
+                    ovr={playerOvr}
+                    variant={isLimeShirt ? 'lime' : 'white'}
+                    size="sm"
+                    highlight={
+                      isDropTarget
+                        ? 'dropTarget'
+                        : isSelected
+                        ? 'selected'
+                        : 'none'
+                    }
+                    className="!w-7 !h-7 sm:!w-10 sm:!h-10 lg:!w-11 lg:!h-11"
+                  />
 
-                  {/* Player Name & Role Suitability Caption */}
+                  {/* Player Position, Name & Age Caption */}
                   <div
-                    className={`mt-0.5 px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-semibold whitespace-nowrap transition-colors ${
-                      isSelected
+                    className={`mt-0.5 sm:mt-1 px-1.5 sm:px-2 py-[1px] sm:py-0.5 rounded-full text-[8px] sm:text-[10px] font-semibold whitespace-nowrap transition-colors flex items-center gap-0.5 sm:gap-1 leading-tight ${
+                      isDropTarget
+                        ? 'bg-sky-400 text-[#090a0f] font-extrabold shadow'
+                        : isSelected
                         ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold shadow'
-                        : 'bg-[#0b0c10]/90 text-zinc-200 border border-white/10'
+                        : 'bg-[#0b0c10]/95 text-zinc-100 border border-white/15'
                     }`}
                   >
+                    <span
+                      className={`font-mono font-extrabold ${
+                        isSelected || isDropTarget
+                          ? 'text-[#090a0f]'
+                          : 'text-[#b5ff00]'
+                      }`}
+                    >
+                      {player.position}
+                    </span>
                     <span>{lastName}</span>
-                    <span className="hidden sm:inline opacity-80">
-                      {' '}
-                      · {role.shortCode} ({fit.score}%)
+                    <span
+                      className={`hidden sm:inline font-mono ${
+                        isSelected || isDropTarget
+                          ? 'text-[#090a0f]/80'
+                          : 'text-zinc-400'
+                      }`}
+                    >
+                      · {player.age}a
                     </span>
                   </div>
                 </button>
@@ -600,43 +677,81 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
             })}
           </div>
 
-          {/* Bench Quick Swap Bar */}
+          {/* Bench Quick Swap Bar — Reserves Represented by Jerseys + Drag & Drop */}
           <div className="pt-2 border-t border-white/[0.07]">
-            <div className="flex items-center justify-between text-xs text-zinc-400 mb-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-400 mb-2.5">
               <span>
                 Substituir{' '}
                 <strong className="text-[#b5ff00]">
                   #{selectedPlayer?.number} {selectedPlayer?.name}
                 </strong>{' '}
-                por atleta do banco:
+                por atleta do banco (arraste ou clique na camisa):
               </span>
-              <span className="font-mono">11 Reservas disponíveis</span>
+              <span className="font-mono">{reserves.length} Reservas disponíveis</span>
             </div>
-            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <div className="flex items-center gap-2.5 overflow-x-auto pb-1.5 pt-1">
               {reserves.map((res) => {
                 const cond = getConditionColor(res.condition);
+                const resOvr = calculatePlayerOverall(res.attributes, res.position);
+                const isDragged = draggedPlayerId === res.id;
+                const isDropTarget =
+                  dragOverPlayerId === res.id && draggedPlayerId !== res.id;
+                const lastName = res.name.split(' ').slice(-1)[0] || res.name;
+                const isLimeShirt =
+                  res.sector === 'ATA' ||
+                  res.sector === 'MEI' ||
+                  res.assignedDuty === 'Atacar' ||
+                  res.assignedDuty === 'Apoiar';
+
                 return (
                   <button
                     key={res.id}
+                    type="button"
+                    draggable={!res.injured}
+                    onDragStart={(e) => handlePlayerDragStart(e, res.id)}
+                    onDragOver={(e) => handlePlayerDragOver(e, res.id)}
+                    onDragLeave={() => {
+                      if (dragOverPlayerId === res.id) {
+                        setDragOverPlayerId(null);
+                      }
+                    }}
+                    onDrop={(e) => handlePlayerDrop(e, res.id)}
+                    onDragEnd={handlePlayerDragEnd}
+                    disabled={res.injured}
                     onClick={() => {
                       if (selectedPlayer) {
                         onSwapPlayers(selectedPlayer.id, res.id);
                       }
                     }}
-                    className="shrink-0 bg-[#0b0c10] hover:bg-white/[0.06] border border-white/[0.07] rounded-2xl px-3.5 py-2 text-left transition-colors"
+                    title={`Arraste para o campo ou clique para trocar com #${selectedPlayer?.number ?? ''} ${selectedPlayer?.name ?? ''}`}
+                    className={`shrink-0 flex flex-col items-center bg-[#0b0c10] hover:bg-white/[0.06] border rounded-2xl px-3 py-2.5 transition-all select-none ${
+                      res.injured
+                        ? 'opacity-45 cursor-not-allowed border-white/[0.05]'
+                        : isDropTarget
+                        ? 'border-sky-400 ring-2 ring-sky-400 bg-sky-400/15 scale-105'
+                        : 'border-white/[0.07] hover:border-[#b5ff00]/50 cursor-grab active:cursor-grabbing'
+                    } ${isDragged ? 'opacity-40 scale-95' : ''}`}
                   >
-                    <div className="flex items-center gap-1.5 text-xs">
+                    <PlayerJersey
+                      number={res.number}
+                      ovr={resOvr}
+                      variant={isLimeShirt ? 'lime' : 'white'}
+                      size="sm"
+                      highlight={isDropTarget ? 'dropTarget' : 'none'}
+                    />
+
+                    {/* Player Name & Position Pill */}
+                    <div className="mt-1.5 px-2 py-0.5 rounded-full bg-[#14171f] border border-white/10 text-[10px] font-semibold whitespace-nowrap text-zinc-100 flex items-center gap-1">
                       <span className="font-mono text-[#b5ff00] font-bold">
                         {res.position}
                       </span>
-                      <span className="font-semibold text-zinc-100">
-                        {res.name}
-                      </span>
+                      <span>{lastName}</span>
                     </div>
-                    <div className="text-[10px] font-mono tabular-nums text-zinc-400 mt-0.5 flex items-center gap-1">
-                      <span>Cond: <span className={cond.text}>{Math.round(res.condition)}%</span></span>
-                      <span>·</span>
-                      <span>OVR {calculatePlayerOverall(res.attributes, res.position)}</span>
+
+                    <div className="text-[10px] font-mono tabular-nums text-zinc-300 mt-1 flex items-center gap-1.5">
+                      <span>{res.age}a</span>
+                      <span className="text-zinc-600">·</span>
+                      <span className={cond.text}>{Math.round(res.condition)}%</span>
                       {res.exceededExpectations ? (
                         <span className="text-amber-300 font-bold" title="Superou o teto de potencial inicial!">⚡+{res.recentOvrDelta ?? 0}</span>
                       ) : res.recentOvrDelta !== undefined && res.recentOvrDelta > 0 ? (
@@ -656,27 +771,49 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
         <div className="xl:col-span-5 bg-[#14171f] border border-white/[0.07] rounded-[28px] p-5 flex flex-col justify-between space-y-4">
           {selectedPlayer && (
             <div className="space-y-4">
-              {/* Player Header */}
-              <div className="flex items-start justify-between gap-3 pb-3.5 border-b border-white/[0.07]">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-[#b5ff00]">
-                      #{selectedPlayer.number} · {selectedSlot.label}
-                    </span>
-                    <h3 className="font-display text-2xl font-extrabold uppercase tracking-tight text-white">
+              {/* Player Header with Jersey, OVR/POS Tile, Name & Age */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b border-white/[0.07]">
+                <div className="flex items-center gap-3 min-w-0">
+                  <PlayerJersey
+                    number={selectedPlayer.number}
+                    variant={
+                      selectedPlayer.assignedDuty === 'Defender'
+                        ? 'white'
+                        : 'lime'
+                    }
+                    size="md"
+                  />
+                  <PlayerOvrBadge
+                    ovr={calculatePlayerOverall(
+                      selectedPlayer.attributes,
+                      selectedPlayer.position
+                    )}
+                    position={selectedPlayer.position}
+                    size="md"
+                  />
+                  <div className="min-w-0">
+                    <h3 className="font-display text-xl sm:text-2xl font-extrabold uppercase tracking-tight text-white truncate leading-none">
                       {selectedPlayer.name}
                     </h3>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-400 mt-1 font-mono tabular-nums">
+                      <span className="text-white font-bold">
+                        {selectedPlayer.age} anos
+                      </span>
+                      <span>·</span>
+                      <span>Vaga {selectedSlot.label}</span>
+                      <span>·</span>
+                      <span>
+                        Fís{' '}
+                        <strong
+                          className={
+                            getConditionColor(selectedPlayer.condition).text
+                          }
+                        >
+                          {Math.round(selectedPlayer.condition)}%
+                        </strong>
+                      </span>
+                    </div>
                   </div>
-                  <p className="text-xs text-zinc-400 mt-0.5">
-                    Posição Natural: {selectedPlayer.position} · Condição:{' '}
-                    <strong
-                      className={`font-mono ${
-                        getConditionColor(selectedPlayer.condition).text
-                      }`}
-                    >
-                      {Math.round(selectedPlayer.condition)}%
-                    </strong>
-                  </p>
                 </div>
 
                 <button
@@ -690,7 +827,7 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
 
               {/* Role & Duty Selector */}
               <div className="bg-[#0b0c10] border border-white/[0.07] rounded-2xl p-4 space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3">
                   <div>
                     <label
                       htmlFor="tactical-role-select"

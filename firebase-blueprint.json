@@ -1,0 +1,153 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user account profile for cross-device manager career synchronization.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the account owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Manager display name.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "preferredCurrency": {
+          "type": "string",
+          "description": "User preferred display currency (BRL or EUR).",
+          "enum": ["BRL", "EUR"],
+          "minLength": 3,
+          "maxLength": 3
+        },
+        "activeSlotIndex": {
+          "type": "number",
+          "description": "Most recently played career slot index (1 to 4)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the account profile was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the account profile was last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "displayName",
+        "preferredCurrency",
+        "activeSlotIndex",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CareerCloudSlot": {
+      "title": "CareerCloudSlot",
+      "description": "Cloud-saved career slot belonging to an authenticated user for cross-device access.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the slot owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "slotIndex": {
+          "type": "number",
+          "description": "Career slot index from 1 to 4."
+        },
+        "managerName": {
+          "type": "string",
+          "description": "Manager name in this career.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "clubId": {
+          "type": "string",
+          "description": "Controlled club identifier.",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "clubName": {
+          "type": "string",
+          "description": "Controlled club display name.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "division": {
+          "type": "string",
+          "description": "Current league division (A or B).",
+          "enum": ["A", "B"],
+          "minLength": 1,
+          "maxLength": 1
+        },
+        "currentYear": {
+          "type": "number",
+          "description": "Current season year in the career."
+        },
+        "currentRound": {
+          "type": "number",
+          "description": "Current league round number."
+        },
+        "savedAtIso": {
+          "type": "string",
+          "description": "ISO timestamp string of the career save state.",
+          "minLength": 10,
+          "maxLength": 40
+        },
+        "careerPayload": {
+          "type": "object",
+          "description": "Structured career save state map."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the cloud slot was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the cloud slot was last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "slotIndex",
+        "managerName",
+        "clubId",
+        "clubName",
+        "division",
+        "currentYear",
+        "currentRound",
+        "savedAtIso",
+        "careerPayload",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Stores private account profile and cross-device preferences for each authenticated user."
+    },
+    "/users/{userId}/careerSlots/{slotId}": {
+      "schema": {
+        "$ref": "#/entities/CareerCloudSlot"
+      },
+      "description": "Stores up to 4 cloud-synchronized career save slots under the user's account."
+    }
+  }
+}

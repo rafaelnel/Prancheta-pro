@@ -1,13 +1,26 @@
 import { NaturalPosition, PlayerAttributes } from '../types/football';
 
 /**
- * Converts an internal 1..20 weighted rating to the 60..99 OVR scale,
- * where 99 represents peak Pelé / Messi (all key attributes at 20).
+ * Converts an internal 1..20 weighted rating to the 60..99 OVR scale
+ * calibrated to EA FC / eFootball (PES) benchmarks:
+ *  - World-Class European Elite: 84 – 91+
+ *  - Brasileirão Série A / Libertadores Stars (Arrascaeta, Pedro, Hulk, Estêvão, Paquetá, Garro): 80 – 83
+ *  - Série A / Libertadores Starters: 74 – 79
+ *  - Série A Reserves / Série B Standouts: 70 – 73
+ *  - Série B Starters & Rotation: 65 – 70
+ *  - Série B Backups / Youth: 61 – 65
  */
 export function rawScoreToOvr(rawScore: number): number {
-  const normalized = Math.max(12.0, Math.min(20.0, rawScore));
-  const t = (normalized - 12.0) / 8.0;
-  const ovr = 60 + Math.pow(t, 1.42) * 39;
+  let ovr: number;
+  if (rawScore <= 12.5) {
+    ovr = 58 + (rawScore - 10.5) * 1.5; // 12.5 -> 61
+  } else if (rawScore <= 15.5) {
+    ovr = 61 + (rawScore - 12.5) * 3.0; // 14.0 -> 65.5, 15.5 -> 70
+  } else if (rawScore <= 18.5) {
+    ovr = 70 + (rawScore - 15.5) * 4.0; // 16.5 -> 74, 17.5 -> 78, 18.5 -> 82
+  } else {
+    ovr = 82 + ((rawScore - 18.5) / 1.5) * 17.0; // 19.0 -> 88, 19.5 -> 93, 20.0 -> 99
+  }
   return Math.min(99, Math.max(60, Math.round(ovr)));
 }
 

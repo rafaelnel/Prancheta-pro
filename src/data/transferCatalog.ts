@@ -5,6 +5,7 @@ import {
   assignPotentialStars,
   calculateBalancedValuationAndWage,
   calibrateAttributesToTargetOvr,
+  getDynamicPotentialProfile,
   getMaxRealisticOvrForAgeAndPotential,
 } from '../engine/economyAndEvolution';
 import {
@@ -13,6 +14,7 @@ import {
   NaturalPosition,
   Player,
   PositionSector,
+  PotentialStars,
 } from '../types/football';
 
 const SECTOR_BY_POSITION: Record<NaturalPosition, PositionSector> = {
@@ -216,6 +218,8 @@ export const INTERNATIONAL_MARKET_CLUBS: MarketClubProfile[] = [
   },
 ];
 
+type IntlListingMode = 'NONE' | 'LOAN' | 'TRANSFER' | 'BOTH';
+
 type IntlSeed = [
   clubId: string,
   shirt: number,
@@ -225,87 +229,94 @@ type IntlSeed = [
   position: NaturalPosition,
   seedStrength: number,
   isClubStarter: boolean,
-  loanAvailable: boolean,
+  listingMode: IntlListingMode,
+  potentialStars?: PotentialStars,
   overrides?: RealPlayerSeed[6]
 ];
 
+/**
+ * Catálogo Internacional curado e coerente (estilo PES / EA FC):
+ * - Jovens promessas (Sub-23) reservas em gigantes europeus: listados APENAS para EMPRÉSTIMO ('LOAN')
+ * - Veteranos / reservas sem espaço (24+ anos): listados para COMPRA ('TRANSFER')
+ * - Titulares absolutos: NÃO listados ('NONE' — exigem proposta forte para compra e não saem por empréstimo)
+ */
 const INTERNATIONAL_PLAYER_SEEDS: IntlSeed[] = [
   // Real Madrid
-  ['intl-real-madrid', 16, 'Endrick', 19, 'Brasil', 'ATA', 15.6, false, true, { finalizacao: 16, aceleracao: 17, forca: 15 }],
-  ['intl-real-madrid', 15, 'Arda Güler', 21, 'Turquia', 'MEI', 15.8, false, true, { visaoDeJogo: 17, passe: 16, drible: 17 }],
-  ['intl-real-madrid', 21, 'Brahim Díaz', 26, 'Marrocos', 'PD', 16.0, false, true, { drible: 17, agilidade: 17 }],
-  ['intl-real-madrid', 17, 'Raúl Asencio', 23, 'Espanha', 'ZAG', 15.3, false, true],
+  ['intl-real-madrid', 16, 'Endrick', 19, 'Brasil', 'ATA', 16.0, false, 'LOAN', 5.0, { finalizacao: 17, aceleracao: 18, forca: 16 }],
+  ['intl-real-madrid', 15, 'Arda Güler', 21, 'Turquia', 'MEI', 16.3, false, 'LOAN', 5.0, { visaoDeJogo: 18, passe: 17, drible: 17 }],
+  ['intl-real-madrid', 21, 'Brahim Díaz', 26, 'Marrocos', 'PD', 16.3, false, 'TRANSFER', 4.0, { drible: 18, agilidade: 18 }],
+  ['intl-real-madrid', 35, 'Raúl Asencio', 23, 'Espanha', 'ZAG', 15.5, false, 'LOAN', 4.0],
 
   // Man City
-  ['intl-man-city', 26, 'Savinho', 21, 'Brasil', 'PD', 15.9, false, true, { drible: 17, velocidade: 17 }],
-  ['intl-man-city', 52, 'Oscar Bobb', 22, 'Noruega', 'PE', 15.0, false, true, { drible: 16, agilidade: 16 }],
-  ['intl-man-city', 82, 'Rico Lewis', 21, 'Inglaterra', 'LD', 15.2, false, true],
-  ['intl-man-city', 22, 'Vitor Reis', 20, 'Brasil', 'ZAG', 14.8, false, true, { desarme: 15, posicionamento: 15 }],
+  ['intl-man-city', 26, 'Savinho', 21, 'Brasil', 'PD', 16.4, true, 'NONE', 5.0, { drible: 18, velocidade: 18, agilidade: 18 }],
+  ['intl-man-city', 52, 'Oscar Bobb', 22, 'Noruega', 'PE', 15.5, false, 'LOAN', 4.5, { drible: 17, agilidade: 17 }],
+  ['intl-man-city', 82, 'Rico Lewis', 21, 'Inglaterra', 'LD', 15.8, false, 'LOAN', 4.5, { passe: 16, decisoes: 16 }],
+  ['intl-man-city', 22, 'Vitor Reis', 20, 'Brasil', 'ZAG', 15.2, false, 'LOAN', 4.5, { desarme: 16, posicionamento: 16 }],
 
   // Arsenal
-  ['intl-arsenal', 9, 'Gabriel Jesus', 28, 'Brasil', 'ATA', 16.1, false, true, { semBola: 16, drible: 16 }],
-  ['intl-arsenal', 11, 'Gabriel Martinelli', 24, 'Brasil', 'PE', 16.5, true, false, { velocidade: 17, aceleracao: 17 }],
-  ['intl-arsenal', 23, 'Mikel Merino', 29, 'Espanha', 'MC', 16.0, false, true],
-  ['intl-arsenal', 17, 'Oleksandr Zinchenko', 29, 'Ucrânia', 'LE', 15.3, false, true],
+  ['intl-arsenal', 9, 'Gabriel Jesus', 29, 'Brasil', 'ATA', 16.3, false, 'TRANSFER', 4.0, { semBola: 17, drible: 17 }],
+  ['intl-arsenal', 11, 'Gabriel Martinelli', 24, 'Brasil', 'PE', 16.8, true, 'NONE', 4.5, { velocidade: 18, aceleracao: 18, drible: 17 }],
+  ['intl-arsenal', 23, 'Mikel Merino', 29, 'Espanha', 'MC', 16.2, false, 'TRANSFER', 4.0],
+  ['intl-arsenal', 17, 'Oleksandr Zinchenko', 29, 'Ucrânia', 'LE', 15.8, false, 'TRANSFER', 3.5],
 
   // PSG
-  ['intl-psg', 35, 'Lucas Beraldo', 22, 'Brasil', 'ZAG', 15.4, false, true, { passe: 16, posicionamento: 15 }],
-  ['intl-psg', 19, 'Lee Kang-in', 25, 'Coreia do Sul', 'MEI', 15.8, false, true, { visaoDeJogo: 16, passe: 16 }],
-  ['intl-psg', 9, 'Gonçalo Ramos', 24, 'Portugal', 'ATA', 16.1, false, true, { finalizacao: 16 }],
-  ['intl-psg', 20, 'Gabriel Moscardo', 20, 'Brasil', 'VOL', 14.6, false, true, { desarme: 15, resistencia: 15 }],
+  ['intl-psg', 35, 'Lucas Beraldo', 22, 'Brasil', 'ZAG', 15.8, false, 'LOAN', 4.5, { passe: 17, posicionamento: 16 }],
+  ['intl-psg', 19, 'Lee Kang-in', 25, 'Coreia do Sul', 'MEI', 16.0, false, 'TRANSFER', 4.0, { visaoDeJogo: 17, passe: 17 }],
+  ['intl-psg', 9, 'Gonçalo Ramos', 24, 'Portugal', 'ATA', 16.3, false, 'TRANSFER', 4.0, { finalizacao: 17, semBola: 17 }],
+  ['intl-psg', 20, 'Gabriel Moscardo', 20, 'Brasil', 'VOL', 15.1, false, 'LOAN', 4.5, { desarme: 16, resistencia: 16 }],
 
   // Bayern
-  ['intl-bayern', 16, 'João Palhinha', 30, 'Portugal', 'VOL', 16.3, false, true, { desarme: 17, forca: 16 }],
-  ['intl-bayern', 18, 'Daniel Peretz', 25, 'Israel', 'GOL', 14.7, false, true],
-  ['intl-bayern', 20, 'Tom Bischof', 20, 'Alemanha', 'MC', 14.8, false, true],
+  ['intl-bayern', 16, 'João Palhinha', 30, 'Portugal', 'VOL', 16.4, false, 'TRANSFER', 4.0, { desarme: 18, forca: 17 }],
+  ['intl-bayern', 18, 'Daniel Peretz', 25, 'Israel', 'GOL', 15.0, false, 'BOTH', 3.5],
+  ['intl-bayern', 20, 'Tom Bischof', 20, 'Alemanha', 'MC', 15.2, false, 'LOAN', 4.5],
 
   // Inter Milan
-  ['intl-inter-milan', 30, 'Carlos Augusto', 27, 'Brasil', 'LE', 15.7, false, true, { cruzamento: 16, velocidade: 16 }],
-  ['intl-inter-milan', 21, 'Kristjan Asllani', 24, 'Albânia', 'VOL', 15.1, false, true],
-  ['intl-inter-milan', 99, 'Mehdi Taremi', 33, 'Irã', 'ATA', 15.4, false, true],
+  ['intl-inter-milan', 30, 'Carlos Augusto', 27, 'Brasil', 'LE', 16.1, false, 'TRANSFER', 4.0, { cruzamento: 16, velocidade: 16 }],
+  ['intl-inter-milan', 21, 'Kristjan Asllani', 24, 'Albânia', 'VOL', 15.5, false, 'BOTH', 4.0],
+  ['intl-inter-milan', 99, 'Mehdi Taremi', 33, 'Irã', 'ATA', 15.8, false, 'TRANSFER', 3.5, { finalizacao: 17, decisoes: 17 }],
 
   // Benfica
-  ['intl-benfica', 30, 'Nicolás Otamendi', 38, 'Argentina', 'ZAG', 15.6, true, false, { desarme: 16, posicionamento: 16 }],
-  ['intl-benfica', 7, 'Zeki Amdouni', 25, 'Suíça', 'ATA', 15.1, false, true],
-  ['intl-benfica', 17, 'Kerem Aktürkoğlu', 27, 'Turquia', 'PE', 15.9, true, false],
-  ['intl-benfica', 1, 'Anatoliy Trubin', 24, 'Ucrânia', 'GOL', 16.0, true, false],
+  ['intl-benfica', 30, 'Nicolás Otamendi', 38, 'Argentina', 'ZAG', 15.8, true, 'NONE', 3.5, { desarme: 17, posicionamento: 17 }],
+  ['intl-benfica', 32, 'Gianluca Prestianni', 20, 'Argentina', 'PD', 15.1, false, 'LOAN', 4.5, { drible: 17, agilidade: 17 }],
+  ['intl-benfica', 17, 'Kerem Aktürkoğlu', 27, 'Turquia', 'PE', 16.2, true, 'NONE', 4.0],
+  ['intl-benfica', 1, 'Anatoliy Trubin', 24, 'Ucrânia', 'GOL', 16.3, true, 'NONE', 4.5],
 
   // Porto
-  ['intl-porto', 11, 'Pepê', 29, 'Brasil', 'PD', 15.9, true, false, { drible: 16, velocidade: 16 }],
-  ['intl-porto', 22, 'Alan Varela', 24, 'Argentina', 'VOL', 15.8, true, false, { desarme: 16, passe: 16 }],
-  ['intl-porto', 4, 'Otávio Ataíde', 23, 'Brasil', 'ZAG', 14.9, false, true],
-  ['intl-porto', 19, 'Danny Namaso', 25, 'Inglaterra', 'ATA', 14.7, false, true],
+  ['intl-porto', 11, 'Pepê', 29, 'Brasil', 'PD', 16.2, true, 'NONE', 4.0, { drible: 17, velocidade: 17 }],
+  ['intl-porto', 22, 'Alan Varela', 24, 'Argentina', 'VOL', 16.1, true, 'NONE', 4.0, { desarme: 17, passe: 16 }],
+  ['intl-porto', 4, 'Otávio Ataíde', 23, 'Brasil', 'ZAG', 15.3, false, 'LOAN', 4.0],
+  ['intl-porto', 19, 'Danny Namaso', 25, 'Inglaterra', 'ATA', 15.1, false, 'TRANSFER', 3.5],
 
   // Sporting
-  ['intl-sporting', 42, 'Morten Hjulmand', 26, 'Dinamarca', 'VOL', 16.1, true, false],
-  ['intl-sporting', 17, 'Francisco Trincão', 26, 'Portugal', 'PD', 16.0, true, false],
-  ['intl-sporting', 11, 'Nuno Santos', 31, 'Portugal', 'LE', 15.1, false, true],
+  ['intl-sporting', 42, 'Morten Hjulmand', 26, 'Dinamarca', 'VOL', 16.4, true, 'NONE', 4.0],
+  ['intl-sporting', 17, 'Francisco Trincão', 26, 'Portugal', 'PD', 16.2, true, 'NONE', 4.0],
+  ['intl-sporting', 11, 'Nuno Santos', 31, 'Portugal', 'LE', 15.5, false, 'TRANSFER', 3.5],
 
   // Brighton
-  ['intl-brighton', 30, 'Pervis Estupiñán', 28, 'Equador', 'LE', 15.6, true, false],
-  ['intl-brighton', 20, 'Julio Enciso', 22, 'Paraguai', 'MEI', 15.2, false, true, { drible: 16, finalizacao: 15 }],
-  ['intl-brighton', 2, 'Igor Julio', 28, 'Brasil', 'ZAG', 14.9, false, true],
+  ['intl-brighton', 30, 'Pervis Estupiñán', 28, 'Equador', 'LE', 15.9, true, 'NONE', 4.0],
+  ['intl-brighton', 20, 'Julio Enciso', 22, 'Paraguai', 'MEI', 15.5, false, 'LOAN', 4.5, { drible: 17, finalizacao: 16 }],
+  ['intl-brighton', 2, 'Igor Julio', 28, 'Brasil', 'ZAG', 15.4, false, 'TRANSFER', 3.5],
 
   // Girona
-  ['intl-girona', 10, 'Yáser Asprilla', 22, 'Colômbia', 'MEI', 15.0, false, true, { drible: 16 }],
-  ['intl-girona', 18, 'Oriol Romeu', 34, 'Espanha', 'VOL', 14.8, false, true],
-  ['intl-girona', 9, 'Abel Ruiz', 26, 'Espanha', 'ATA', 15.0, false, true],
+  ['intl-girona', 10, 'Yáser Asprilla', 22, 'Colômbia', 'MEI', 15.4, false, 'LOAN', 4.0, { drible: 17 }],
+  ['intl-girona', 18, 'Oriol Romeu', 34, 'Espanha', 'VOL', 15.1, false, 'TRANSFER', 3.0],
+  ['intl-girona', 9, 'Abel Ruiz', 26, 'Espanha', 'ATA', 15.3, false, 'TRANSFER', 3.5],
 
   // Inter Miami
-  ['intl-inter-miami', 9, 'Luis Suárez', 39, 'Uruguai', 'ATA', 15.7, true, false, { finalizacao: 17, compostura: 17 }],
-  ['intl-inter-miami', 5, 'Sergio Busquets', 37, 'Espanha', 'VOL', 15.6, true, false, { passe: 17, visaoDeJogo: 17 }],
-  ['intl-inter-miami', 21, 'Tadeo Allende', 27, 'Argentina', 'PD', 14.5, false, true],
+  ['intl-inter-miami', 9, 'Luis Suárez', 39, 'Uruguai', 'ATA', 15.8, true, 'NONE', 3.5, { finalizacao: 18, compostura: 18, velocidade: 11 }],
+  ['intl-inter-miami', 5, 'Sergio Busquets', 37, 'Espanha', 'VOL', 15.8, true, 'NONE', 3.5, { passe: 18, visaoDeJogo: 18, velocidade: 10 }],
+  ['intl-inter-miami', 21, 'Tadeo Allende', 27, 'Argentina', 'PD', 14.9, false, 'TRANSFER', 3.0],
 
   // Al-Hilal
-  ['intl-al-hilal', 11, 'Marcos Leonardo', 22, 'Brasil', 'ATA', 15.8, false, true, { finalizacao: 16, semBola: 16 }],
-  ['intl-al-hilal', 77, 'Malcom', 29, 'Brasil', 'PD', 16.2, true, false, { drible: 16, velocidade: 16 }],
-  ['intl-al-hilal', 8, 'Rúben Neves', 29, 'Portugal', 'VOL', 16.4, true, false, { passe: 17, visaoDeJogo: 16 }],
-  ['intl-al-hilal', 6, 'Renan Lodi', 27, 'Brasil', 'LE', 15.2, false, true],
+  ['intl-al-hilal', 11, 'Marcos Leonardo', 22, 'Brasil', 'ATA', 15.9, false, 'LOAN', 4.5, { finalizacao: 17, semBola: 17 }],
+  ['intl-al-hilal', 77, 'Malcom', 29, 'Brasil', 'PD', 16.5, true, 'NONE', 4.0, { drible: 17, velocidade: 17 }],
+  ['intl-al-hilal', 8, 'Rúben Neves', 29, 'Portugal', 'VOL', 16.6, true, 'NONE', 4.0, { passe: 18, visaoDeJogo: 17 }],
+  ['intl-al-hilal', 6, 'Renan Lodi', 27, 'Brasil', 'LE', 15.6, false, 'TRANSFER', 3.5],
 
   // Shakhtar
-  ['intl-shaktar', 7, 'Eguinaldo', 21, 'Brasil', 'ATA', 14.6, false, true, { velocidade: 16 }],
-  ['intl-shaktar', 11, 'Kevin', 23, 'Brasil', 'PE', 15.2, true, true, { drible: 16, aceleracao: 16 }],
-  ['intl-shaktar', 22, 'Mykola Matviyenko', 29, 'Ucrânia', 'ZAG', 15.2, true, false],
+  ['intl-shaktar', 7, 'Eguinaldo', 21, 'Brasil', 'ATA', 14.9, false, 'LOAN', 4.0, { velocidade: 17 }],
+  ['intl-shaktar', 11, 'Kevin', 23, 'Brasil', 'PE', 15.4, true, 'NONE', 4.0, { drible: 17, aceleracao: 17 }],
+  ['intl-shaktar', 22, 'Mykola Matviyenko', 29, 'Ucrânia', 'ZAG', 15.5, true, 'NONE', 3.5],
 ];
 
 function buildCatalogPlayer(
@@ -318,6 +329,7 @@ function buildCatalogPlayer(
   seedStrength: number,
   repFactor: number,
   isIntl: boolean,
+  explicitStars?: PotentialStars,
   overrides?: RealPlayerSeed[6]
 ): Player {
   const rng = createRng(`market-${id}`);
@@ -334,7 +346,8 @@ function buildCatalogPlayer(
 
   let ovr = calculatePlayerOverall(attributes, position);
   const clubRep = isIntl ? Math.round(80 * repFactor) : 74;
-  const potentialStars = assignPotentialStars(ovr, age, clubRep, id);
+  const potentialStars =
+    explicitStars ?? assignPotentialStars(ovr, age, clubRep, id);
   const maxAllowedForAge = getMaxRealisticOvrForAgeAndPotential(
     age,
     potentialStars
@@ -356,6 +369,12 @@ function buildCatalogPlayer(
     potentialStars,
     position,
   });
+  const dynProfile = getDynamicPotentialProfile(
+    potentialStars,
+    rng,
+    ovr,
+    age
+  );
 
   return {
     id,
@@ -370,6 +389,8 @@ function buildCatalogPlayer(
     marketValue,
     salary,
     potentialStars,
+    basePotentialOvr: dynProfile.basePotentialOvr,
+    dynamicCeilingOvr: dynProfile.dynamicCeilingOvr,
     attributes,
     isStarter: false,
     slotIndex: null,
@@ -404,17 +425,18 @@ export function getInternationalMarketListings(): MarketPlayerListing[] {
       position,
       seedStrength,
       isClubStarter,
-      loanAvailable,
+      listingMode,
+      explicitStars,
       overrides,
     ] = seed;
     const club = clubMap.get(clubId)!;
-    const isTransferListed = !isClubStarter && (age >= 24 || idx % 2 === 0);
-    const isLoanListed = loanAvailable && (!isClubStarter || age <= 23);
+    const isTransferListed =
+      listingMode === 'TRANSFER' || listingMode === 'BOTH';
+    const isLoanListed = listingMode === 'LOAN' || listingMode === 'BOTH';
+    const loanAvailable = isLoanListed;
     const listingReason =
       isTransferListed && isLoanListed
-        ? age <= 23
-          ? 'Disponível p/ Empréstimo ou Venda (Sem espaço no time titular)'
-          : 'Listado pelo clube (Negociável p/ compra ou empréstimo)'
+        ? 'Disponível p/ Empréstimo ou Compra (Rotação de elenco)'
         : isTransferListed
         ? age >= 28
           ? 'Listado p/ Compra (Alívio de folha salarial)'
@@ -435,6 +457,7 @@ export function getInternationalMarketListings(): MarketPlayerListing[] {
       seedStrength,
       club.reputation / 84,
       true,
+      explicitStars,
       overrides
     );
     player.isTransferListed = isTransferListed;
@@ -446,16 +469,16 @@ export function getInternationalMarketListings(): MarketPlayerListing[] {
       ? 0.88
       : isClubStarter
       ? 1.15
-      : 0.98;
+      : 1.0;
     const buyFee =
       Math.round((player.marketValue * buyMultiplier) / 250000) * 250000;
     const loanFee =
       !loanAvailable
         ? Math.round((buyFee * 0.24) / 100000) * 100000
         : isLoanListed && age <= 22
-        ? Math.round((buyFee * 0.07) / 100000) * 100000
+        ? Math.round((buyFee * 0.065) / 100000) * 100000
         : isLoanListed
-        ? Math.round((buyFee * 0.11) / 100000) * 100000
+        ? Math.round((buyFee * 0.10) / 100000) * 100000
         : Math.round((buyFee * 0.15) / 100000) * 100000;
 
     return {
@@ -465,7 +488,7 @@ export function getInternationalMarketListings(): MarketPlayerListing[] {
       scope: 'INTERNACIONAL' as const,
       isClubStarter,
       buyFee,
-      loanFee: Math.max(250000, loanFee),
+      loanFee: Math.max(200000, loanFee),
       loanAvailable,
       isTransferListed,
       isLoanListed,
@@ -486,27 +509,32 @@ type FreeAgentSeed = [
   overrides?: RealPlayerSeed[6]
 ];
 
+/**
+ * Agentes Livres (Sem Clube) realistas para 2026:
+ * - Atletas genuinamente livres/disponíveis no mercado sul-americano
+ * - OVR calibrado na faixa 68 a 74 (úteis para rotação de Série A ou titulares de Série B sem distorcer o mercado por R$ 0)
+ */
 const FREE_AGENT_SEEDS_2026: FreeAgentSeed[] = [
-  [1, 'Marcelo Grohe', 39, 'Brasil', 'GOL', 15.4, { posicionamento: 17, compostura: 16 }],
-  [12, 'Diego Alves', 36, 'Brasil', 'GOL', 14.3],
-  [24, 'Matheus Cavichioli', 39, 'Brasil', 'GOL', 13.5],
-  [4, 'Rodrigo Caio', 32, 'Brasil', 'ZAG', 14.6, { posicionamento: 16, passe: 15 }],
-  [3, 'Samir Caetano', 31, 'Brasil', 'ZAG', 15.1, { forca: 16, desarme: 15 }],
-  [15, 'David Luiz', 38, 'Brasil', 'ZAG', 14.9, { passe: 16, compostura: 16 }],
-  [2, 'Mariano Ferreira', 39, 'Brasil', 'LD', 14.2, { cruzamento: 15 }],
-  [22, 'Rafinha', 40, 'Brasil', 'LD', 14.5, { decisoes: 16, passe: 16 }],
-  [6, 'Dalbert Henrique', 32, 'Brasil', 'LE', 14.1],
-  [16, 'Dodô Pires', 34, 'Brasil', 'LE', 14.4],
-  [5, 'Fernandinho', 40, 'Brasil', 'VOL', 15.5, { decisoes: 18, passe: 17 }],
-  [8, 'Walace Souza', 30, 'Brasil', 'VOL', 15.6, { desarme: 16, forca: 16 }],
-  [14, 'Edenílson', 36, 'Brasil', 'MC', 14.8],
-  [18, 'Giuliano Victor', 35, 'Brasil', 'MEI', 15.0, { visaoDeJogo: 16, passe: 16 }],
-  [10, 'Óscar Romero', 33, 'Paraguai', 'MEI', 15.4, { passe: 17, visaoDeJogo: 16 }],
-  [20, 'Jaminton Campaz', 25, 'Colômbia', 'MEI', 15.2, { drible: 16 }],
-  [7, 'Marinho', 35, 'Brasil', 'PD', 14.6, { velocidade: 15, finalizacao: 15 }],
-  [11, 'Keno', 36, 'Brasil', 'PE', 14.9, { drible: 16 }],
-  [9, 'Diego Costa', 37, 'Espanha', 'ATA', 15.3, { forca: 17, finalizacao: 16 }],
-  [19, 'Leandro Damião', 36, 'Brasil', 'ATA', 14.5, { impulsao: 16, finalizacao: 15 }],
+  [1, 'Marcelo Grohe', 39, 'Brasil', 'GOL', 14.8, { posicionamento: 16, compostura: 16 }],
+  [12, 'Muriel Becker', 39, 'Brasil', 'GOL', 14.2],
+  [24, 'Matheus Cavichioli', 39, 'Brasil', 'GOL', 13.8],
+  [4, 'Rodrigo Caio', 32, 'Brasil', 'ZAG', 14.5, { posicionamento: 16, passe: 15 }],
+  [3, 'Wallace Fortuna', 31, 'Brasil', 'ZAG', 14.4, { forca: 16, desarme: 15 }],
+  [15, 'Maicon Roque', 37, 'Brasil', 'ZAG', 14.5, { forca: 16, compostura: 16 }],
+  [2, 'Mariano Ferreira', 39, 'Brasil', 'LD', 14.3, { cruzamento: 15 }],
+  [22, 'Madson Ferreira', 34, 'Brasil', 'LD', 14.4, { velocidade: 15, impulsao: 15 }],
+  [6, 'Jorge Marco', 29, 'Brasil', 'LE', 14.2, { passe: 15 }],
+  [16, 'Dodô Pires', 34, 'Brasil', 'LE', 14.3],
+  [5, 'Gabriel Girotto', 33, 'Brasil', 'VOL', 14.7, { desarme: 16, indiceDeTrabalho: 16 }],
+  [8, 'Josef de Souza', 37, 'Brasil', 'VOL', 14.5, { desarme: 15, forca: 16 }],
+  [14, 'Rômulo Caldeira', 35, 'Brasil', 'MC', 14.3],
+  [18, 'Giuliano Victor', 35, 'Brasil', 'MEI', 14.8, { visaoDeJogo: 16, passe: 16 }],
+  [10, 'Óscar Romero', 33, 'Paraguai', 'MEI', 15.0, { passe: 16, visaoDeJogo: 16 }],
+  [20, 'Luan Vieira', 32, 'Brasil', 'MEI', 14.2, { passe: 15 }],
+  [7, 'Nikão Maycon', 33, 'Brasil', 'PD', 14.6, { passe: 15, forca: 15 }],
+  [11, 'Romarinho Silva', 35, 'Brasil', 'PE', 14.8, { drible: 15, finalizacao: 16 }],
+  [9, 'Alan Kardec', 37, 'Brasil', 'ATA', 14.4, { impulsao: 16, finalizacao: 15 }],
+  [19, 'Alexandre Pato', 36, 'Brasil', 'ATA', 14.3, { primeiroToque: 16, finalizacao: 15 }],
 ];
 
 export function createInitialFreeAgents(): Player[] {
@@ -522,11 +550,12 @@ export function createInitialFreeAgents(): Player[] {
       seedStrength,
       0.85,
       false,
+      undefined,
       overrides
     );
     return {
       ...player,
-      salary: Math.max(70000, Math.round((player.salary * 0.78) / 5000) * 5000),
+      salary: Math.max(35000, Math.round((player.salary * 0.78) / 5000) * 5000),
       condition: 90,
       morale: 'Regular',
       contractType: 'DEFINITIVO',

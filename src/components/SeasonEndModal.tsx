@@ -22,6 +22,8 @@ interface SeasonEndModalProps {
   report: SeasonEndReport | null;
   userClub: Club;
   clubs: Club[];
+  expiringContracts?: import('../types/football').Player[];
+  onGoToContracts?: () => void;
   onClose: () => void;
   onStartNextSeason: () => void;
 }
@@ -31,6 +33,8 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
   report,
   userClub,
   clubs,
+  expiringContracts = [],
+  onGoToContracts,
   onClose,
   onStartNextSeason,
 }) => {
@@ -510,13 +514,63 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
               </div>
             </div>
           )}
+          {/* 7. Expiring Contracts Alert before Season Rollover */}
+          {expiringContracts.length > 0 && (
+            <div className="bg-amber-950/35 border border-amber-400/45 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1 text-xs">
+                <div className="font-bold text-amber-300">
+                  ⚠️ {expiringContracts.length} contrato(s) vencendo ao fim de{' '}
+                  {report.seasonYear}
+                </div>
+                <div className="text-zinc-200 leading-relaxed">
+                  Atletas sem renovação sairão livres na virada para {nextYear}:{' '}
+                  <strong className="text-white">
+                    {expiringContracts
+                      .slice(0, 5)
+                      .map((p) => p.name)
+                      .join(', ')}
+                    {expiringContracts.length > 5
+                      ? ` e mais ${expiringContracts.length - 5}`
+                      : ''}
+                  </strong>
+                  .
+                </div>
+              </div>
+              {onGoToContracts && (
+                <button
+                  type="button"
+                  onClick={onGoToContracts}
+                  className="px-4 py-2 rounded-full text-xs font-extrabold bg-amber-400 hover:bg-amber-300 text-[#090a0f] transition-colors whitespace-nowrap shrink-0"
+                >
+                  Renovar Contratos Agora
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* 8. Veterans Considering Retirement Notice */}
+          {report.thinkingRetirementNames &&
+            report.thinkingRetirementNames.length > 0 && (
+              <div className="bg-[#14171f] border border-amber-400/35 rounded-2xl p-4 text-xs space-y-1">
+                <div className="font-bold text-amber-300">
+                  ⏳ Veteranos avaliando aposentadoria na virada para {nextYear}
+                </div>
+                <div className="text-zinc-300 leading-relaxed">
+                  Jogadores de linha a partir dos 35 anos e goleiros a partir dos 40 anos podem anunciar aposentadoria ao encerrar o ano (menor chance para quem segue jogando em alto OVR):{' '}
+                  <strong className="text-white">
+                    {report.thinkingRetirementNames.join(', ')}
+                  </strong>
+                  .
+                </div>
+              </div>
+            )}
         </div>
 
         {/* Footer CTA */}
         <div className="px-5 sm:px-7 py-4 bg-[#0b0c10] border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="text-xs text-zinc-400">
-            A virada de ano atualiza idades (+1), evolução/regressão, safra da
-            base Sub-20, patrocínios e tabela de 38 rodadas.
+            A virada de ano atualiza idades (+1), contratos/empréstimos, evolução,
+            safra da base Sub-20, patrocínios e tabela de 38 rodadas.
           </div>
 
           <div className="flex items-center gap-2.5 ml-auto">

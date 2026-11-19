@@ -755,26 +755,36 @@ export function getCupPrizeMoney(
   isFinalWinner: boolean
 ): number {
   if (competition === 'COPA_DO_BRASIL') {
+    // Valores calibrados pela tabela oficial da CBF (Copa do Brasil 2025/2026):
+    // 3ª Fase: R$ 2,3M participação / R$ 3,6M classificação
+    // Oitavas: R$ 3,6M / R$ 4,7M
+    // Quartas: R$ 4,7M / R$ 5,9M
+    // Semifinal: R$ 9,9M / R$ 10,2M
+    // Final: Vice R$ 33M / Campeão R$ 77M
     if (!userAdvancedOrWon) {
-      return stageLabel === 'Final' ? 30000000 : 1200000;
+      return stageLabel === 'Final' ? 33_000_000 : 1_800_000;
     }
-    if (isFinalWinner || stageLabel === 'Final') return 70000000;
-    if (stageLabel === 'Semifinal') return 15000000;
-    if (stageLabel === 'Quartas') return 7500000;
-    if (stageLabel === 'Oitavas') return 4500000;
-    return 3200000;
+    if (isFinalWinner || stageLabel === 'Final') return 77_000_000;
+    if (stageLabel === 'Semifinal') return 10_200_000;
+    if (stageLabel === 'Quartas') return 5_900_000;
+    if (stageLabel === 'Oitavas') return 4_700_000;
+    return 3_600_000;
   }
   if (competition === 'LIBERTADORES') {
+    // Valores calibrados pela CONMEBOL Libertadores 2025/2026 (convertidos em BRL ~5,75):
+    // Fase de Grupos: R$ 1,8M por jogo + bônus de mérito por vitória (+R$ 2,0M = R$ 3,8M)
+    // Oitavas: R$ 7,5M · Quartas: R$ 10,2M · Semifinal: R$ 13,8M
+    // Final: Vice R$ 42M (US$ 7M) · Campeão R$ 138M (US$ 23M-24M)
     if (stageLabel?.startsWith('Grupo')) {
-      return userAdvancedOrWon ? 2000000 : 500000;
+      return userAdvancedOrWon ? 3_800_000 : 1_800_000;
     }
     if (!userAdvancedOrWon) {
-      return stageLabel === 'Final' ? 40000000 : 1500000;
+      return stageLabel === 'Final' ? 42_000_000 : 2_200_000;
     }
-    if (isFinalWinner || stageLabel === 'Final') return 120000000;
-    if (stageLabel === 'Semifinal') return 12500000;
-    if (stageLabel === 'Quartas') return 9000000;
-    return 6500000;
+    if (isFinalWinner || stageLabel === 'Final') return 138_000_000;
+    if (stageLabel === 'Semifinal') return 13_800_000;
+    if (stageLabel === 'Quartas') return 10_200_000;
+    return 7_500_000;
   }
   return 0;
 }

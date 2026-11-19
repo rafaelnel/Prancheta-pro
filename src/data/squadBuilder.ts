@@ -1,9 +1,11 @@
 import { FORMATIONS, getRolesForSector, getRoleById } from './tacticsData';
 import { calculatePlayerOverall } from '../engine/playerOverall';
 import {
+  assignDefaultContractTerms,
   assignPotentialStars,
   calculateBalancedValuationAndWage,
   calibrateAttributesToTargetOvr,
+  getDynamicPotentialProfile,
   getMaxRealisticOvrForAgeAndPotential,
 } from '../engine/economyAndEvolution';
 import {
@@ -77,19 +79,19 @@ export function generateAttributesFromSeed(
   const isST = position === 'ATA';
 
   const generated: PlayerAttributes = {
-    passe: clampAttr(base + (isCM || isAM || isDM ? 1.5 : isGK ? -2.5 : 0) + jitter()),
+    passe: clampAttr(base + (isCM || isAM || isDM ? 1.8 : isGK ? -2.5 : 0) + jitter()),
     finalizacao: clampAttr(base + (isST ? 2.3 : isWing || isAM ? 0.9 : isGK ? -9 : -4) + jitter()),
-    drible: clampAttr(base + (isWing || isAM ? 2.0 : isST || isCM ? 0.7 : isGK ? -8 : -2) + jitter()),
-    desarme: clampAttr(base + (isCB || isDM ? 2.2 : isFB ? 1.3 : isGK ? -6 : -4.5) + jitter()),
-    primeiroToque: clampAttr(base + (isAM || isCM || isWing || isST ? 1.4 : isGK ? -2 : -0.4) + jitter()),
+    drible: clampAttr(base + (isWing || isAM ? 2.0 : isST || isCM ? 0.9 : isGK ? -8 : -2) + jitter()),
+    desarme: clampAttr(base + (isCB || isDM ? 2.2 : isFB || isCM ? 1.3 : isGK ? -6 : -4.5) + jitter()),
+    primeiroToque: clampAttr(base + (isAM || isCM || isWing || isST ? 1.8 : isGK ? -2 : -0.4) + jitter()),
     cruzamento: clampAttr(base + (isFB || isWing ? 2.2 : isGK ? -8 : -2.5) + jitter()),
 
-    decisoes: clampAttr(base + (isGK || isCB || isDM || isCM ? 1.1 : 0.3) + jitter()),
+    decisoes: clampAttr(base + (isGK || isCB || isDM || isCM ? 1.5 : 0.3) + jitter()),
     visaoDeJogo: clampAttr(base + (isAM || isCM ? 2.1 : isGK ? -2 : -0.8) + jitter()),
-    compostura: clampAttr(base + (isGK || isST || isCB ? 1.2 : 0.3) + jitter()),
-    semBola: clampAttr(base + (isST || isWing || isAM ? 2.0 : isGK ? -8 : -2.2) + jitter()),
+    compostura: clampAttr(base + (isGK || isST || isCB || isCM ? 1.4 : 0.3) + jitter()),
+    semBola: clampAttr(base + (isST || isWing || isAM ? 2.0 : isCM ? 1.2 : isGK ? -8 : -2.2) + jitter()),
     posicionamento: clampAttr(base + (isGK || isCB || isDM ? 2.2 : isFB ? 1.0 : -3.2) + jitter()),
-    indiceDeTrabalho: clampAttr(base + (isDM || isCM || isFB ? 1.7 : 0.4) + jitter()),
+    indiceDeTrabalho: clampAttr(base + (isDM || isCM || isFB ? 1.8 : 0.4) + jitter()),
 
     velocidade: clampAttr(base + (isWing || isFB ? 2.1 : isST ? 1.0 : isGK ? -3 : -0.7) + jitter()),
     aceleracao: clampAttr(base + (isWing || isFB ? 2.1 : isST ? 1.0 : isGK ? -3 : -0.7) + jitter()),
@@ -179,7 +181,14 @@ export function buildPlayersFromSeeds(
         ? -1
         : 0;
 
-    return {
+    const dynProfile = getDynamicPotentialProfile(
+      potentialStars,
+      rng,
+      ovr6099,
+      age
+    );
+
+    const basePlayer: Player = {
       id: playerId,
       number,
       name,
@@ -201,6 +210,8 @@ export function buildPlayersFromSeeds(
       marketValue,
       salary,
       potentialStars,
+      basePotentialOvr: dynProfile.basePotentialOvr,
+      dynamicCeilingOvr: dynProfile.dynamicCeilingOvr,
       attributes,
       isStarter,
       slotIndex: isStarter ? idx : null,
@@ -218,6 +229,11 @@ export function buildPlayersFromSeeds(
           (6.80 + Math.max(0, overall - 13) * 0.14 + rng() * 0.15).toFixed(2)
         ),
       },
+    };
+    const contractTerms = assignDefaultContractTerms(basePlayer, 2026);
+    return {
+      ...basePlayer,
+      ...contractTerms,
     };
   });
 }

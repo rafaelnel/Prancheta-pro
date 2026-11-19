@@ -1,0 +1,220 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Hardened Global Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidSlotDocId(slotId) {
+      return slotId is string && slotId.size() == 6 && slotId.matches('^slot_[1-4]$');
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Validation Blueprint: UserProfile (/users/{userId})
+    function isValidUserProfile(data) {
+      return data.keys().hasAll([
+          'ownerId',
+          'displayName',
+          'preferredCurrency',
+          'activeSlotIndex',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'displayName',
+          'preferredCurrency',
+          'activeSlotIndex',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerId is string
+        && data.ownerId.size() >= 1
+        && data.ownerId.size() <= 128
+        && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.ownerId == request.auth.uid
+        && data.displayName is string
+        && data.displayName.size() >= 1
+        && data.displayName.size() <= 80
+        && data.preferredCurrency is string
+        && data.preferredCurrency.size() == 3
+        && (data.preferredCurrency == 'BRL' || data.preferredCurrency == 'EUR')
+        && data.activeSlotIndex is int
+        && data.activeSlotIndex >= 1
+        && data.activeSlotIndex <= 4
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Validation Blueprint: CareerCloudSlot (/users/{userId}/careerSlots/{slotId})
+    function isValidCareerCloudSlot(data) {
+      return data.keys().hasAll([
+          'ownerId',
+          'slotIndex',
+          'managerName',
+          'clubId',
+          'clubName',
+          'division',
+          'currentYear',
+          'currentRound',
+          'savedAtIso',
+          'careerPayload',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'slotIndex',
+          'managerName',
+          'clubId',
+          'clubName',
+          'division',
+          'currentYear',
+          'currentRound',
+          'savedAtIso',
+          'careerPayload',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerId is string
+        && data.ownerId.size() >= 1
+        && data.ownerId.size() <= 128
+        && data.ownerId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.ownerId == request.auth.uid
+        && data.slotIndex is int
+        && data.slotIndex >= 1
+        && data.slotIndex <= 4
+        && data.managerName is string
+        && data.managerName.size() >= 1
+        && data.managerName.size() <= 80
+        && data.clubId is string
+        && data.clubId.size() >= 1
+        && data.clubId.size() <= 64
+        && data.clubId.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.clubName is string
+        && data.clubName.size() >= 1
+        && data.clubName.size() <= 80
+        && data.division is string
+        && data.division.size() == 1
+        && (data.division == 'A' || data.division == 'B')
+        && data.currentYear is int
+        && data.currentYear >= 2026
+        && data.currentYear <= 2150
+        && data.currentRound is int
+        && data.currentRound >= 1
+        && data.currentRound <= 60
+        && data.savedAtIso is string
+        && data.savedAtIso.size() >= 10
+        && data.savedAtIso.size() <= 40
+        && data.careerPayload is map
+        && data.careerPayload.keys().size() >= 1
+        && data.careerPayload.keys().size() <= 64
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Master Gate helper for subcollections under /users/{userId}
+    function hasValidParentUserProfile(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId))
+        && get(/databases/$(database)/documents/users/$(userId)).data.ownerId == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'displayName',
+            'preferredCurrency',
+            'activeSlotIndex',
+            'updatedAt'
+          ])
+        );
+
+      allow delete: if false;
+
+      match /careerSlots/{slotId} {
+        allow get: if isOwner(userId)
+          && isValidId(userId)
+          && isValidSlotDocId(slotId)
+          && hasValidParentUserProfile(userId);
+
+        allow list: if isOwner(userId)
+          && existing().ownerId == request.auth.uid;
+
+        allow create: if isOwner(userId)
+          && isValidId(userId)
+          && isValidSlotDocId(slotId)
+          && isValidCareerCloudSlot(incoming())
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && (
+            hasValidParentUserProfile(userId)
+            || existsAfter(/databases/$(database)/documents/users/$(userId))
+          );
+
+        allow update: if isOwner(userId)
+          && isValidId(userId)
+          && isValidSlotDocId(slotId)
+          && isValidCareerCloudSlot(incoming())
+          && incoming().ownerId == existing().ownerId
+          && incoming().slotIndex == existing().slotIndex
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'managerName',
+            'clubId',
+            'clubName',
+            'division',
+            'currentYear',
+            'currentRound',
+            'savedAtIso',
+            'careerPayload',
+            'updatedAt'
+          ])
+          && hasValidParentUserProfile(userId);
+
+        allow delete: if isOwner(userId)
+          && isValidId(userId)
+          && isValidSlotDocId(slotId)
+          && existing().ownerId == request.auth.uid
+          && hasValidParentUserProfile(userId);
+      }
+    }
+  }
+}

@@ -107,6 +107,10 @@ export interface Player {
   injuryNote?: string;
   seasonStats: PlayerSeasonStats;
   contractType?: 'DEFINITIVO' | 'EMPRESTADO';
+  contractYearsRemaining?: number; // 1 = expires at end of current season; 2 = eligible for early renewal
+  contractEndYear?: number;
+  loanDurationYears?: 1 | 2;
+  contractRenewalStatus?: 'PENDENTE' | 'RENOVADO' | 'RECUSADO';
   loanOriginClubId?: string;
   loanOriginClubName?: string;
   wageSharePaid?: number;
@@ -127,6 +131,37 @@ export interface Player {
     | 'ESTAGNADO'
     | 'DECLINIO_TECNICO'
     | 'REGRESSAO_FISICA';
+}
+
+export type ContractFlexibility = 'Alta' | 'Média' | 'Baixa';
+
+export interface ContractRenewalExpectation {
+  playerId: string;
+  currentOvr: number;
+  recentOvrDelta: number;
+  fairMarketValue: number;
+  currentSalary: number;
+  desiredSalary: number;
+  salaryDeltaPct: number;
+  desiredAddYears: 1 | 2 | 3;
+  flexibility: ContractFlexibility;
+  flexibilityScore: number; // 0..100
+  isExpiringFinalYear: boolean; // contractYearsRemaining <= 1
+  canRenewEarly: boolean; // contractYearsRemaining === 2 (ano anterior ao vencimento)
+  demandReason: string;
+}
+
+export interface ContractRenewalOutcome {
+  outcome: 'ACEITA' | 'CONTRAPROPOSTA' | 'RECUSADA';
+  headline: string;
+  summary: string;
+  factors: string[];
+  offeredSalary: number;
+  offeredAddYears: 1 | 2 | 3;
+  counterSalary?: number;
+  counterAddYears?: 1 | 2 | 3;
+  updatedPlayer?: Player;
+  expectation: ContractRenewalExpectation;
 }
 
 export interface FormationSlot {
@@ -332,7 +367,11 @@ export interface MarketClubProfile {
 }
 
 export type TransferDealMode = 'BUY' | 'LOAN' | 'FREE';
-export type TransferOfferTier = 'PADRAO' | 'BONUS_15' | 'AGRESSIVA_30';
+export type TransferOfferTier =
+  | 'PADRAO'
+  | 'BONUS_15'
+  | 'AGRESSIVA_30'
+  | 'FORTE_50';
 export type TransferDifficultyLevel =
   | 'Fácil'
   | 'Moderada'
@@ -359,6 +398,10 @@ export interface TransferEvaluation {
   acceptanceChance: number;
   clubGapNote: string;
   playerGapNote: string;
+  playerWillingnessChance: number;
+  playerAmbitionNote: string;
+  moneyInfluenceNote: string;
+  willHardRejectByPlayer: boolean;
   effectiveFee: number;
   effectiveSalary: number;
   projectedCash: number;
@@ -368,6 +411,37 @@ export interface TransferEvaluation {
   fitsWageBudget: boolean;
   isBlocked: boolean;
   blockReason: string | null;
+}
+
+export type TransferOutcomeStatus = 'ACEITA' | 'CONTRAPROPOSTA' | 'RECUSADA';
+
+export interface TransferCounterOffer {
+  source: 'CLUBE' | 'JOGADOR' | 'AMBOS';
+  counterFee: number;
+  counterSalary: number;
+  counterLoanWageShare?: 0.5 | 0.75 | 1.0;
+  summary: string;
+}
+
+export interface TransferAttemptResult {
+  id: string;
+  listing: MarketPlayerListing;
+  dealMode: TransferDealMode;
+  offerTier: TransferOfferTier;
+  salaryOfferMult: number;
+  loanWageShare: 0.5 | 0.75 | 1.0;
+  contractYears?: 2 | 3 | 4;
+  loanDurationYears?: 1 | 2;
+  outcome: TransferOutcomeStatus;
+  rejectedBy?: 'CLUBE' | 'JOGADOR' | 'ORCAMENTO';
+  headline: string;
+  summary: string;
+  factors: string[];
+  offeredFee: number;
+  offeredSalary: number;
+  evaluation: TransferEvaluation;
+  counterOffer?: TransferCounterOffer;
+  signedPlayer?: Player | null;
 }
 
 export type TransferRecordType =
@@ -381,7 +455,7 @@ export interface TransferRecord {
   id: string;
   date: string;
   type: TransferRecordType;
-  status: 'CONCLUIDA' | 'RECUSADA';
+  status: 'CONCLUIDA' | 'RECUSADA' | 'CONTRAPROPOSTA';
   playerName: string;
   position: NaturalPosition;
   ovr: number;
@@ -393,6 +467,7 @@ export interface TransferRecord {
   fromClubName?: string;
   toClubName?: string;
   dealType?: 'COMPRA' | 'EMPRESTIMO';
+  durationYears?: number;
 }
 
 export interface WatchedPlayerEntry {
@@ -437,6 +512,7 @@ export interface MatchEvent {
 export interface PitchTokenState {
   id: string;
   number: number;
+  ovr?: number;
   name: string;
   shortName: string;
   team: 'HOME' | 'AWAY';
@@ -624,6 +700,16 @@ export interface PlayerEvolutionReportItem {
     | 'REGRESSAO_FISICA';
 }
 
+export interface RetiredPlayerReportItem {
+  playerId: string;
+  playerName: string;
+  position: NaturalPosition;
+  ageAtRetirement: number;
+  lastOvr: number;
+  matchesPlayed: number;
+  reasonNote: string;
+}
+
 export interface SeasonEndReport {
   seasonYear: number;
   serieAChampionId: string;
@@ -647,6 +733,11 @@ export interface SeasonEndReport {
   awards: SeasonAwardsSummary;
   userEvolutionHighlights: PlayerEvolutionReportItem[];
   promotedYouthRegens?: YouthRegenReportItem[];
+  expiringContractsCount?: number;
+  expiredPlayerNames?: string[];
+  returnedLoanNames?: string[];
+  retiredPlayers?: RetiredPlayerReportItem[];
+  thinkingRetirementNames?: string[];
 }
 
 export interface SeasonArchiveEntry {

@@ -44,6 +44,89 @@ export const REAL_BADGE_CLUB_IDS = new Set<string>([
   'crb',
   'botafogo-sp',
   'athletic-mg',
+  // UEFA Champions League (16 clubes)
+  'real-madrid',
+  'man-city',
+  'barcelona',
+  'bayern',
+  'psg',
+  'liverpool',
+  'arsenal',
+  'inter-milan',
+  'chelsea',
+  'atletico-madrid',
+  'borussia-dortmund',
+  'ac-milan',
+  'juventus',
+  'bayer-leverkusen',
+  'benfica',
+  'sporting',
+  // CONMEBOL Libertadores (24 clubes estrangeiros)
+  'river-plate',
+  'boca-juniors',
+  'racing-club',
+  'estudiantes-lp',
+  'rosario-central',
+  'penarol',
+  'nacional-uru',
+  'atletico-nacional',
+  'santa-fe',
+  'junior-barranquilla',
+  'ldu-quito',
+  'ind-del-valle',
+  'barcelona-sc',
+  'cerro-porteno',
+  'libertad',
+  'olimpia',
+  'colo-colo',
+  'u-de-chile',
+  'universitario',
+  'alianza-lima',
+  'bolivar',
+  'the-strongest',
+  'dep-tachira',
+  'carabobo',
+  // Mundial / Super Mundial (4 clubes globais)
+  'al-hilal',
+  'inter-miami',
+  'monterrey',
+  'al-ahly',
+]);
+
+const SVG_BADGE_CLUB_IDS = new Set<string>([
+  'chelsea',
+  'ac-milan',
+  'juventus',
+  'bayer-leverkusen',
+  'benfica',
+  'river-plate',
+  'boca-juniors',
+  'racing-club',
+  'estudiantes-lp',
+  'rosario-central',
+  'penarol',
+  'nacional-uru',
+  'atletico-nacional',
+  'santa-fe',
+  'junior-barranquilla',
+  'ldu-quito',
+  'ind-del-valle',
+  'barcelona-sc',
+  'cerro-porteno',
+  'libertad',
+  'olimpia',
+  'colo-colo',
+  'u-de-chile',
+  'universitario',
+  'alianza-lima',
+  'bolivar',
+  'the-strongest',
+  'dep-tachira',
+  'carabobo',
+  'al-hilal',
+  'inter-miami',
+  'monterrey',
+  'al-ahly',
 ]);
 
 export type ClubBadgeSize = 'xs' | 'sm' | 'md' | 'lg' | 'header';
@@ -75,12 +158,14 @@ export const ClubBadge: React.FC<ClubBadgeProps> = ({
   surface = 'dark',
   className = '',
 }) => {
-  const [failed, setFailed] = useState(false);
+  const [failedClubId, setFailedClubId] = useState<string | null>(null);
   const sizeClass = SIZE_CLASSES[size];
+  const failed = Boolean(clubId && failedClubId === clubId);
   const hasRealBadge = Boolean(clubId && REAL_BADGE_CLUB_IDS.has(clubId) && !failed);
 
   if (hasRealBadge && clubId) {
-    const src = `${import.meta.env.BASE_URL}badges/${clubId}.png`;
+    const ext = SVG_BADGE_CLUB_IDS.has(clubId) ? 'svg' : 'png';
+    const src = `${import.meta.env.BASE_URL}badges/${clubId}.${ext}`;
     const shadowClass =
       surface === 'dark'
         ? '[filter:drop-shadow(0_0_1px_rgba(255,255,255,0.42))_drop-shadow(0_2px_4px_rgba(0,0,0,0.55))]'
@@ -96,7 +181,7 @@ export const ClubBadge: React.FC<ClubBadgeProps> = ({
           alt={name ? `Escudo ${name}` : abbr}
           loading="lazy"
           draggable={false}
-          onError={() => setFailed(true)}
+          onError={() => setFailedClubId(clubId)}
           className={`w-full h-full object-contain ${shadowClass}`}
         />
       </div>

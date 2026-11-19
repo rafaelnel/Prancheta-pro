@@ -84,6 +84,18 @@ function formatFixtureCompetitionLabel(
     }
     return `Libertadores · ${fix.stageLabel || `${fix.roundNumber}ª Fase`}`;
   }
+  if (comp === 'CHAMPIONS_LEAGUE') {
+    return `Champions League · ${fix.stageLabel || 'Mata-Mata'}`;
+  }
+  if (comp === 'MUNDIAL') {
+    return `Mundial de Clubes · ${fix.stageLabel || 'Mata-Mata'}`;
+  }
+  if (comp === 'SUPER_MUNDIAL') {
+    if (fix.groupName) {
+      return `Super Mundial · Gr. ${fix.groupName} (${fix.roundNumber}ªR)`;
+    }
+    return `Super Mundial · ${fix.stageLabel || 'Mata-Mata'}`;
+  }
   const divLabel = fix.division === 'B' ? 'Série B' : 'Série A';
   return `${divLabel} · ${fix.roundNumber}ª Rodada`;
 }

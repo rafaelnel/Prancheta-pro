@@ -7,9 +7,11 @@ import {
   LibertadoresGroupName,
   LibertadoresKnockoutStage,
   LibertadoresState,
+  MundialState,
   RoundFixture,
   SeasonCalendarStep,
   StandingsRow,
+  SuperMundialState,
 } from '../types/football';
 import {
   ALL_WORLD_CLUBS,
@@ -22,6 +24,22 @@ import {
   simulateRoundFixtures,
   updateStandingsWithRound,
 } from '../engine/matchEngine';
+export {
+  CHAMPIONS_STAGES,
+  MUNDIAL_STAGES,
+  SUPER_MUNDIAL_KNOCKOUT_STAGES,
+  isSuperMundialYear,
+  getNextSuperMundialYear,
+  createInitialChampionsLeague,
+  advanceChampionsLeagueStage,
+  createInitialMundial,
+  seedMundialBracket,
+  advanceMundialStage,
+  createInitialSuperMundial,
+  syncSuperMundialWithChampionsResults,
+  advanceSuperMundialGroupRound,
+  advanceSuperMundialKnockoutStage,
+} from './globalCupFactory';
 
 export const COPA_DO_BRASIL_STAGES: CopaDoBrasilStage[] = [
   '3ª Fase',
@@ -50,48 +68,60 @@ export const SEASON_CALENDAR: SeasonCalendarStep[] = [
   { index: 8, competition: 'BRASILEIRAO', leagueRound: 8, dayOffset: 46, label: 'Brasileirão · 8ª Rodada' },
   { index: 9, competition: 'LIBERTADORES', libStage: 'Grupos', libGroupRound: 1, dayOffset: 49, label: 'Libertadores · Grupos (1ªR)' },
   { index: 10, competition: 'BRASILEIRAO', leagueRound: 9, dayOffset: 53, label: 'Brasileirão · 9ª Rodada' },
-  { index: 11, competition: 'BRASILEIRAO', leagueRound: 10, dayOffset: 60, label: 'Brasileirão · 10ª Rodada' },
-  { index: 12, competition: 'LIBERTADORES', libStage: 'Grupos', libGroupRound: 2, dayOffset: 63, label: 'Libertadores · Grupos (2ªR)' },
-  { index: 13, competition: 'BRASILEIRAO', leagueRound: 11, dayOffset: 67, label: 'Brasileirão · 11ª Rodada' },
-  { index: 14, competition: 'BRASILEIRAO', leagueRound: 12, dayOffset: 74, label: 'Brasileirão · 12ª Rodada' },
-  { index: 15, competition: 'COPA_DO_BRASIL', copaStage: 'Oitavas', dayOffset: 77, label: 'Copa do Brasil · Oitavas' },
-  { index: 16, competition: 'BRASILEIRAO', leagueRound: 13, dayOffset: 81, label: 'Brasileirão · 13ª Rodada' },
-  { index: 17, competition: 'BRASILEIRAO', leagueRound: 14, dayOffset: 88, label: 'Brasileirão · 14ª Rodada' },
-  { index: 18, competition: 'LIBERTADORES', libStage: 'Grupos', libGroupRound: 3, dayOffset: 91, label: 'Libertadores · Grupos (3ªR)' },
-  { index: 19, competition: 'BRASILEIRAO', leagueRound: 15, dayOffset: 95, label: 'Brasileirão · 15ª Rodada' },
-  { index: 20, competition: 'BRASILEIRAO', leagueRound: 16, dayOffset: 102, label: 'Brasileirão · 16ª Rodada' },
-  { index: 21, competition: 'LIBERTADORES', libStage: 'Grupos', libGroupRound: 4, dayOffset: 105, label: 'Libertadores · Grupos (4ªR)' },
-  { index: 22, competition: 'BRASILEIRAO', leagueRound: 17, dayOffset: 109, label: 'Brasileirão · 17ª Rodada' },
-  { index: 23, competition: 'BRASILEIRAO', leagueRound: 18, dayOffset: 116, label: 'Brasileirão · 18ª Rodada' },
-  { index: 24, competition: 'COPA_DO_BRASIL', copaStage: 'Quartas', dayOffset: 119, label: 'Copa do Brasil · Quartas' },
-  { index: 25, competition: 'BRASILEIRAO', leagueRound: 19, dayOffset: 123, label: 'Brasileirão · 19ª Rodada' },
-  { index: 26, competition: 'BRASILEIRAO', leagueRound: 20, dayOffset: 130, label: 'Brasileirão · 20ª Rodada' },
-  { index: 27, competition: 'LIBERTADORES', libStage: 'Grupos', libGroupRound: 5, dayOffset: 133, label: 'Libertadores · Grupos (5ªR)' },
-  { index: 28, competition: 'BRASILEIRAO', leagueRound: 21, dayOffset: 137, label: 'Brasileirão · 21ª Rodada' },
-  { index: 29, competition: 'BRASILEIRAO', leagueRound: 22, dayOffset: 144, label: 'Brasileirão · 22ª Rodada' },
-  { index: 30, competition: 'LIBERTADORES', libStage: 'Grupos', libGroupRound: 6, dayOffset: 147, label: 'Libertadores · Grupos (6ªR)' },
-  { index: 31, competition: 'BRASILEIRAO', leagueRound: 23, dayOffset: 151, label: 'Brasileirão · 23ª Rodada' },
-  { index: 32, competition: 'BRASILEIRAO', leagueRound: 24, dayOffset: 165, label: 'Brasileirão · 24ª Rodada' },
-  { index: 33, competition: 'BRASILEIRAO', leagueRound: 25, dayOffset: 172, label: 'Brasileirão · 25ª Rodada' },
-  { index: 34, competition: 'BRASILEIRAO', leagueRound: 26, dayOffset: 179, label: 'Brasileirão · 26ª Rodada' },
-  { index: 35, competition: 'COPA_DO_BRASIL', copaStage: 'Semifinal', dayOffset: 189, label: 'Copa do Brasil · Semifinal' },
-  { index: 36, competition: 'BRASILEIRAO', leagueRound: 27, dayOffset: 193, label: 'Brasileirão · 27ª Rodada' },
-  { index: 37, competition: 'LIBERTADORES', libStage: 'Oitavas', dayOffset: 203, label: 'Libertadores · Oitavas' },
-  { index: 38, competition: 'BRASILEIRAO', leagueRound: 28, dayOffset: 207, label: 'Brasileirão · 28ª Rodada' },
-  { index: 39, competition: 'BRASILEIRAO', leagueRound: 29, dayOffset: 214, label: 'Brasileirão · 29ª Rodada' },
-  { index: 40, competition: 'LIBERTADORES', libStage: 'Quartas', dayOffset: 224, label: 'Libertadores · Quartas' },
-  { index: 41, competition: 'BRASILEIRAO', leagueRound: 30, dayOffset: 228, label: 'Brasileirão · 30ª Rodada' },
-  { index: 42, competition: 'BRASILEIRAO', leagueRound: 31, dayOffset: 235, label: 'Brasileirão · 31ª Rodada' },
-  { index: 43, competition: 'BRASILEIRAO', leagueRound: 32, dayOffset: 242, label: 'Brasileirão · 32ª Rodada' },
-  { index: 44, competition: 'COPA_DO_BRASIL', copaStage: 'Final', dayOffset: 252, label: 'Copa do Brasil · Final' },
-  { index: 45, competition: 'BRASILEIRAO', leagueRound: 33, dayOffset: 256, label: 'Brasileirão · 33ª Rodada' },
-  { index: 46, competition: 'LIBERTADORES', libStage: 'Semifinal', dayOffset: 266, label: 'Libertadores · Semifinal' },
-  { index: 47, competition: 'BRASILEIRAO', leagueRound: 34, dayOffset: 270, label: 'Brasileirão · 34ª Rodada' },
-  { index: 48, competition: 'BRASILEIRAO', leagueRound: 35, dayOffset: 284, label: 'Brasileirão · 35ª Rodada' },
-  { index: 49, competition: 'LIBERTADORES', libStage: 'Final', dayOffset: 294, label: 'Libertadores · Final' },
-  { index: 50, competition: 'BRASILEIRAO', leagueRound: 36, dayOffset: 298, label: 'Brasileirão · 36ª Rodada' },
-  { index: 51, competition: 'BRASILEIRAO', leagueRound: 37, dayOffset: 305, label: 'Brasileirão · 37ª Rodada' },
-  { index: 52, competition: 'BRASILEIRAO', leagueRound: 38, dayOffset: 319, label: 'Brasileirão · 38ª Rodada' },
+  { index: 11, competition: 'CHAMPIONS_LEAGUE', uclStage: 'Oitavas', dayOffset: 56, label: 'Champions League · Oitavas' },
+  { index: 12, competition: 'BRASILEIRAO', leagueRound: 10, dayOffset: 60, label: 'Brasileirão · 10ª Rodada' },
+  { index: 13, competition: 'LIBERTADORES', libStage: 'Grupos', libGroupRound: 2, dayOffset: 63, label: 'Libertadores · Grupos (2ªR)' },
+  { index: 14, competition: 'BRASILEIRAO', leagueRound: 11, dayOffset: 67, label: 'Brasileirão · 11ª Rodada' },
+  { index: 15, competition: 'BRASILEIRAO', leagueRound: 12, dayOffset: 74, label: 'Brasileirão · 12ª Rodada' },
+  { index: 16, competition: 'COPA_DO_BRASIL', copaStage: 'Oitavas', dayOffset: 77, label: 'Copa do Brasil · Oitavas' },
+  { index: 17, competition: 'BRASILEIRAO', leagueRound: 13, dayOffset: 81, label: 'Brasileirão · 13ª Rodada' },
+  { index: 18, competition: 'CHAMPIONS_LEAGUE', uclStage: 'Quartas', dayOffset: 84, label: 'Champions League · Quartas' },
+  { index: 19, competition: 'BRASILEIRAO', leagueRound: 14, dayOffset: 88, label: 'Brasileirão · 14ª Rodada' },
+  { index: 20, competition: 'LIBERTADORES', libStage: 'Grupos', libGroupRound: 3, dayOffset: 91, label: 'Libertadores · Grupos (3ªR)' },
+  { index: 21, competition: 'BRASILEIRAO', leagueRound: 15, dayOffset: 95, label: 'Brasileirão · 15ª Rodada' },
+  { index: 22, competition: 'BRASILEIRAO', leagueRound: 16, dayOffset: 102, label: 'Brasileirão · 16ª Rodada' },
+  { index: 23, competition: 'LIBERTADORES', libStage: 'Grupos', libGroupRound: 4, dayOffset: 105, label: 'Libertadores · Grupos (4ªR)' },
+  { index: 24, competition: 'BRASILEIRAO', leagueRound: 17, dayOffset: 109, label: 'Brasileirão · 17ª Rodada' },
+  { index: 25, competition: 'CHAMPIONS_LEAGUE', uclStage: 'Semifinal', dayOffset: 112, label: 'Champions League · Semifinal' },
+  { index: 26, competition: 'BRASILEIRAO', leagueRound: 18, dayOffset: 116, label: 'Brasileirão · 18ª Rodada' },
+  { index: 27, competition: 'COPA_DO_BRASIL', copaStage: 'Quartas', dayOffset: 119, label: 'Copa do Brasil · Quartas' },
+  { index: 28, competition: 'BRASILEIRAO', leagueRound: 19, dayOffset: 123, label: 'Brasileirão · 19ª Rodada' },
+  { index: 29, competition: 'CHAMPIONS_LEAGUE', uclStage: 'Final', dayOffset: 126, label: 'Champions League · Final' },
+  { index: 30, competition: 'BRASILEIRAO', leagueRound: 20, dayOffset: 130, label: 'Brasileirão · 20ª Rodada' },
+  { index: 31, competition: 'LIBERTADORES', libStage: 'Grupos', libGroupRound: 5, dayOffset: 133, label: 'Libertadores · Grupos (5ªR)' },
+  { index: 32, competition: 'BRASILEIRAO', leagueRound: 21, dayOffset: 137, label: 'Brasileirão · 21ª Rodada' },
+  { index: 33, competition: 'BRASILEIRAO', leagueRound: 22, dayOffset: 144, label: 'Brasileirão · 22ª Rodada' },
+  { index: 34, competition: 'LIBERTADORES', libStage: 'Grupos', libGroupRound: 6, dayOffset: 147, label: 'Libertadores · Grupos (6ªR)' },
+  { index: 35, competition: 'BRASILEIRAO', leagueRound: 23, dayOffset: 151, label: 'Brasileirão · 23ª Rodada' },
+  { index: 36, competition: 'SUPER_MUNDIAL', superMundialStage: 'Grupos', superMundialGroupRound: 1, dayOffset: 153, label: 'Super Mundial · Grupos (1ªR)' },
+  { index: 37, competition: 'SUPER_MUNDIAL', superMundialStage: 'Grupos', superMundialGroupRound: 2, dayOffset: 155, label: 'Super Mundial · Grupos (2ªR)' },
+  { index: 38, competition: 'SUPER_MUNDIAL', superMundialStage: 'Grupos', superMundialGroupRound: 3, dayOffset: 157, label: 'Super Mundial · Grupos (3ªR)' },
+  { index: 39, competition: 'SUPER_MUNDIAL', superMundialStage: 'Quartas', dayOffset: 159, label: 'Super Mundial · Quartas' },
+  { index: 40, competition: 'SUPER_MUNDIAL', superMundialStage: 'Semifinal', dayOffset: 161, label: 'Super Mundial · Semifinal' },
+  { index: 41, competition: 'SUPER_MUNDIAL', superMundialStage: 'Final', dayOffset: 163, label: 'Super Mundial · Final' },
+  { index: 42, competition: 'BRASILEIRAO', leagueRound: 24, dayOffset: 165, label: 'Brasileirão · 24ª Rodada' },
+  { index: 43, competition: 'BRASILEIRAO', leagueRound: 25, dayOffset: 172, label: 'Brasileirão · 25ª Rodada' },
+  { index: 44, competition: 'BRASILEIRAO', leagueRound: 26, dayOffset: 179, label: 'Brasileirão · 26ª Rodada' },
+  { index: 45, competition: 'COPA_DO_BRASIL', copaStage: 'Semifinal', dayOffset: 189, label: 'Copa do Brasil · Semifinal' },
+  { index: 46, competition: 'BRASILEIRAO', leagueRound: 27, dayOffset: 193, label: 'Brasileirão · 27ª Rodada' },
+  { index: 47, competition: 'LIBERTADORES', libStage: 'Oitavas', dayOffset: 203, label: 'Libertadores · Oitavas' },
+  { index: 48, competition: 'BRASILEIRAO', leagueRound: 28, dayOffset: 207, label: 'Brasileirão · 28ª Rodada' },
+  { index: 49, competition: 'BRASILEIRAO', leagueRound: 29, dayOffset: 214, label: 'Brasileirão · 29ª Rodada' },
+  { index: 50, competition: 'LIBERTADORES', libStage: 'Quartas', dayOffset: 224, label: 'Libertadores · Quartas' },
+  { index: 51, competition: 'BRASILEIRAO', leagueRound: 30, dayOffset: 228, label: 'Brasileirão · 30ª Rodada' },
+  { index: 52, competition: 'BRASILEIRAO', leagueRound: 31, dayOffset: 235, label: 'Brasileirão · 31ª Rodada' },
+  { index: 53, competition: 'BRASILEIRAO', leagueRound: 32, dayOffset: 242, label: 'Brasileirão · 32ª Rodada' },
+  { index: 54, competition: 'COPA_DO_BRASIL', copaStage: 'Final', dayOffset: 252, label: 'Copa do Brasil · Final' },
+  { index: 55, competition: 'BRASILEIRAO', leagueRound: 33, dayOffset: 256, label: 'Brasileirão · 33ª Rodada' },
+  { index: 56, competition: 'LIBERTADORES', libStage: 'Semifinal', dayOffset: 266, label: 'Libertadores · Semifinal' },
+  { index: 57, competition: 'BRASILEIRAO', leagueRound: 34, dayOffset: 270, label: 'Brasileirão · 34ª Rodada' },
+  { index: 58, competition: 'BRASILEIRAO', leagueRound: 35, dayOffset: 284, label: 'Brasileirão · 35ª Rodada' },
+  { index: 59, competition: 'LIBERTADORES', libStage: 'Final', dayOffset: 294, label: 'Libertadores · Final' },
+  { index: 60, competition: 'BRASILEIRAO', leagueRound: 36, dayOffset: 298, label: 'Brasileirão · 36ª Rodada' },
+  { index: 61, competition: 'BRASILEIRAO', leagueRound: 37, dayOffset: 305, label: 'Brasileirão · 37ª Rodada' },
+  { index: 62, competition: 'BRASILEIRAO', leagueRound: 38, dayOffset: 319, label: 'Brasileirão · 38ª Rodada' },
+  { index: 63, competition: 'MUNDIAL', mundialStage: 'Semifinal', dayOffset: 324, label: 'Mundial de Clubes · Semifinal' },
+  { index: 64, competition: 'MUNDIAL', mundialStage: 'Final', dayOffset: 329, label: 'Mundial de Clubes · Final' },
 ];
 
 export function resolvePenaltyShootout(
@@ -704,7 +734,9 @@ export function findUserFixtureForStep(
   userClubId: string,
   leagueFixtures: RoundFixture[],
   copaDoBrasil: CopaDoBrasilState,
-  libertadores: LibertadoresState
+  libertadores: LibertadoresState,
+  mundial?: MundialState,
+  superMundial?: SuperMundialState
 ): RoundFixture | null {
   if (step.competition === 'BRASILEIRAO' && step.leagueRound) {
     return (
@@ -745,6 +777,46 @@ export function findUserFixtureForStep(
       );
     }
   }
+  // UEFA Champions League é sempre simulada automaticamente (usuário não joga)
+  if (step.competition === 'CHAMPIONS_LEAGUE') {
+    return null;
+  }
+  if (step.competition === 'MUNDIAL' && mundial && step.mundialStage) {
+    const list = mundial.fixturesByStage[step.mundialStage] || [];
+    return (
+      list.find(
+        (f) =>
+          (f.homeClubId === userClubId || f.awayClubId === userClubId) && !f.played
+      ) || null
+    );
+  }
+  if (
+    step.competition === 'SUPER_MUNDIAL' &&
+    superMundial &&
+    superMundial.isActiveThisSeason
+  ) {
+    if (step.superMundialStage === 'Grupos' && step.superMundialGroupRound) {
+      for (const grp of superMundial.groups) {
+        const match = grp.fixtures.find(
+          (f) =>
+            f.roundNumber === step.superMundialGroupRound &&
+            (f.homeClubId === userClubId || f.awayClubId === userClubId) &&
+            !f.played
+        );
+        if (match) return match;
+      }
+      return null;
+    }
+    if (step.superMundialStage && step.superMundialStage !== 'Grupos') {
+      const list = superMundial.knockoutFixtures[step.superMundialStage] || [];
+      return (
+        list.find(
+          (f) =>
+            (f.homeClubId === userClubId || f.awayClubId === userClubId) && !f.played
+        ) || null
+      );
+    }
+  }
   return null;
 }
 
@@ -755,44 +827,62 @@ export function getCupPrizeMoney(
   isFinalWinner: boolean
 ): number {
   if (competition === 'COPA_DO_BRASIL') {
-    // Valores calibrados pela tabela oficial da CBF (Copa do Brasil 2025/2026):
-    // 3ª Fase: R$ 2,3M participação / R$ 3,6M classificação
-    // Oitavas: R$ 3,6M / R$ 4,7M
-    // Quartas: R$ 4,7M / R$ 5,9M
-    // Semifinal: R$ 9,9M / R$ 10,2M
-    // Final: Vice R$ 33M / Campeão R$ 77M
     if (!userAdvancedOrWon) {
-      return stageLabel === 'Final' ? 33_000_000 : 1_800_000;
+      return stageLabel === 'Final' ? 54_000_000 : 3_200_000;
     }
-    if (isFinalWinner || stageLabel === 'Final') return 77_000_000;
-    if (stageLabel === 'Semifinal') return 10_200_000;
-    if (stageLabel === 'Quartas') return 5_900_000;
-    if (stageLabel === 'Oitavas') return 4_700_000;
-    return 3_600_000;
+    if (isFinalWinner || stageLabel === 'Final') return 125_000_000;
+    if (stageLabel === 'Semifinal') return 16_500_000;
+    if (stageLabel === 'Quartas') return 9_500_000;
+    if (stageLabel === 'Oitavas') return 7_500_000;
+    return 5_800_000;
   }
   if (competition === 'LIBERTADORES') {
-    // Valores calibrados pela CONMEBOL Libertadores 2025/2026 (convertidos em BRL ~5,75):
-    // Fase de Grupos: R$ 1,8M por jogo + bônus de mérito por vitória (+R$ 2,0M = R$ 3,8M)
-    // Oitavas: R$ 7,5M · Quartas: R$ 10,2M · Semifinal: R$ 13,8M
-    // Final: Vice R$ 42M (US$ 7M) · Campeão R$ 138M (US$ 23M-24M)
     if (stageLabel?.startsWith('Grupo')) {
-      return userAdvancedOrWon ? 3_800_000 : 1_800_000;
+      return userAdvancedOrWon ? 6_500_000 : 3_000_000;
     }
     if (!userAdvancedOrWon) {
-      return stageLabel === 'Final' ? 42_000_000 : 2_200_000;
+      return stageLabel === 'Final' ? 68_000_000 : 3_800_000;
     }
-    if (isFinalWinner || stageLabel === 'Final') return 138_000_000;
-    if (stageLabel === 'Semifinal') return 13_800_000;
-    if (stageLabel === 'Quartas') return 10_200_000;
-    return 7_500_000;
+    if (isFinalWinner || stageLabel === 'Final') return 225_000_000;
+    if (stageLabel === 'Semifinal') return 24_000_000;
+    if (stageLabel === 'Quartas') return 17_500_000;
+    return 12_500_000;
+  }
+  if (competition === 'MUNDIAL') {
+    // Copa Intercontinental / Mundial de Clubes anual (FIFA)
+    if (!userAdvancedOrWon) {
+      return stageLabel === 'Final' ? 42_000_000 : 18_000_000;
+    }
+    if (isFinalWinner || stageLabel === 'Final') return 85_000_000;
+    return 32_000_000;
+  }
+  if (competition === 'SUPER_MUNDIAL') {
+    // Super Mundial de Clubes FIFA (Quadrienal · 16 clubes)
+    if (stageLabel?.startsWith('Grupo')) {
+      return userAdvancedOrWon ? 24_000_000 : 12_000_000;
+    }
+    if (!userAdvancedOrWon) {
+      return stageLabel === 'Final' ? 145_000_000 : 36_000_000;
+    }
+    if (isFinalWinner || stageLabel === 'Final') return 320_000_000;
+    if (stageLabel === 'Semifinal') return 82_000_000;
+    if (stageLabel === 'Quartas') return 48_000_000;
+    return 26_000_000;
   }
   return 0;
 }
 
 export function isKnockoutFixture(fixture: RoundFixture): boolean {
-  if (fixture.competition === 'COPA_DO_BRASIL') return true;
   if (
-    fixture.competition === 'LIBERTADORES' &&
+    fixture.competition === 'COPA_DO_BRASIL' ||
+    fixture.competition === 'CHAMPIONS_LEAGUE' ||
+    fixture.competition === 'MUNDIAL'
+  ) {
+    return true;
+  }
+  if (
+    (fixture.competition === 'LIBERTADORES' ||
+      fixture.competition === 'SUPER_MUNDIAL') &&
     fixture.stageLabel &&
     !fixture.stageLabel.startsWith('Grupo')
   ) {

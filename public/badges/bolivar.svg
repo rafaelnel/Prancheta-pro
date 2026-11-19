@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <clipPath id="bolClip">
+      <path d="M36 32 Q100 18 164 32 V112 C164 150 134 176 100 188 C66 176 36 150 36 112 Z"/>
+    </clipPath>
+  </defs>
+  <path d="M31 28 Q100 12 169 28 V112 C169 154 137 180 100 193 C63 180 31 154 31 112 Z" fill="#FFFFFF" stroke="#0369A1" stroke-width="4"/>
+  <g clip-path="url(#bolClip)">
+    <rect x="36" y="18" width="128" height="172" fill="#0284C7"/>
+    <polygon points="20,136 174,46 188,72 34,162" fill="#FFFFFF"/>
+    <text x="102" y="112" text-anchor="middle" transform="rotate(-30 102 104)" font-family="Arial Black, sans-serif" font-weight="900" font-size="22" fill="#0284C7" letter-spacing="1">BOLÍVAR</text>
+  </g>
+  <g fill="#FACC15">
+    <circle cx="64" cy="54" r="4"/>
+    <circle cx="82" cy="48" r="4"/>
+    <circle cx="100" cy="45" r="4.5"/>
+    <circle cx="136" cy="144" r="4"/>
+    <circle cx="118" cy="154" r="4"/>
+  </g>
+  <path d="M36 32 Q100 18 164 32 V112 C164 150 134 176 100 188 C66 176 36 150 36 112 Z" fill="none" stroke="#FACC15" stroke-width="3"/>
+</svg>

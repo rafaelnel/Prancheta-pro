@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <clipPath id="alClip">
+      <path d="M36 48 H164 V126 C164 156 134 176 100 186 C66 176 36 156 36 126 Z"/>
+    </clipPath>
+  </defs>
+  <g fill="#FACC15" stroke="#111111" stroke-width="2">
+    <polygon points="62,14 66,24 77,24 68,30 71,40 62,34 53,40 56,30 47,24 58,24"/>
+    <polygon points="100,8 105,20 118,20 107,27 111,39 100,32 89,39 93,27 82,20 95,20"/>
+    <polygon points="138,14 142,24 153,24 144,30 147,40 138,34 129,40 132,30 123,24 134,24"/>
+  </g>
+  <path d="M32 44 H168 V126 C168 159 136 180 100 190 C64 180 32 159 32 126 Z" fill="#0F295C" stroke="#FFFFFF" stroke-width="4"/>
+  <g clip-path="url(#alClip)">
+    <rect x="36" y="76" width="25.6" height="112" fill="#0F295C"/>
+    <rect x="61.6" y="76" width="25.6" height="112" fill="#FFFFFF"/>
+    <rect x="87.2" y="76" width="25.6" height="112" fill="#0F295C"/>
+    <rect x="112.8" y="76" width="25.6" height="112" fill="#FFFFFF"/>
+    <rect x="138.4" y="76" width="25.6" height="112" fill="#0F295C"/>
+    <rect x="36" y="48" width="128" height="28" fill="#FFFFFF"/>
+  </g>
+  <line x1="36" y1="76" x2="164" y2="76" stroke="#0F295C" stroke-width="3"/>
+  <text x="100" y="68" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="16" fill="#0F295C" letter-spacing="1">ALIANZA</text>
+  <path d="M36 48 H164 V126 C164 156 134 176 100 186 C66 176 36 156 36 126 Z" fill="none" stroke="#0F295C" stroke-width="4"/>
+</svg>

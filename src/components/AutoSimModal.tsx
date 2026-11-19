@@ -2,6 +2,7 @@ import React from 'react';
 import {
   FastForward,
   Pause,
+  Play,
   CheckCircle2,
   Trophy,
   Sliders,
@@ -20,6 +21,7 @@ import { IncomingOfferCard } from './IncomingOfferCard';
 interface AutoSimModalProps {
   isOpen: boolean;
   isRunning: boolean;
+  isPaused?: boolean;
   isDone: boolean;
   wasStoppedEarly: boolean;
   targetLabel: string;
@@ -37,6 +39,8 @@ interface AutoSimModalProps {
   offerResolutionNote?: string | null;
   onResolveOffer?: (offerId: string, action: IncomingOfferAction) => void;
   onInspectPlayer?: (player: Player) => void;
+  onPause?: () => void;
+  onResume?: () => void;
   onPauseOrStop: () => void;
   onFinishInstant: () => void;
   onClose: () => void;
@@ -46,6 +50,7 @@ interface AutoSimModalProps {
 export const AutoSimModal: React.FC<AutoSimModalProps> = ({
   isOpen,
   isRunning,
+  isPaused = false,
   isDone,
   wasStoppedEarly,
   targetLabel,
@@ -63,6 +68,8 @@ export const AutoSimModal: React.FC<AutoSimModalProps> = ({
   offerResolutionNote = null,
   onResolveOffer,
   onInspectPlayer,
+  onPause,
+  onResume,
   onPauseOrStop,
   onFinishInstant,
   onClose,
@@ -109,6 +116,11 @@ export const AutoSimModal: React.FC<AutoSimModalProps> = ({
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#b5ff00] text-[#090a0f] text-[10px] font-mono font-extrabold uppercase">
                   <span className="w-2 h-2 rounded-full bg-[#090a0f] animate-ping" />
                   Simulando Partida a Partida
+                </span>
+              ) : isPaused && !wasStoppedEarly && !isDone ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-400 text-[#090a0f] text-[10px] font-mono font-extrabold uppercase">
+                  <Pause className="w-3 h-3" />
+                  Simulação Pausada
                 </span>
               ) : wasStoppedEarly ? (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[10px] font-mono font-extrabold uppercase">
@@ -432,14 +444,25 @@ export const AutoSimModal: React.FC<AutoSimModalProps> = ({
             </div>
           ) : isRunning ? (
             <>
-              <button
-                type="button"
-                onClick={onPauseOrStop}
-                className="px-4 py-2 rounded-full bg-[#14171f] hover:bg-white/10 border border-white/15 text-xs font-bold text-zinc-200 flex items-center gap-1.5 transition-colors"
-              >
-                <Pause className="w-3.5 h-3.5 text-amber-400" />
-                <span>Parar Aqui</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="autosim-pause-btn"
+                  onClick={onPause || onPauseOrStop}
+                  className="px-4 py-2 rounded-full bg-amber-400/15 hover:bg-amber-400/25 border border-amber-400/40 text-xs font-bold text-amber-200 flex items-center gap-1.5 transition-colors"
+                >
+                  <Pause className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Pausar</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="autosim-stop-btn"
+                  onClick={onPauseOrStop}
+                  className="px-3.5 py-2 rounded-full bg-[#14171f] hover:bg-white/10 border border-white/15 text-xs font-bold text-zinc-300 flex items-center gap-1.5 transition-colors"
+                >
+                  <span>Encerrar Aqui</span>
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={onFinishInstant}
@@ -447,6 +470,36 @@ export const AutoSimModal: React.FC<AutoSimModalProps> = ({
               >
                 <FastForward className="w-3.5 h-3.5" />
                 <span>Concluir Instantaneamente</span>
+              </button>
+            </>
+          ) : isPaused && !isDone && !wasStoppedEarly ? (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="autosim-stop-btn"
+                  onClick={onPauseOrStop}
+                  className="px-3.5 py-2 rounded-full bg-[#14171f] hover:bg-white/10 border border-white/15 text-xs font-bold text-zinc-300 flex items-center gap-1.5 transition-colors"
+                >
+                  <span>Encerrar Aqui</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onFinishInstant}
+                  className="px-3.5 py-2 rounded-full bg-[#14171f] hover:bg-white/10 border border-white/15 text-xs font-bold text-zinc-200 flex items-center gap-1.5 transition-colors"
+                >
+                  <FastForward className="w-3.5 h-3.5 text-[#b5ff00]" />
+                  <span>Concluir Instantaneamente</span>
+                </button>
+              </div>
+              <button
+                type="button"
+                data-testid="autosim-resume-btn"
+                onClick={onResume}
+                className="px-4 py-2 rounded-full bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] text-xs font-extrabold flex items-center gap-1.5 transition-colors shadow"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Retomar Simulação</span>
               </button>
             </>
           ) : (

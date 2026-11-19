@@ -1,4 +1,5 @@
 import {
+  ClubDivision,
   NaturalPosition,
   Player,
   PlayerAttributes,
@@ -81,11 +82,11 @@ export const YOUTH_TIERS: YouthTierDefinition[] = [
     starProbabilities: {
       star1_2_5: 72,
       star3_3_5: 25.5,
-      star4_4_5: 2.4,
-      star5: 0.1,
+      star4_4_5: 2.5,
+      star5: 0,
       star1_2: 72,
       star3: 25.5,
-      star4: 2.4,
+      star4: 2.5,
     },
     description:
       'Peneiras locais e escolinhas conveniadas. Foco em formação inicial a baixo custo (1–2,5★: 60–70 OVR · 3–4★: 70–75 OVR).',
@@ -103,11 +104,11 @@ export const YOUTH_TIERS: YouthTierDefinition[] = [
     starProbabilities: {
       star1_2_5: 48,
       star3_3_5: 43.5,
-      star4_4_5: 8.0,
-      star5: 0.5,
+      star4_4_5: 8.3,
+      star5: 0.2,
       star1_2: 48,
       star3: 43.5,
-      star4: 8.0,
+      star4: 8.3,
     },
     progressionNote: {
       fromTierLabel: 'Básico → Estruturado',
@@ -131,11 +132,11 @@ export const YOUTH_TIERS: YouthTierDefinition[] = [
     starProbabilities: {
       star1_2_5: 25,
       star3_3_5: 57.0,
-      star4_4_5: 16.8,
-      star5: 1.2,
+      star4_4_5: 17.4,
+      star5: 0.6,
       star1_2: 25,
       star3: 57.0,
-      star4: 16.8,
+      star4: 17.4,
     },
     progressionNote: {
       fromTierLabel: 'Estruturado → Avançado',
@@ -159,21 +160,21 @@ export const YOUTH_TIERS: YouthTierDefinition[] = [
     starProbabilities: {
       star1_2_5: 12,
       star3_3_5: 56.0,
-      star4_4_5: 29.0,
-      star5: 3.0,
+      star4_4_5: 30.5,
+      star5: 1.5,
       star1_2: 12,
       star3: 56.0,
-      star4: 29.0,
+      star4: 30.5,
     },
     progressionNote: {
       fromTierLabel: 'Avançado → Elite',
       badgeSummary:
-        'Base sólida 3–4★ (70–75 OVR) · +72% em 4–4,5★ (até 80 OVR) · Joias 5★ (75–85 OVR)',
+        'Base sólida 3–4★ (70–75 OVR) · +75% em 4–4,5★ (até 80 OVR) · Raras joias 5★ (1,5%)',
       detail:
-        'Mantém a base sólida de 3–3,5★ (70–75 OVR), aumenta em +72% a geração de 4–4,5★ (até 80 OVR) e multiplica por 2,5x a chance de fenômenos 5★ (75 a 85 OVR já na base).',
+        'Mantém a base sólida de 3–3,5★ (70–75 OVR), aumenta em +75% a geração de 4–4,5★ (até 80 OVR) e oferece a maior chance de fenômenos fora da curva 5★ (1,5%).',
     },
     description:
-      'Estrutura padrão mundial de captação e formação. Quase 1 em cada 3 jovens é 4–4,5★ (até 80 OVR) e 30x mais chance de joias 5★ (75 a 85 OVR).',
+      'Estrutura padrão mundial de captação e formação. Quase 1 em cada 3 jovens é 4–4,5★ (até 80 OVR) e chance real (1,5%) de fenômenos 5★ fora da curva.',
   },
 ];
 
@@ -258,7 +259,7 @@ function rollRealisticPotentialStars(params: {
 function buildSingleYouthProspect(params: {
   clubId: string;
   clubReputation: number;
-  division: 'A' | 'B' | 'LIB';
+  division: ClubDivision;
   seasonYear: number;
   index: number;
   chosenSector: PositionSector;
@@ -389,13 +390,17 @@ function buildSingleYouthProspect(params: {
   );
 
   const dynProfile = getDynamicPotentialProfile(potentialStars, rng);
+  const sleeperUpside =
+    potentialStars >= 2 && potentialStars <= 3.5 && rng() < 0.16
+      ? 4 + Math.floor(rng() * 5) // +4..+8 OVR hidden ceiling beyond initial low expectation
+      : 0;
   const basePotentialOvr = Math.min(
     94,
-    Math.max(ovr + 2, dynProfile.basePotentialOvr)
+    Math.max(ovr + 2, dynProfile.basePotentialOvr + Math.floor(sleeperUpside * 0.5))
   );
   const dynamicCeilingOvr = Math.min(
-    96,
-    Math.max(basePotentialOvr + 2, dynProfile.dynamicCeilingOvr)
+    95,
+    Math.max(basePotentialOvr + 2, dynProfile.dynamicCeilingOvr + sleeperUpside)
   );
 
   const regenPlayer: Player = {
@@ -457,7 +462,7 @@ function buildSingleYouthProspect(params: {
 export function createInitialYouthAcademy(
   clubId: string = 'flamengo',
   clubReputation: number = 78,
-  division: 'A' | 'B' | 'LIB' = 'A',
+  division: ClubDivision = 'A',
   seasonYear: number = 2026
 ): YouthAcademyState {
   const defaultTier: YouthInvestmentTier =
@@ -610,7 +615,7 @@ function rollYouthAcademyOvrGain(params: {
 export function evolveYouthAcademyRoster(params: {
   academy: YouthAcademyState;
   clubReputation: number;
-  division: 'A' | 'B' | 'LIB';
+  division: ClubDivision;
   phase: 'MID_SEASON' | 'SEASON_END';
   rng?: () => number;
 }): {
@@ -738,7 +743,7 @@ export function generateYouthRegens(params: {
   academy: YouthAcademyState;
   clubId: string;
   clubReputation: number;
-  division: 'A' | 'B' | 'LIB';
+  division: ClubDivision;
   seasonYear: number;
   rng?: () => number;
 }): {

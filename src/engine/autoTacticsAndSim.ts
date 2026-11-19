@@ -1,11 +1,17 @@
 import { FORMATIONS, TACTICAL_ROLES, getRoleById } from '../data/tacticsData';
 import {
   SEASON_CALENDAR,
+  advanceChampionsLeagueStage,
   advanceCopaDoBrasilStage,
   advanceLibertadoresGroupRound,
   advanceLibertadoresKnockoutStage,
+  advanceMundialStage,
+  advanceSuperMundialGroupRound,
+  advanceSuperMundialKnockoutStage,
   findUserFixtureForStep,
   getCupPrizeMoney,
+  seedMundialBracket,
+  syncSuperMundialWithChampionsResults,
 } from '../data/cupFactory';
 import {
   calculatePlayerOverall,
@@ -33,6 +39,7 @@ import { isTransferWindowOpen } from './transferEngine';
 import { attributeAiRoundPlayerStats } from './seasonLifecycle';
 import { createMatchHistoryRecordFromLiveMatch } from './headToHead';
 import {
+  ChampionsLeagueState,
   Club,
   ClubFinanceLedger,
   CopaDoBrasilState,
@@ -43,10 +50,12 @@ import {
   LiveMatchState,
   MatchHistoryRecord,
   MentalityType,
+  MundialState,
   NaturalPosition,
   Player,
   RoundFixture,
   StandingsRow,
+  SuperMundialState,
   TacticalDuty,
   TacticalRoleDefinition,
   TeamInstructions,
@@ -428,6 +437,9 @@ export interface AutoSimCareerSnapshot {
   secondaryFixtures: RoundFixture[];
   copaDoBrasil: CopaDoBrasilState;
   libertadores: LibertadoresState;
+  championsLeague?: ChampionsLeagueState;
+  mundial?: MundialState;
+  superMundial?: SuperMundialState;
   messages: InboxMessage[];
   matchState: LiveMatchState;
   matchHistory?: MatchHistoryRecord[];
@@ -466,14 +478,11 @@ export interface AutoSimMatchLogEntry {
 }
 
 export function isSeasonCompleted(snapshot: AutoSimCareerSnapshot): boolean {
-  const lastStep = SEASON_CALENDAR[SEASON_CALENDAR.length - 1];
-  if (snapshot.seasonStepIndex < SEASON_CALENDAR.length - 1) {
+  const lastIdx = SEASON_CALENDAR.length - 1;
+  if (snapshot.seasonStepIndex < lastIdx) {
     return false;
   }
-  const finalFix = snapshot.fixtures.find(
-    (f) => f.roundNumber === (lastStep.leagueRound || 38) && f.isUserMatch
-  );
-  return Boolean(finalFix?.played);
+  return isStepAlreadyPlayedForUser(lastIdx, snapshot);
 }
 
 function isStepAlreadyPlayedForUser(
@@ -506,6 +515,40 @@ function isStepAlreadyPlayedForUser(
     }
     if (step.libStage && step.libStage !== 'Grupos') {
       const list = snapshot.libertadores.knockoutFixtures[step.libStage] || [];
+      if (list.length === 0) return false;
+      return list.every((f) => f.played);
+    }
+  }
+
+  if (step.competition === 'CHAMPIONS_LEAGUE' && step.uclStage) {
+    if (!snapshot.championsLeague) return true;
+    const list = snapshot.championsLeague.fixturesByStage[step.uclStage] || [];
+    if (list.length === 0) return false;
+    return list.every((f) => f.played);
+  }
+
+  if (step.competition === 'MUNDIAL' && step.mundialStage) {
+    if (!snapshot.mundial) return true;
+    if (!snapshot.mundial.isSeeded) return false;
+    const list = snapshot.mundial.fixturesByStage[step.mundialStage] || [];
+    if (list.length === 0) return false;
+    return list.every((f) => f.played);
+  }
+
+  if (step.competition === 'SUPER_MUNDIAL') {
+    if (!snapshot.superMundial || !snapshot.superMundial.isActiveThisSeason) {
+      return true;
+    }
+    if (step.superMundialStage === 'Grupos' && step.superMundialGroupRound) {
+      return snapshot.superMundial.groups.every((g) =>
+        g.fixtures
+          .filter((f) => f.roundNumber === step.superMundialGroupRound)
+          .every((f) => f.played)
+      );
+    }
+    if (step.superMundialStage && step.superMundialStage !== 'Grupos') {
+      const list =
+        snapshot.superMundial.knockoutFixtures[step.superMundialStage] || [];
       if (list.length === 0) return false;
       return list.every((f) => f.played);
     }
@@ -673,7 +716,9 @@ export function simulateNextAutoStep(
         working.userClubId,
         working.fixtures,
         working.copaDoBrasil,
-        working.libertadores
+        working.libertadores,
+        working.mundial,
+        working.superMundial
       ) ||
       working.fixtures.find(
         (f) => f.roundNumber === nextLeagueRound && f.isUserMatch
@@ -726,19 +771,45 @@ export function simulateNextAutoStep(
         }))
       : [...working.squad];
 
+  // Garante que o chaveamento do Mundial esteja populado antes de verificar jogo do usuário
+  if (
+    targetStep.competition === 'MUNDIAL' &&
+    working.mundial &&
+    !working.mundial.isSeeded
+  ) {
+    working = {
+      ...working,
+      mundial: seedMundialBracket(
+        working.mundial,
+        working.championsLeague?.championClubId ?? null,
+        working.libertadores.championClubId,
+        working.clubs,
+        working.userClubId
+      ),
+    };
+  }
+
   const userFixture = findUserFixtureForStep(
     targetStep,
     working.userClubId,
     working.fixtures,
     working.copaDoBrasil,
-    working.libertadores
+    working.libertadores,
+    working.mundial,
+    working.superMundial
   );
 
-  // Case A: CPU-only cup round (user eliminated or not participating)
+  // Case A: CPU-only cup round (Champions League em background, ou copa onde usuário foi eliminado/não participa)
   if (!userFixture) {
     let nextCdb = working.copaDoBrasil;
     let nextLib = working.libertadores;
+    let nextUcl = working.championsLeague;
+    let nextMundial = working.mundial;
+    let nextSuperMundial = working.superMundial;
     let nextAiSquads = working.aiSquads || {};
+    let byeExtraMessages: InboxMessage[] = [];
+    let byeSummaryNote =
+      'Sem compromisso do clube nesta fase (demais chaves simuladas).';
 
     if (targetStep.competition === 'COPA_DO_BRASIL' && targetStep.copaStage) {
       nextCdb = advanceCopaDoBrasilStage(
@@ -789,6 +860,147 @@ export function simulateNextAutoStep(
           working.userClubId,
           rng
         );
+        if (targetStep.libStage === 'Final' && nextMundial && !nextMundial.isSeeded) {
+          nextMundial = seedMundialBracket(
+            nextMundial,
+            nextUcl?.championClubId ?? null,
+            nextLib.championClubId,
+            working.clubs,
+            working.userClubId
+          );
+        }
+      }
+    } else if (
+      targetStep.competition === 'CHAMPIONS_LEAGUE' &&
+      targetStep.uclStage &&
+      nextUcl
+    ) {
+      nextUcl = advanceChampionsLeagueStage(
+        nextUcl,
+        targetStep.uclStage,
+        working.clubs,
+        rng
+      );
+      nextAiSquads = attributeAiRoundPlayerStats(
+        nextAiSquads,
+        nextUcl.fixturesByStage[targetStep.uclStage] || [],
+        working.userClubId,
+        rng
+      );
+      byeSummaryNote = `UEFA Champions League (${targetStep.uclStage}) simulada na Europa.`;
+      if (targetStep.uclStage === 'Final' && nextUcl.championClubId) {
+        const champClub = working.clubs.find(
+          (c) => c.id === nextUcl?.championClubId
+        );
+        const runnerClub = working.clubs.find(
+          (c) => c.id === nextUcl?.runnerUpClubId
+        );
+        byeSummaryNote = `UEFA Champions League decidida: ${
+          champClub?.shortName || 'Campeão Europeu'
+        } conquista a Europa e garante vaga no Mundial!`;
+        if (nextSuperMundial && nextSuperMundial.isActiveThisSeason) {
+          nextSuperMundial = syncSuperMundialWithChampionsResults(
+            nextSuperMundial,
+            nextUcl,
+            working.clubs,
+            working.userClubId
+          );
+        }
+        byeExtraMessages.push({
+          id: `msg-ucl-final-${seasonYear}-${stepDayOffset}`,
+          date: `${formatCalendarDate(stepDayOffset, seasonYear)} · Europa`,
+          sender: 'Imprensa Internacional',
+          senderRole: 'UEFA Champions League',
+          subject: `${champClub?.shortName || 'Clube Europeu'} é campeão da Champions League ${seasonYear}!`,
+          category: 'Imprensa',
+          priority: 'normal',
+          read: false,
+          body: [
+            `O ${champClub?.name || 'Campeão Europeu'} derrotou o ${
+              runnerClub?.shortName || 'finalista'
+            } na final da UEFA Champions League ${seasonYear} e garantiu a vaga europeia no Mundial de Clubes de dezembro.`,
+            nextSuperMundial?.isActiveThisSeason
+              ? `Os classificados europeus para o Super Mundial de Clubes ${seasonYear} foram oficialmente confirmados!`
+              : `O título também assegura vaga europeia para a próxima edição do Super Mundial (${
+                  nextSuperMundial?.nextEditionYear ?? seasonYear + 1
+                }).`,
+          ],
+          actionLabel: 'Ver Chaveamento da Champions',
+          actionTargetTab: 'competitions',
+        });
+      }
+    } else if (
+      targetStep.competition === 'MUNDIAL' &&
+      targetStep.mundialStage &&
+      nextMundial
+    ) {
+      nextMundial = advanceMundialStage(
+        nextMundial,
+        targetStep.mundialStage,
+        null,
+        working.clubs,
+        working.userClubId,
+        rng
+      );
+      nextAiSquads = attributeAiRoundPlayerStats(
+        nextAiSquads,
+        nextMundial.fixturesByStage[targetStep.mundialStage] || [],
+        working.userClubId,
+        rng
+      );
+      if (targetStep.mundialStage === 'Final' && nextMundial.championClubId) {
+        const munChamp = working.clubs.find(
+          (c) => c.id === nextMundial?.championClubId
+        );
+        byeSummaryNote = `Mundial de Clubes ${seasonYear}: ${
+          munChamp?.shortName || 'Campeão'
+        } conquista o título mundial!`;
+      }
+    } else if (
+      targetStep.competition === 'SUPER_MUNDIAL' &&
+      nextSuperMundial?.isActiveThisSeason
+    ) {
+      if (
+        targetStep.superMundialStage === 'Grupos' &&
+        targetStep.superMundialGroupRound
+      ) {
+        nextSuperMundial = advanceSuperMundialGroupRound(
+          nextSuperMundial,
+          targetStep.superMundialGroupRound,
+          null,
+          working.clubs,
+          working.userClubId,
+          rng
+        );
+        const smFixes = nextSuperMundial.groups.flatMap((g) =>
+          g.fixtures.filter(
+            (f) => f.roundNumber === targetStep.superMundialGroupRound
+          )
+        );
+        nextAiSquads = attributeAiRoundPlayerStats(
+          nextAiSquads,
+          smFixes,
+          working.userClubId,
+          rng
+        );
+      } else if (
+        targetStep.superMundialStage &&
+        targetStep.superMundialStage !== 'Grupos'
+      ) {
+        nextSuperMundial = advanceSuperMundialKnockoutStage(
+          nextSuperMundial,
+          targetStep.superMundialStage,
+          null,
+          working.clubs,
+          working.userClubId,
+          rng
+        );
+        nextAiSquads = attributeAiRoundPlayerStats(
+          nextAiSquads,
+          nextSuperMundial.knockoutFixtures[targetStep.superMundialStage] || [],
+          working.userClubId,
+          rng
+        );
       }
     }
 
@@ -804,14 +1016,17 @@ export function simulateNextAutoStep(
       homeClubId: userClub.id,
       awayClubId: userClub.id,
       homeClubName: userClub.shortName,
-      awayClubName: 'Rodada sem jogo do clube',
+      awayClubName:
+        targetStep.competition === 'CHAMPIONS_LEAGUE'
+          ? 'Europa · Simulação Automática'
+          : 'Rodada sem jogo do clube',
       homeGoals: 0,
       awayGoals: 0,
       isUserHome: true,
       outcome: 'BYE',
       chosenFormation: userClub.formation,
       chosenMentality: userClub.instructions.mentality,
-      tacticalSummary: 'Sem compromisso do clube nesta fase (demais chaves simuladas).',
+      tacticalSummary: byeSummaryNote,
       goalScorers: [],
     };
 
@@ -871,6 +1086,10 @@ export function simulateNextAutoStep(
       );
     }
 
+    if (byeExtraMessages.length > 0) {
+      byeMessages = [...byeExtraMessages, ...byeMessages].slice(0, 60);
+    }
+
     return {
       done: false,
       snapshot: {
@@ -879,6 +1098,9 @@ export function simulateNextAutoStep(
         aiSquads: nextAiSquads,
         copaDoBrasil: nextCdb,
         libertadores: nextLib,
+        championsLeague: nextUcl,
+        mundial: nextMundial,
+        superMundial: nextSuperMundial,
         squad: recoveredSquad,
         messages: byeMessages,
         pendingOffers: byePendingOffers,
@@ -902,8 +1124,13 @@ export function simulateNextAutoStep(
 
   const isKnockout =
     targetStep.competition === 'COPA_DO_BRASIL' ||
+    targetStep.competition === 'MUNDIAL' ||
     (targetStep.competition === 'LIBERTADORES' &&
-      Boolean(targetStep.libStage && targetStep.libStage !== 'Grupos'));
+      Boolean(targetStep.libStage && targetStep.libStage !== 'Grupos')) ||
+    (targetStep.competition === 'SUPER_MUNDIAL' &&
+      Boolean(
+        targetStep.superMundialStage && targetStep.superMundialStage !== 'Grupos'
+      ));
 
   const tacticsChoice = selectOptimalTacticsForMatch({
     squad: recoveredSquad,
@@ -999,7 +1226,11 @@ export function simulateNextAutoStep(
     rank: userStandingRank,
     totalTeams: working.standings.length || 20,
     competition: comp,
-    stageLabel: targetStep.copaStage || targetStep.libStage,
+    stageLabel:
+      targetStep.copaStage ||
+      targetStep.libStage ||
+      targetStep.mundialStage ||
+      targetStep.superMundialStage,
     isHome: isUserHome,
   });
 
@@ -1009,6 +1240,8 @@ export function simulateNextAutoStep(
   let nextSecondaryStandings = working.secondaryStandings;
   let nextCdb = working.copaDoBrasil;
   let nextLib = working.libertadores;
+  let nextMundial = working.mundial;
+  let nextSuperMundial = working.superMundial;
   let nextAiSquads = working.aiSquads || {};
   let prizeMoney = 0;
 
@@ -1085,6 +1318,86 @@ export function simulateNextAutoStep(
         userAdvanced,
         targetStep.libStage === 'Final' && userAdvanced
       );
+      if (targetStep.libStage === 'Final' && nextMundial && !nextMundial.isSeeded) {
+        nextMundial = seedMundialBracket(
+          nextMundial,
+          working.championsLeague?.championClubId ?? null,
+          nextLib.championClubId,
+          nextClubs,
+          working.userClubId
+        );
+      }
+    }
+  } else if (comp === 'MUNDIAL' && targetStep.mundialStage && nextMundial) {
+    nextMundial = advanceMundialStage(
+      nextMundial,
+      targetStep.mundialStage,
+      userMatchPayload,
+      nextClubs,
+      working.userClubId,
+      rng
+    );
+    nextAiSquads = attributeAiRoundPlayerStats(
+      nextAiSquads,
+      nextMundial.fixturesByStage[targetStep.mundialStage] || [],
+      working.userClubId,
+      rng
+    );
+    prizeMoney = getCupPrizeMoney(
+      'MUNDIAL',
+      targetStep.mundialStage,
+      userAdvanced,
+      targetStep.mundialStage === 'Final' && userAdvanced
+    );
+  } else if (comp === 'SUPER_MUNDIAL' && nextSuperMundial?.isActiveThisSeason) {
+    if (
+      targetStep.superMundialStage === 'Grupos' &&
+      targetStep.superMundialGroupRound
+    ) {
+      nextSuperMundial = advanceSuperMundialGroupRound(
+        nextSuperMundial,
+        targetStep.superMundialGroupRound,
+        userMatchPayload,
+        nextClubs,
+        working.userClubId,
+        rng
+      );
+      const smFixes = nextSuperMundial.groups.flatMap((g) =>
+        g.fixtures.filter(
+          (f) => f.roundNumber === targetStep.superMundialGroupRound
+        )
+      );
+      nextAiSquads = attributeAiRoundPlayerStats(
+        nextAiSquads,
+        smFixes,
+        working.userClubId,
+        rng
+      );
+      prizeMoney = getCupPrizeMoney('SUPER_MUNDIAL', 'Grupo', userWon90, false);
+    } else if (
+      targetStep.superMundialStage &&
+      targetStep.superMundialStage !== 'Grupos'
+    ) {
+      nextSuperMundial = advanceSuperMundialKnockoutStage(
+        nextSuperMundial,
+        targetStep.superMundialStage,
+        userMatchPayload,
+        nextClubs,
+        working.userClubId,
+        rng
+      );
+      nextAiSquads = attributeAiRoundPlayerStats(
+        nextAiSquads,
+        nextSuperMundial.knockoutFixtures[targetStep.superMundialStage] || [],
+        working.userClubId,
+        rng
+      );
+      prizeMoney = getCupPrizeMoney(
+        'SUPER_MUNDIAL',
+        targetStep.superMundialStage,
+        userAdvanced,
+        targetStep.superMundialStage === 'Final' && userAdvanced
+      );
     }
   } else {
     nextFixtures = simulateRoundFixtures(
@@ -1147,7 +1460,11 @@ export function simulateNextAutoStep(
       : 0;
 
   const isCupAdvance =
-    (comp === 'COPA_DO_BRASIL' || comp === 'LIBERTADORES') && userAdvanced;
+    (comp === 'COPA_DO_BRASIL' ||
+      comp === 'LIBERTADORES' ||
+      comp === 'MUNDIAL' ||
+      comp === 'SUPER_MUNDIAL') &&
+    userAdvanced;
   const confidenceDelta = isCupAdvance
     ? 8
     : userAdvanced
@@ -1386,7 +1703,9 @@ export function simulateNextAutoStep(
         working.userClubId,
         nextFixtures,
         nextCdb,
-        nextLib
+        nextLib,
+        nextMundial,
+        nextSuperMundial
       ) ||
       nextFixtures.find((f) => f.roundNumber === nextRound && f.isUserMatch) ||
       nextFixtures[0];
@@ -1451,6 +1770,9 @@ export function simulateNextAutoStep(
       secondaryFixtures: nextSecondaryFixtures,
       copaDoBrasil: nextCdb,
       libertadores: nextLib,
+      championsLeague: working.championsLeague,
+      mundial: nextMundial,
+      superMundial: nextSuperMundial,
       messages: nextMessages,
       matchState: nextPreMatchState,
       matchHistory: nextMatchHistory,
@@ -1493,7 +1815,9 @@ export function countStepsUntilDayOffset(
       snapshot.userClubId,
       snapshot.fixtures,
       snapshot.copaDoBrasil,
-      snapshot.libertadores
+      snapshot.libertadores,
+      snapshot.mundial,
+      snapshot.superMundial
     );
     if (fix) {
       userMatchSteps += 1;

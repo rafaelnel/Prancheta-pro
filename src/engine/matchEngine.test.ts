@@ -87,13 +87,13 @@ test('Database contains 40 official 2026 clubs (20 Série A + 20 Série B) and 8
       }
       const ovr = calculatePlayerOverall(player.attributes, player.position);
       assert.ok(
-        ovr >= 60 && ovr <= 99,
-        `OVR ${ovr} out of 60..99 range for ${player.name} (${club.name})`
+        ovr >= 60 && ovr <= 95,
+        `OVR ${ovr} out of 60..95 range for ${player.name} (${club.name})`
       );
     }
   }
 
-  // Peak Messi / Pelé check: 20 across all attributes => OVR 99
+  // Peak generational legend check: 20 across all attributes => OVR 95
   const peakLegendAttributes: PlayerAttributes = {
     passe: 20,
     finalizacao: 20,
@@ -114,10 +114,10 @@ test('Database contains 40 official 2026 clubs (20 Série A + 20 Série B) and 8
     impulsao: 20,
     agilidade: 20,
   };
-  assert.equal(calculatePlayerOverall(peakLegendAttributes, 'MEI'), 99);
-  assert.equal(calculatePlayerOverall(peakLegendAttributes, 'ATA'), 99);
+  assert.equal(calculatePlayerOverall(peakLegendAttributes, 'MEI'), 95);
+  assert.equal(calculatePlayerOverall(peakLegendAttributes, 'ATA'), 95);
   assert.equal(rawScoreToOvr(12), 60);
-  assert.equal(rawScoreToOvr(20), 99);
+  assert.equal(rawScoreToOvr(20), 95);
 });
 
 test('Role suitability and team tactical ratings respond to mentality and role changes', () => {
@@ -343,10 +343,10 @@ test('Copa Libertadores 2026 covers all 10 CONMEBOL countries, 32 clubs, 8 group
     LIBERTADORES_KNOCKOUT_STAGES,
   } = await import('../data/cupFactory');
 
-  // 8 Brazilian clubs + 24 foreign clubs = 32 clubs across all 10 CONMEBOL countries
+  // 20 Série A + 20 Série B + 24 CONMEBOL + 16 UCL + 4 Mundial Global = 84 world clubs
   assert.equal(LIBERTADORES_BR_CLUB_IDS.length, 8);
   assert.equal(CONMEBOL_FOREIGN_CLUBS.length, 24);
-  assert.equal(ALL_WORLD_CLUBS.length, 64);
+  assert.equal(ALL_WORLD_CLUBS.length, 84);
 
   const foreignCountries = new Set(CONMEBOL_FOREIGN_CLUBS.map((c) => c.countryCode));
   for (const code of ['ARG', 'URU', 'COL', 'ECU', 'PAR', 'CHI', 'PER', 'BOL', 'VEN']) {
@@ -354,14 +354,14 @@ test('Copa Libertadores 2026 covers all 10 CONMEBOL countries, 32 clubs, 8 group
   }
   assert.equal(foreignCountries.size, 9); // + BRA = 10 CONMEBOL nations
 
-  // All 24 foreign clubs have complete starter + bench real squads (13-15 players) & 60-99 ratings
+  // All 24 foreign clubs have complete starter + bench real squads (13-15 players) & 60-95 ratings
   for (const club of CONMEBOL_FOREIGN_CLUBS) {
     const squad = getRealSquadForClub(club);
     assert.ok(squad.length >= 13, `Expected at least 13 real players for ${club.name}, got ${squad.length}`);
     assert.equal(squad.filter((p) => p.isStarter).length, 11);
     for (const p of squad) {
       const ovr = calculatePlayerOverall(p.attributes, p.position);
-      assert.ok(ovr >= 60 && ovr <= 99, `OVR ${ovr} out of bounds for ${p.name}`);
+      assert.ok(ovr >= 60 && ovr <= 95, `OVR ${ovr} out of bounds for ${p.name}`);
     }
   }
 
@@ -479,16 +479,22 @@ test('2D Match Engine supports Libertadores foreign opponent and resolves knocko
   );
 });
 
-test('SEASON_CALENDAR spans 53 non-overlapping dates (38 Brasileirão + 5 Copa do Brasil + 10 Libertadores) across all 12 months of 2026', async () => {
+test('SEASON_CALENDAR spans 65 non-overlapping dates (38 Brasileirão + 5 Copa do Brasil + 10 Libertadores + 4 Champions + 6 Super Mundial + 2 Mundial) across all 12 months of 2026', async () => {
   const { SEASON_CALENDAR } = await import('../data/cupFactory');
-  assert.equal(SEASON_CALENDAR.length, 53);
+  assert.equal(SEASON_CALENDAR.length, 65);
 
   const brSteps = SEASON_CALENDAR.filter((s) => s.competition === 'BRASILEIRAO');
   const cdbSteps = SEASON_CALENDAR.filter((s) => s.competition === 'COPA_DO_BRASIL');
   const libSteps = SEASON_CALENDAR.filter((s) => s.competition === 'LIBERTADORES');
+  const uclSteps = SEASON_CALENDAR.filter((s) => s.competition === 'CHAMPIONS_LEAGUE');
+  const smSteps = SEASON_CALENDAR.filter((s) => s.competition === 'SUPER_MUNDIAL');
+  const munSteps = SEASON_CALENDAR.filter((s) => s.competition === 'MUNDIAL');
   assert.equal(brSteps.length, 38);
   assert.equal(cdbSteps.length, 5);
   assert.equal(libSteps.length, 10);
+  assert.equal(uclSteps.length, 4);
+  assert.equal(smSteps.length, 6);
+  assert.equal(munSteps.length, 2);
 
   const monthsSeen = new Set<number>();
   const dayOffsetsSeen = new Set<number>();
@@ -505,7 +511,7 @@ test('SEASON_CALENDAR spans 53 non-overlapping dates (38 Brasileirão + 5 Copa d
     monthsSeen.add(d.getUTCMonth());
   }
 
-  assert.equal(dayOffsetsSeen.size, 53);
+  assert.equal(dayOffsetsSeen.size, 65);
   assert.equal(monthsSeen.size, 12, 'Expected fixtures across all 12 months (Jan-Dec 2026)');
 });
 
@@ -600,14 +606,18 @@ test('Transfer Catalog & Difficulty Engine evaluate Club x Club and Player x Squ
   } = await import('./transferEngine');
   const { createNewCareerSave } = await import('../data/careerFactory');
 
-  // 1. International & Free Agents catalogs integrity
+  // 1. International & Free Agents catalogs integrity (4 supplementary clubs + 16 UCL + 4 Global clubs)
   const intl = getInternationalMarketListings();
   const freeAgents = createInitialFreeAgents();
-  assert.ok(INTERNATIONAL_MARKET_CLUBS.length >= 12);
-  assert.ok(intl.length >= 40);
+  const uclAndGlobalClubs = ALL_WORLD_CLUBS.filter(
+    (c) => c.division === 'UCL' || c.division === 'WORLD'
+  );
+  assert.ok(INTERNATIONAL_MARKET_CLUBS.length >= 4);
+  assert.equal(uclAndGlobalClubs.length, 20);
+  assert.ok(intl.length >= 12);
   assert.equal(freeAgents.length, 20);
   for (const item of intl) {
-    assert.ok(item.ovr >= 60 && item.ovr <= 99);
+    assert.ok(item.ovr >= 60 && item.ovr <= 95);
     assert.equal(Object.keys(item.player.attributes).length, 18);
   }
 
@@ -634,8 +644,10 @@ test('Transfer Catalog & Difficulty Engine evaluate Club x Club and Player x Squ
   assert.ok(flamengoListings.every((l) => l.originClub?.id !== 'flamengo'));
 
   // 3. Club x Club & Player x Squad Difficulty comparison:
-  // Buying an international starter (e.g. Martinelli at Arsenal) as Série B Ponte Preta is harder than as Flamengo
-  const intlStarter = intl.find((l) => l.isClubStarter && l.ovr >= 80)!;
+  // Buying an international starter (e.g. from UCL / European clubs) as Série B Ponte Preta is harder than as Flamengo
+  const intlStarter = flamengoListings.find(
+    (l) => l.scope === 'INTERNACIONAL' && l.isClubStarter && l.ovr >= 80
+  )!;
   const ponteVsStar = evaluateTransferNegotiation({
     userClub: { ...ponteClub, cashBalance: 500_000_000, wageBudget: 50_000_000 },
     userSquad: ponteCareer.squad,
@@ -658,7 +670,9 @@ test('Transfer Catalog & Difficulty Engine evaluate Club x Club and Player x Squ
   );
 
   // Loan of a young international reserve with +30% offer & 100% salary is much easier than buying a starter
-  const intlLoanProspect = intl.find((l) => l.loanAvailable && !l.isClubStarter)!;
+  const intlLoanProspect = flamengoListings.find(
+    (l) => l.scope === 'INTERNACIONAL' && l.loanAvailable && !l.isClubStarter
+  )!;
   const loanStd = evaluateTransferNegotiation({
     userClub: { ...flamengoClub, cashBalance: 500_000_000, wageBudget: 50_000_000 },
     userSquad: flamengoCareer.squad,

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <clipPath id="ccpClip">
+      <path d="M36 28 H164 V116 C164 152 134 176 100 186 C66 176 36 152 36 116 Z"/>
+    </clipPath>
+  </defs>
+  <path d="M32 24 H168 V116 C168 155 136 180 100 190 C64 180 32 155 32 116 Z" fill="#0038A8" stroke="#ffffff" stroke-width="5"/>
+  <g clip-path="url(#ccpClip)">
+    <rect x="36" y="28" width="64" height="160" fill="#D5001C"/>
+    <rect x="100" y="28" width="64" height="160" fill="#0038A8"/>
+    <line x1="100" y1="28" x2="100" y2="188" stroke="#ffffff" stroke-width="4"/>
+  </g>
+  <circle cx="100" cy="100" r="34" fill="#ffffff" stroke="#0038A8" stroke-width="4"/>
+  <text x="100" y="109" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="24" fill="#D5001C" letter-spacing="1">CCP</text>
+</svg>

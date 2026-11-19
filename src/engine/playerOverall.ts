@@ -1,32 +1,35 @@
 import { NaturalPosition, PlayerAttributes } from '../types/football';
 
 /**
- * Converts an internal 1..20 weighted rating to the 60..99 OVR scale
- * calibrated to EA FC / eFootball (PES) benchmarks:
- *  - World-Class European Elite: 84 – 91+
- *  - Brasileirão Série A / Libertadores Stars (Arrascaeta, Pedro, Hulk, Estêvão, Paquetá, Garro): 80 – 83
- *  - Série A / Libertadores Starters: 74 – 79
- *  - Série A Reserves / Série B Standouts: 70 – 73
- *  - Série B Starters & Rotation: 65 – 70
- *  - Série B Backups / Youth: 61 – 65
+ * Converts an internal 1..20 weighted rating to the 60..95 OVR scale
+ * calibrated globally across Série B, Brasileirão/Libertadores, and UEFA Champions League:
+ *  - World-Class Ballon d'Or Outliers (Mbappé, Vini Jr, Haaland, Rodri, Bellingham, Salah, Yamal): 90 – 95
+ *  - UEFA Champions League Elite Starters: 84 – 89
+ *  - Champions League Rotation / Brasileirão & Libertadores Superstars: 78 – 83
+ *  - Série A / Libertadores Starters: 73 – 77
+ *  - Série A Reserves / Série B Standouts: 69 – 72
+ *  - Série B Starters & Rotation: 64 – 68
+ *  - Série B Backups / Youth: 60 – 63
  */
 export function rawScoreToOvr(rawScore: number): number {
   let ovr: number;
   if (rawScore <= 12.5) {
-    ovr = 58 + (rawScore - 10.5) * 1.5; // 12.5 -> 61
+    ovr = 58 + (rawScore - 10.5) * 1.5; // 12.5 -> 61.0
   } else if (rawScore <= 15.5) {
-    ovr = 61 + (rawScore - 12.5) * 3.0; // 14.0 -> 65.5, 15.5 -> 70
-  } else if (rawScore <= 18.5) {
-    ovr = 70 + (rawScore - 15.5) * 4.0; // 16.5 -> 74, 17.5 -> 78, 18.5 -> 82
+    ovr = 61.0 + (rawScore - 12.5) * 2.5; // 14.0 -> 64.75, 15.5 -> 68.5
+  } else if (rawScore <= 17.8) {
+    ovr = 68.5 + (rawScore - 15.5) * 4.0; // 16.5 -> 72.5, 17.5 -> 76.5, 17.8 -> 77.7
+  } else if (rawScore <= 19.0) {
+    ovr = 77.7 + (rawScore - 17.8) * 6.0; // 18.2 -> 80.1, 18.6 -> 82.5, 19.0 -> 84.9
   } else {
-    ovr = 82 + ((rawScore - 18.5) / 1.5) * 17.0; // 19.0 -> 88, 19.5 -> 93, 20.0 -> 99
+    ovr = 84.9 + (rawScore - 19.0) * 10.1; // 19.3 -> 87.9, 19.5 -> 90.0, 19.7 -> 92.0, 20.0 -> 95.0
   }
-  return Math.min(99, Math.max(60, Math.round(ovr)));
+  return Math.min(95, Math.max(60, Math.round(ovr)));
 }
 
 /**
- * Calculates a player's overall rating (60 to 99) weighted by their natural position.
- * Peak 99 corresponds to 20 across all position-relevant attributes (Pelé / Messi at their peak).
+ * Calculates a player's overall rating (60 to 95) weighted by their natural position.
+ * Peak 95 corresponds to 20 across all position-relevant attributes (generational all-time peak).
  */
 export function calculatePlayerOverall(
   attr: PlayerAttributes,

@@ -138,7 +138,8 @@ export function buildPlayersFromSeeds(
       ovr6099,
       age,
       club.reputation,
-      playerId
+      playerId,
+      name
     );
     const maxAllowedForAge = getMaxRealisticOvrForAgeAndPotential(
       age,

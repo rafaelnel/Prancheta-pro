@@ -64,6 +64,13 @@ export function formatCompactBRL(
   if (abs === 0) {
     return `${prefix} 0`;
   }
+  if (abs >= 1_000_000_000) {
+    const billions = abs / 1_000_000_000;
+    return `${sign}${prefix} ${billions.toLocaleString('pt-BR', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}Bi`;
+  }
   if (abs >= 1_000_000) {
     const millions = abs / 1_000_000;
     return `${sign}${prefix} ${millions.toLocaleString('pt-BR', {

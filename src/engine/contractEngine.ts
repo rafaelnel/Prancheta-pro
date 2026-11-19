@@ -79,9 +79,18 @@ export function calculateContractRenewalExpectation(
     desiredSalaryRaw = Math.round((targetMarketAsk * 0.55 + currentAnchor * 0.45));
   }
 
+  const maxContractSalary =
+    club.division === 'UCL'
+      ? 16_000_000
+      : club.division === 'WORLD'
+      ? 8_000_000
+      : club.division === 'B'
+      ? 900_000
+      : 3_500_000;
+
   const desiredSalary = Math.min(
-    1_500_000,
-    Math.max(15_000, Math.round(desiredSalaryRaw / 5_000) * 5_000)
+    maxContractSalary,
+    Math.max(20_000, Math.round(desiredSalaryRaw / 5_000) * 5_000)
   );
   const salaryDeltaPct =
     player.salary > 0
@@ -387,7 +396,7 @@ export function negotiateContractRenewal(params: {
         : offeredSalary * 0.15 + expectation.desiredSalary * 0.85;
 
     const counterSalary = Math.min(
-      1_500_000,
+      Math.max(3_500_000, expectation.desiredSalary),
       Math.max(
         offeredSalary + 5_000,
         Math.round(midpoint / 5_000) * 5_000

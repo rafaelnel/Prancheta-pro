@@ -7,13 +7,19 @@ import {
   getRealSquadForClub,
 } from './initialDatabase';
 import {
+  createInitialChampionsLeague,
   createInitialCopaDoBrasil,
   createInitialLibertadores,
+  createInitialMundial,
+  createInitialSuperMundial,
 } from './cupFactory';
 import { createInitialFreeAgents } from './transferCatalog';
 import { createInitialMatchState } from '../engine/matchEngine';
 import { buildInitialAiSquads } from '../engine/aiMarketEngine';
-import { createInitialFinanceLedger } from '../engine/economyAndEvolution';
+import {
+  GLOBAL_SCALE_VERSION,
+  createInitialFinanceLedger,
+} from '../engine/economyAndEvolution';
 import { createInitialYouthAcademy } from '../engine/youthAcademyEngine';
 import {
   CareerSaveData,
@@ -162,8 +168,15 @@ export function createNewCareerSave(
   const secondaryStandings = getInitialStandingsForDivision(otherDivision);
   const secondaryFixtures = generateLeagueSchedule('__none__', otherDivision);
 
-  const copaDoBrasil = createInitialCopaDoBrasil(userClub.id);
+  const copaDoBrasil = createInitialCopaDoBrasil(userClub.id, clubs);
   const libertadores = createInitialLibertadores(userClub.id);
+  const championsLeague = createInitialChampionsLeague(2026, clubs);
+  const mundial = createInitialMundial(2026);
+  const superMundial = createInitialSuperMundial({
+    seasonYear: 2026,
+    userClubId: userClub.id,
+    clubsPool: clubs,
+  });
 
   const squad = createSquadForClub(userClub);
   const aiSquads = buildInitialAiSquads(clubs, userClub.id);
@@ -227,6 +240,12 @@ export function createNewCareerSave(
     secondaryFixtures,
     copaDoBrasil,
     libertadores,
+    championsLeague,
+    mundial,
+    superMundial,
+    accumulatedUclChampions: [],
+    accumulatedLibChampions: [],
+    globalScaleVersion: GLOBAL_SCALE_VERSION,
     messages,
     matchState,
     matchHistory: [],

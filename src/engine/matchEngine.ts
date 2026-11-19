@@ -281,9 +281,9 @@ export function calculateTeamTacticalRatings(
   );
 
   return {
-    attack: Math.min(99, Math.max(60, Math.round(attack))),
-    midfield: Math.min(99, Math.max(60, Math.round(midfield))),
-    defense: Math.min(99, Math.max(60, Math.round(defense))),
+    attack: Math.min(95, Math.max(60, Math.round(attack))),
+    midfield: Math.min(95, Math.max(60, Math.round(midfield))),
+    defense: Math.min(95, Math.max(60, Math.round(defense))),
     synergy,
   };
 }
@@ -490,11 +490,19 @@ export function createInitialMatchState(
       ? `Copa do Brasil · ${fixture.stageLabel || 'Mata-Mata'}`
       : competition === 'LIBERTADORES'
       ? `Copa Libertadores · ${fixture.stageLabel || 'Fase de Grupos'}`
+      : competition === 'CHAMPIONS_LEAGUE'
+      ? `UEFA Champions League · ${fixture.stageLabel || 'Mata-Mata'}`
+      : competition === 'MUNDIAL'
+      ? `Mundial de Clubes · ${fixture.stageLabel || 'Mata-Mata'}`
+      : competition === 'SUPER_MUNDIAL'
+      ? `Super Mundial de Clubes · ${fixture.stageLabel || 'Fase de Grupos'}`
       : `Brasileirão ${leagueDiv} · ${roundNumber}ª Rodada`;
 
   const isKnockout =
     competition === 'COPA_DO_BRASIL' ||
-    (competition === 'LIBERTADORES' &&
+    competition === 'CHAMPIONS_LEAGUE' ||
+    competition === 'MUNDIAL' ||
+    ((competition === 'LIBERTADORES' || competition === 'SUPER_MUNDIAL') &&
       Boolean(fixture.stageLabel && !fixture.stageLabel.startsWith('Grupo')));
 
   return {

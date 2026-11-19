@@ -210,11 +210,11 @@ export function evaluateAiClubSquadAndListings(
       }
     } else if (
       // Occasional starter sale only if club is in severe cash crunch and has a near-equal backup
-      club.cashBalance < 3_800_000 &&
+      club.cashBalance < 7_500_000 &&
       posCount >= 2 &&
       posGroup[1] &&
       posGroup[1].ovr >= ovr - 2 &&
-      player.marketValue >= 10_000_000 &&
+      player.marketValue >= 22_000_000 &&
       transferCount < maxTransfersPerClub
     ) {
       isTransferListed = true;
@@ -404,7 +404,7 @@ function recalculateClubSectorRatings(
       (acc, p) => acc + calculatePlayerOverall(p.attributes, p.position),
       0
     );
-    return Math.min(99, Math.max(60, Math.round(sum / list.length)));
+    return Math.min(95, Math.max(60, Math.round(sum / list.length)));
   };
   return {
     overallAttack: avgSec(['ATA'], club.overallAttack),
@@ -501,11 +501,11 @@ export function simulateAiTransferWindowTick(params: {
   for (let d = 0; d < maxDeals; d++) {
     // Pick a buying/borrowing club with positional needs and budget headroom
     const buyers = aiClubIndices.filter((item) => {
-      if (item.club.cashBalance < 1_500_000) return false;
+      if (item.club.cashBalance < 2_500_000) return false;
       const sq = workingSquads[item.club.id];
       if (sq.length >= 27) return false;
       const payroll = sq.reduce((s, p) => s + p.salary, 0);
-      return item.club.wageBudget - payroll >= 80_000;
+      return item.club.wageBudget - payroll >= 120_000;
     });
     if (buyers.length === 0) break;
 
@@ -514,7 +514,7 @@ export function simulateAiTransferWindowTick(params: {
     const buyerSquad = workingSquads[buyer.id];
     const buyerPayroll = buyerSquad.reduce((s, p) => s + p.salary, 0);
     const remainingWageRoom = buyer.wageBudget - buyerPayroll;
-    if (remainingWageRoom < 80_000) continue;
+    if (remainingWageRoom < 120_000) continue;
 
     const buyerProfile = analyzeAiClubMarketProfile(buyer, buyerSquad);
     const neededPositions = buyerProfile.neededPositions;
@@ -522,11 +522,17 @@ export function simulateAiTransferWindowTick(params: {
       buyerProfile.neededSectors[0] || findWeakestSector(buyerSquad);
 
     // Pick candidate sellers that have depth and players listed or matching buyer's needs
+    // Allows Brazilian/CONMEBOL clubs to loan/buy listed reserves from European UCL clubs, and UCL clubs to scout SA stars
     const candidateSellers = aiClubIndices.filter(
       (item) =>
         item.club.id !== buyer.id &&
         workingSquads[item.club.id].length > MIN_SQUAD_SIZE + 1 &&
-        item.club.reputation <= buyer.reputation + 8
+        (item.club.reputation <= buyer.reputation + 10 ||
+          (item.club.division === 'UCL' &&
+            buyer.reputation >= 76 &&
+            workingSquads[item.club.id].some(
+              (p) => p.isLoanListed || p.isTransferListed
+            )))
     );
     if (candidateSellers.length === 0) continue;
 
@@ -808,7 +814,7 @@ export function maybeGenerateIncomingOfferForUser(params: {
       const ovr = calculatePlayerOverall(p.attributes, p.position);
       const stars =
         p.potentialStars ??
-        assignPotentialStars(ovr, p.age, userClub.reputation, p.id);
+        assignPotentialStars(ovr, p.age, userClub.reputation, p.id, p.name);
       const formBoost =
         p.seasonStats.matches >= 4 && p.seasonStats.avgRating >= 7.1 ? 6 : 0;
       const youthBoost = p.age <= 22 && stars >= 4 ? 5 : 0;
@@ -897,13 +903,29 @@ export function maybeGenerateIncomingOfferForUser(params: {
 
   const buyerPool =
     clubsWithNeed.length > 0 && rng() < 0.88 ? clubsWithNeed : interestedClubs;
-  // Prefer richer clubs for purchase offers
-  const sortedBuyerPool = [...buyerPool].sort(
+
+  // Equilibra propostas entre gigantes europeus (Champions League) e mercado sul-americano/global:
+  // - Destaques/promessas (OVR >= 78 ou Sub-22 4★+): forte interesse europeu (Champions) + grandes locais
+  // - Jogadores de rotação/Série B (OVR < 78 sem alto potencial jovem): prioriza mercado brasileiro/CONMEBOL/global
+  const isEuropeanTarget =
+    picked.ovr >= 78 || (p.age <= 22 && picked.stars >= 4);
+  const uclBuyers = buyerPool.filter((c) => c.division === 'UCL');
+  const nonUclBuyers = buyerPool.filter((c) => c.division !== 'UCL');
+
+  let scopedBuyerPool = buyerPool;
+  if (isEuropeanTarget && uclBuyers.length > 0 && nonUclBuyers.length > 0) {
+    scopedBuyerPool = rng() < 0.56 ? uclBuyers : nonUclBuyers;
+  } else if (!isEuropeanTarget && nonUclBuyers.length > 0) {
+    scopedBuyerPool = rng() < 0.88 ? nonUclBuyers : buyerPool;
+  }
+
+  // Prefer richer clubs within the chosen market tier without repeating only the same 1-2 clubs
+  const sortedBuyerPool = [...scopedBuyerPool].sort(
     (a, b) => b.cashBalance - a.cashBalance
   );
   const topBuyers = sortedBuyerPool.slice(
     0,
-    Math.max(1, Math.min(4, sortedBuyerPool.length))
+    Math.max(1, Math.min(8, sortedBuyerPool.length))
   );
   const buyer = topBuyers[Math.floor(rng() * topBuyers.length)];
   const buyerSq = aiSquads?.[buyer.id] || [];

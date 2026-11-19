@@ -1,14 +1,24 @@
-import { CareerSaveData, CareerSlotIndex } from '../types/football';
-import { CONMEBOL_FOREIGN_CLUBS } from '../data/initialDatabase';
+import { CareerSaveData, CareerSlotIndex, Player } from '../types/football';
 import {
+  CONMEBOL_FOREIGN_CLUBS,
+  GLOBAL_WORLD_CLUBS,
+  INITIAL_CLUBS,
+  UCL_CLUBS,
+} from '../data/initialDatabase';
+import {
+  createInitialChampionsLeague,
   createInitialCopaDoBrasil,
   createInitialLibertadores,
+  createInitialMundial,
+  createInitialSuperMundial,
 } from '../data/cupFactory';
 import { createInitialFreeAgents } from '../data/transferCatalog';
 import { buildInitialAiSquads } from '../engine/aiMarketEngine';
 import {
+  GLOBAL_SCALE_VERSION,
   createInitialFinanceLedger,
   ensurePlayerDefaults,
+  recalibratePlayerForGlobalScale,
 } from '../engine/economyAndEvolution';
 import {
   YOUTH_TIERS,
@@ -90,42 +100,115 @@ function writeSlotMap(
 
 export function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
   const existingIds = new Set(save.clubs.map((c) => c.id));
-  const missingForeign = CONMEBOL_FOREIGN_CLUBS.filter(
-    (c) => !existingIds.has(c.id)
-  ).map((c) => ({
-    ...c,
-    instructions: { ...c.instructions },
-    starPlayers: c.starPlayers.map((s) => ({ ...s })),
-  }));
+  const missingClubs = [
+    ...CONMEBOL_FOREIGN_CLUBS,
+    ...UCL_CLUBS,
+    ...GLOBAL_WORLD_CLUBS,
+  ]
+    .filter((c) => !existingIds.has(c.id))
+    .map((c) => ({
+      ...c,
+      instructions: { ...c.instructions },
+      starPlayers: c.starPlayers.map((s) => ({ ...s })),
+    }));
 
   const hydratedClubs =
-    missingForeign.length > 0 ? [...save.clubs, ...missingForeign] : save.clubs;
-  const userClub =
-    hydratedClubs.find((c) => c.id === save.userClubId) || hydratedClubs[0];
-  const seasonYear = save.currentYear ?? 2026;
-  const hydratedSquad = save.squad.map((p) =>
-    ensurePlayerDefaults(p, userClub.reputation, userClub.division, seasonYear)
+    missingClubs.length > 0 ? [...save.clubs, ...missingClubs] : save.clubs;
+  const baseClubRefMap = new Map(
+    [
+      ...INITIAL_CLUBS,
+      ...CONMEBOL_FOREIGN_CLUBS,
+      ...UCL_CLUBS,
+      ...GLOBAL_WORLD_CLUBS,
+    ].map((c) => [c.id, c])
   );
-  const baseAiSquads = buildInitialAiSquads(hydratedClubs, save.userClubId);
-  const hydratedAiSquads =
+  const seasonYear = save.currentYear ?? 2026;
+  const needsGlobalScaleMigration =
+    (save.globalScaleVersion ?? 1) < GLOBAL_SCALE_VERSION;
+  const needsTransfermarktMoneyUpgrade = (save.globalScaleVersion ?? 1) < 5;
+  const migratedClubs = needsTransfermarktMoneyUpgrade
+    ? hydratedClubs.map((c) => {
+        const ref = baseClubRefMap.get(c.id);
+        const targetCash = ref
+          ? Math.max(c.cashBalance, ref.cashBalance)
+          : c.division === 'UCL'
+          ? Math.round(c.cashBalance * 2.2)
+          : Math.round(c.cashBalance * 2.0);
+        const targetWage = ref
+          ? Math.max(c.wageBudget, ref.wageBudget)
+          : Math.round(c.wageBudget * 1.75);
+        return {
+          ...c,
+          cashBalance: targetCash,
+          wageBudget: targetWage,
+        };
+      })
+    : hydratedClubs;
+
+  const migratedClubMap = new Map(migratedClubs.map((c) => [c.id, c]));
+  const migratedUserClub = migratedClubMap.get(save.userClubId) || migratedClubs[0];
+
+  const normalizePlayer = (
+    p: Player,
+    clubRep: number,
+    div: typeof migratedUserClub.division
+  ): Player => {
+    const base = ensurePlayerDefaults(p, clubRep, div, seasonYear);
+    return needsGlobalScaleMigration
+      ? recalibratePlayerForGlobalScale(base, clubRep, div, seasonYear)
+      : base;
+  };
+
+  const hydratedSquad = save.squad.map((p) =>
+    normalizePlayer(p, migratedUserClub.reputation, migratedUserClub.division)
+  );
+  const baseAiSquads = buildInitialAiSquads(migratedClubs, save.userClubId);
+  const rawAiSquads =
     save.aiSquads && Object.keys(save.aiSquads).length > 0
       ? { ...baseAiSquads, ...save.aiSquads }
       : baseAiSquads;
 
+  const hydratedAiSquads: Record<string, Player[]> = {};
+  for (const [cid, roster] of Object.entries(rawAiSquads)) {
+    const c = migratedClubMap.get(cid);
+    const rep = c?.reputation ?? 74;
+    const div = c?.division ?? 'A';
+    hydratedAiSquads[cid] = needsGlobalScaleMigration
+      ? roster.map((p) => normalizePlayer(p, rep, div))
+      : roster;
+  }
+
   return {
     ...save,
     currentYear: seasonYear,
-    clubs: hydratedClubs,
+    globalScaleVersion: GLOBAL_SCALE_VERSION,
+    clubs: migratedClubs,
     squad: hydratedSquad,
     aiSquads: hydratedAiSquads,
     seasonStepIndex: save.seasonStepIndex ?? Math.max(0, save.currentRound - 1),
     activeCompetition: save.activeCompetition ?? 'BRASILEIRAO',
     copaDoBrasil:
-      save.copaDoBrasil ?? createInitialCopaDoBrasil(save.userClubId),
+      save.copaDoBrasil ??
+      createInitialCopaDoBrasil(save.userClubId, hydratedClubs),
     libertadores:
       save.libertadores ?? createInitialLibertadores(save.userClubId),
+    championsLeague:
+      save.championsLeague ??
+      createInitialChampionsLeague(seasonYear, hydratedClubs),
+    mundial: save.mundial ?? createInitialMundial(seasonYear),
+    superMundial:
+      save.superMundial ??
+      createInitialSuperMundial({
+        seasonYear,
+        userClubId: save.userClubId,
+        clubsPool: migratedClubs,
+        accumulatedUclChampions: save.accumulatedUclChampions ?? [],
+        accumulatedLibChampions: save.accumulatedLibChampions ?? [],
+      }),
+    accumulatedUclChampions: save.accumulatedUclChampions ?? [],
+    accumulatedLibChampions: save.accumulatedLibChampions ?? [],
     freeAgents: (save.freeAgents ?? createInitialFreeAgents()).map((p) =>
-      ensurePlayerDefaults(p, 72, 'A', seasonYear)
+      normalizePlayer(p, 72, 'A')
     ),
     loanedOutPlayers: save.loanedOutPlayers ?? [],
     transferHistory: save.transferHistory ?? [],
@@ -134,15 +217,15 @@ export function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
     pendingOffers: save.pendingOffers ?? [],
     financeLedger:
       save.financeLedger ??
-      createInitialFinanceLedger(userClub, hydratedSquad, seasonYear),
+      createInitialFinanceLedger(migratedUserClub, hydratedSquad, seasonYear),
     seasonHistory: save.seasonHistory ?? [],
     matchHistory: save.matchHistory ?? [],
     seasonEndReport: save.seasonEndReport ?? null,
     youthAcademy: (() => {
       const fallback = createInitialYouthAcademy(
-        userClub.id,
-        userClub.reputation,
-        userClub.division,
+        migratedUserClub.id,
+        migratedUserClub.reputation,
+        migratedUserClub.division,
         seasonYear
       );
       if (!save.youthAcademy) return fallback;
@@ -154,11 +237,10 @@ export function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
           ? save.youthAcademy.youthRoster
           : fallback.youthRoster || [];
       const sanitizedRoster = rawRoster.map((yp) =>
-        ensurePlayerDefaults(
+        normalizePlayer(
           { ...yp, isRegen: true },
-          userClub.reputation,
-          userClub.division,
-          seasonYear
+          migratedUserClub.reputation,
+          migratedUserClub.division
         )
       );
       return {

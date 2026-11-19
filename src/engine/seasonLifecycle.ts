@@ -3,8 +3,12 @@ import {
   getInitialStandingsForDivision,
 } from '../data/initialDatabase';
 import {
+  createInitialChampionsLeague,
   createInitialCopaDoBrasil,
   createInitialLibertadores,
+  createInitialMundial,
+  createInitialSuperMundial,
+  isSuperMundialYear,
 } from '../data/cupFactory';
 import { calculatePlayerOverall } from './playerOverall';
 import {
@@ -21,12 +25,14 @@ import {
 import { createInitialMatchState } from './matchEngine';
 import { formatCompactBRL } from '../utils/formatters';
 import {
+  ChampionsLeagueState,
   Club,
   ClubFinanceLedger,
   CopaDoBrasilState,
   InboxMessage,
   LibertadoresState,
   LiveMatchState,
+  MundialState,
   Player,
   PlayerEvolutionReportItem,
   RoundFixture,
@@ -35,6 +41,7 @@ import {
   SeasonAwardsSummary,
   SeasonEndReport,
   StandingsRow,
+  SuperMundialState,
 } from '../types/football';
 
 /**
@@ -202,7 +209,7 @@ export function buildSeasonAwardsSummary(params: {
 
   for (const [cid, list] of Object.entries(aiSquads)) {
     const c = clubMap.get(cid);
-    if (!c || c.division === 'LIB') continue;
+    if (!c || c.division === 'LIB' || c.division === 'UCL' || c.division === 'WORLD') continue;
     for (const p of list) {
       entries.push({
         player: p,
@@ -272,6 +279,9 @@ export function buildSeasonEndSummary(params: {
   secondaryStandings: StandingsRow[];
   copaDoBrasil: CopaDoBrasilState;
   libertadores: LibertadoresState;
+  championsLeague?: ChampionsLeagueState;
+  mundial?: MundialState;
+  superMundial?: SuperMundialState;
   previewEvolutionHighlights?: PlayerEvolutionReportItem[];
 }): SeasonEndReport {
   const {
@@ -284,6 +294,9 @@ export function buildSeasonEndSummary(params: {
     secondaryStandings,
     copaDoBrasil,
     libertadores,
+    championsLeague,
+    mundial,
+    superMundial,
     previewEvolutionHighlights = [],
   } = params;
 
@@ -298,6 +311,11 @@ export function buildSeasonEndSummary(params: {
   const serieBChampionId = serieBStandings[0]?.clubId || '';
   const cdbChampionId = copaDoBrasil.championClubId;
   const libChampionId = libertadores.championClubId;
+  const uclChampionId = championsLeague?.championClubId ?? null;
+  const mundialChampionId = mundial?.championClubId ?? null;
+  const superMundialChampionId = superMundial?.isActiveThisSeason
+    ? superMundial.championClubId ?? null
+    : null;
 
   const relegatedClubIds = serieAStandings.slice(-4).map((r) => r.clubId);
   const promotedClubIds = serieBStandings.slice(0, 4).map((r) => r.clubId);
@@ -331,22 +349,22 @@ export function buildSeasonEndSummary(params: {
 
   let userSeasonPrize = 0;
   if (userDiv === 'A') {
-    // Premiação oficial escalonada do Brasileirão Série A (R$ 50M ao Campeão até cota de consolação ao Z-4)
-    if (userRank === 1) userSeasonPrize = 50_000_000;
-    else if (userRank === 2) userSeasonPrize = 46_000_000;
-    else if (userRank === 3) userSeasonPrize = 43_000_000;
-    else if (userRank === 4) userSeasonPrize = 40_000_000;
-    else if (userRank <= 6) userSeasonPrize = 35_000_000;
-    else if (userRank <= 8) userSeasonPrize = 30_000_000;
-    else if (userRank <= 12) userSeasonPrize = 23_000_000;
-    else if (userRank <= 16) userSeasonPrize = 17_000_000;
-    else userSeasonPrize = 8_000_000;
+    // Premiação oficial escalonada do Brasileirão Série A (R$ 90M ao Campeão até cota de consolação ao Z-4)
+    if (userRank === 1) userSeasonPrize = 90_000_000;
+    else if (userRank === 2) userSeasonPrize = 82_000_000;
+    else if (userRank === 3) userSeasonPrize = 76_000_000;
+    else if (userRank === 4) userSeasonPrize = 70_000_000;
+    else if (userRank <= 6) userSeasonPrize = 62_000_000;
+    else if (userRank <= 8) userSeasonPrize = 52_000_000;
+    else if (userRank <= 12) userSeasonPrize = 40_000_000;
+    else if (userRank <= 16) userSeasonPrize = 30_000_000;
+    else userSeasonPrize = 15_000_000;
   } else {
     // Premiação e bônus de acesso da Série B
-    if (userRank === 1) userSeasonPrize = 16_000_000;
-    else if (userRank <= 4) userSeasonPrize = 11_000_000;
-    else if (userRank <= 10) userSeasonPrize = 6_500_000;
-    else userSeasonPrize = 4_500_000;
+    if (userRank === 1) userSeasonPrize = 28_000_000;
+    else if (userRank <= 4) userSeasonPrize = 19_000_000;
+    else if (userRank <= 10) userSeasonPrize = 11_500_000;
+    else userSeasonPrize = 7_500_000;
   }
 
   const awards = buildSeasonAwardsSummary({
@@ -369,6 +387,18 @@ export function buildSeasonEndSummary(params: {
     libChampionId,
     libChampionName: libChampionId
       ? clubMap.get(libChampionId)?.shortName || libChampionId
+      : null,
+    uclChampionId,
+    uclChampionName: uclChampionId
+      ? clubMap.get(uclChampionId)?.shortName || uclChampionId
+      : null,
+    mundialChampionId,
+    mundialChampionName: mundialChampionId
+      ? clubMap.get(mundialChampionId)?.shortName || mundialChampionId
+      : null,
+    superMundialChampionId,
+    superMundialChampionName: superMundialChampionId
+      ? clubMap.get(superMundialChampionId)?.shortName || superMundialChampionId
       : null,
     userFinalDivision: userDiv,
     userFinalRank: userRank,
@@ -408,6 +438,11 @@ export function executeNewSeasonRollover(params: {
   secondaryStandings: StandingsRow[];
   copaDoBrasil: CopaDoBrasilState;
   libertadores: LibertadoresState;
+  championsLeague?: ChampionsLeagueState;
+  mundial?: MundialState;
+  superMundial?: SuperMundialState;
+  accumulatedUclChampions?: string[];
+  accumulatedLibChampions?: string[];
   seasonHistory: SeasonArchiveEntry[];
   managerName: string;
   youthAcademy?: import('../types/football').YouthAcademyState;
@@ -427,6 +462,11 @@ export function executeNewSeasonRollover(params: {
   nextSecondaryFixtures: RoundFixture[];
   nextCopaDoBrasil: CopaDoBrasilState;
   nextLibertadores: LibertadoresState;
+  nextChampionsLeague: ChampionsLeagueState;
+  nextMundial: MundialState;
+  nextSuperMundial: SuperMundialState;
+  nextAccumulatedUclChampions: string[];
+  nextAccumulatedLibChampions: string[];
   nextFinanceLedger: ClubFinanceLedger;
   nextMatchState: LiveMatchState;
   nextMessages: InboxMessage[];
@@ -445,6 +485,11 @@ export function executeNewSeasonRollover(params: {
     secondaryStandings,
     copaDoBrasil,
     libertadores,
+    championsLeague,
+    mundial,
+    superMundial,
+    accumulatedUclChampions = [],
+    accumulatedLibChampions = [],
     seasonHistory,
     managerName,
     youthAcademy = {
@@ -469,6 +514,9 @@ export function executeNewSeasonRollover(params: {
     secondaryStandings,
     copaDoBrasil,
     libertadores,
+    championsLeague,
+    mundial,
+    superMundial,
   });
 
   // 1. Apply promotion/relegation, titles, and reputation updates before evolution/sponsorship
@@ -503,6 +551,18 @@ export function executeNewSeasonRollover(params: {
     if (c.id === baseReport.libChampionId) {
       titles.push(`Libertadores ${currentYear}`);
       repDelta += 3;
+    }
+    if (c.id === baseReport.uclChampionId) {
+      titles.push(`Champions League ${currentYear}`);
+      repDelta += 2;
+    }
+    if (c.id === baseReport.mundialChampionId) {
+      titles.push(`Mundial de Clubes ${currentYear}`);
+      repDelta += 3;
+    }
+    if (c.id === baseReport.superMundialChampionId) {
+      titles.push(`Super Mundial ${currentYear}`);
+      repDelta += 4;
     }
 
     const prizeAdd = c.id === userClubId ? baseReport.userSeasonPrize : 0;
@@ -622,6 +682,32 @@ export function executeNewSeasonRollover(params: {
     nextYear
   );
 
+  // Acumula campeões da Champions e Libertadores do ciclo quadrienal do Super Mundial
+  const wasSuperMundialCycleEnd = isSuperMundialYear(currentYear);
+  const baseAccUcl = wasSuperMundialCycleEnd ? [] : accumulatedUclChampions;
+  const baseAccLib = wasSuperMundialCycleEnd ? [] : accumulatedLibChampions;
+
+  const nextAccumulatedUclChampions = baseReport.uclChampionId
+    ? Array.from(new Set([baseReport.uclChampionId, ...baseAccUcl])).slice(0, 6)
+    : [...baseAccUcl];
+  const nextAccumulatedLibChampions = baseReport.libChampionId
+    ? Array.from(new Set([baseReport.libChampionId, ...baseAccLib])).slice(0, 6)
+    : [...baseAccLib];
+
+  const nextChampionsLeague = createInitialChampionsLeague(
+    nextYear,
+    clubsAfterSponsor
+  );
+  const nextMundial = createInitialMundial(nextYear);
+  const nextSuperMundial = createInitialSuperMundial({
+    seasonYear: nextYear,
+    userClubId,
+    clubsPool: clubsAfterSponsor,
+    accumulatedUclChampions: nextAccumulatedUclChampions,
+    accumulatedLibChampions: nextAccumulatedLibChampions,
+    libertadoresQualifiedBrIds: baseReport.libertadoresQualifiedBrIds,
+  });
+
   const r1Fix =
     nextFixtures.find((f) => f.roundNumber === 1 && f.isUserMatch) ||
     nextFixtures[0];
@@ -692,6 +778,12 @@ export function executeNewSeasonRollover(params: {
     cdbChampionName: baseReport.cdbChampionName,
     libChampionId: baseReport.libChampionId,
     libChampionName: baseReport.libChampionName,
+    uclChampionId: baseReport.uclChampionId,
+    uclChampionName: baseReport.uclChampionName,
+    mundialChampionId: baseReport.mundialChampionId,
+    mundialChampionName: baseReport.mundialChampionName,
+    superMundialChampionId: baseReport.superMundialChampionId,
+    superMundialChampionName: baseReport.superMundialChampionName,
     topScorerName: baseReport.awards.topScorer?.playerName || '—',
     topScorerClubName: baseReport.awards.topScorer?.clubName || '—',
     topScorerGoals: baseReport.awards.topScorer?.value || 0,
@@ -868,6 +960,11 @@ export function executeNewSeasonRollover(params: {
     nextSecondaryFixtures,
     nextCopaDoBrasil,
     nextLibertadores,
+    nextChampionsLeague,
+    nextMundial,
+    nextSuperMundial,
+    nextAccumulatedUclChampions,
+    nextAccumulatedLibChampions,
     nextFinanceLedger,
     nextMatchState,
     nextMessages,

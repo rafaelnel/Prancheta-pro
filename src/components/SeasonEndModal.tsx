@@ -75,6 +75,39 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
       accent: 'bg-sky-400 text-[#090a0f]',
       Icon: Globe2,
     },
+    ...(report.uclChampionName
+      ? [
+          {
+            competition: `UEFA Champions League ${report.seasonYear}`,
+            club: getClub(report.uclChampionId),
+            fallbackName: report.uclChampionName,
+            accent: 'bg-indigo-400 text-[#090a0f]',
+            Icon: Trophy,
+          },
+        ]
+      : []),
+    ...(report.mundialChampionName
+      ? [
+          {
+            competition: `Mundial de Clubes ${report.seasonYear}`,
+            club: getClub(report.mundialChampionId),
+            fallbackName: report.mundialChampionName,
+            accent: 'bg-yellow-400 text-[#090a0f]',
+            Icon: Award,
+          },
+        ]
+      : []),
+    ...(report.superMundialChampionName
+      ? [
+          {
+            competition: `Super Mundial FIFA ${report.seasonYear}`,
+            club: getClub(report.superMundialChampionId),
+            fallbackName: report.superMundialChampionName,
+            accent: 'bg-purple-400 text-[#090a0f]',
+            Icon: Globe2,
+          },
+        ]
+      : []),
   ];
 
   const userSummaryStatus = report.userPromoted
@@ -182,7 +215,7 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
               <Trophy className="w-4 h-4 text-[#b5ff00]" />
               <span>Campeões da Temporada {report.seasonYear}</span>
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {championsCards.map((item) => {
                 const Icon = item.Icon;
                 return (

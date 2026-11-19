@@ -338,8 +338,8 @@ export const SquadView: React.FC<SquadViewProps> = ({
 
                   const round5k = (val: number) =>
                     Math.min(
-                      1_500_000,
-                      Math.max(15_000, Math.round(val / 5_000) * 5_000)
+                      Math.max(3_500_000, Math.round(expectation.desiredSalary * 1.4)),
+                      Math.max(20_000, Math.round(val / 5_000) * 5_000)
                     );
 
                   const presetSalaries = [
@@ -860,7 +860,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
                 </th>
                 <th
                   className="py-3 px-2 font-medium text-right"
-                  title="Overall (60-99) e Evolução Semestral (▲ verde / ▼ vermelha)"
+                  title="Overall (60-95) e Evolução Semestral (▲ verde / ▼ vermelha)"
                 >
                   OVR / EVOL
                 </th>

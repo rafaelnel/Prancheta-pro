@@ -193,6 +193,12 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
       ? `COPA DO BRASIL · ${nextFixture?.stageLabel || 'MATA-MATA'}`
       : activeCompetition === 'LIBERTADORES'
       ? `LIBERTADORES · ${nextFixture?.stageLabel || 'GRUPOS'}`
+      : activeCompetition === 'MUNDIAL'
+      ? `MUNDIAL DE CLUBES · ${nextFixture?.stageLabel || 'MATA-MATA'}`
+      : activeCompetition === 'SUPER_MUNDIAL'
+      ? `SUPER MUNDIAL · ${nextFixture?.stageLabel || 'GRUPOS'}`
+      : activeCompetition === 'CHAMPIONS_LEAGUE'
+      ? `CHAMPIONS LEAGUE · ${nextFixture?.stageLabel || 'MATA-MATA'}`
       : `SÉRIE ${userClub.division} · R${currentRound}`;
 
   const unreadCount = messages.filter((m) => !m.read).length;
@@ -213,7 +219,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
           >
             {Math.round(userVal)}
           </span>
-          <span className="text-zinc-400 text-[11px]">{label} (60–99)</span>
+          <span className="text-zinc-400 text-[11px]">{label} (60–95)</span>
           <span
             className={`font-mono tabular-nums font-bold ${
               !userAdvantage ? 'text-amber-400' : 'text-zinc-300'
@@ -226,13 +232,13 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
           <div className="bg-[#0b0c10] rounded-l-full overflow-hidden flex justify-end">
             <div
               className="bg-[#b5ff00] h-full rounded-l-full"
-              style={{ width: `${Math.min(100, Math.max(8, (userVal / 99) * 100))}%` }}
+              style={{ width: `${Math.min(100, Math.max(8, (userVal / 95) * 100))}%` }}
             />
           </div>
           <div className="bg-[#0b0c10] rounded-r-full overflow-hidden">
             <div
               className="bg-zinc-200 h-full rounded-r-full"
-              style={{ width: `${Math.min(100, Math.max(8, (oppVal / 99) * 100))}%` }}
+              style={{ width: `${Math.min(100, Math.max(8, (oppVal / 95) * 100))}%` }}
             />
           </div>
         </div>

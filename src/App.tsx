@@ -49,13 +49,22 @@ import {
 } from './data/initialDatabase';
 import {
   SEASON_CALENDAR,
+  advanceChampionsLeagueStage,
   advanceCopaDoBrasilStage,
   advanceLibertadoresGroupRound,
   advanceLibertadoresKnockoutStage,
+  advanceMundialStage,
+  advanceSuperMundialGroupRound,
+  advanceSuperMundialKnockoutStage,
+  createInitialChampionsLeague,
   createInitialCopaDoBrasil,
   createInitialLibertadores,
+  createInitialMundial,
+  createInitialSuperMundial,
   findUserFixtureForStep,
   getCupPrizeMoney,
+  seedMundialBracket,
+  syncSuperMundialWithChampionsResults,
 } from './data/cupFactory';
 import { createNewCareerSave } from './data/careerFactory';
 import { createInitialFreeAgents } from './data/transferCatalog';
@@ -88,6 +97,7 @@ import {
 import {
   CareerSaveData,
   CareerSlotIndex,
+  ChampionsLeagueState,
   Club,
   ClubFinanceLedger,
   ContractRenewalOutcome,
@@ -100,6 +110,7 @@ import {
   MarketPlayerListing,
   MatchHistoryRecord,
   MentalityType,
+  MundialState,
   NavigationTab,
   Player,
   PlayerNegotiationState,
@@ -107,6 +118,7 @@ import {
   SeasonArchiveEntry,
   SeasonEndReport,
   StandingsRow,
+  SuperMundialState,
   TacticalDuty,
   TeamInstructions,
   TransferAttemptResult,
@@ -154,6 +166,7 @@ import {
   simulateNextAutoStep,
 } from './engine/autoTacticsAndSim';
 import {
+  GLOBAL_SCALE_VERSION,
   calculateMatchGateRevenue,
   createInitialFinanceLedger,
   processMidSeasonEvolution,
@@ -273,6 +286,36 @@ export default function App() {
       initialAutostartSave?.libertadores ||
       createInitialLibertadores(initialAutostartSave?.userClubId || USER_CLUB_ID)
   );
+  const [championsLeague, setChampionsLeague] = useState<ChampionsLeagueState>(
+    () =>
+      initialAutostartSave?.championsLeague ||
+      createInitialChampionsLeague(
+        initialAutostartSave?.currentYear || 2026,
+        initialAutostartSave?.clubs || ALL_WORLD_CLUBS
+      )
+  );
+  const [mundial, setMundial] = useState<MundialState>(
+    () =>
+      initialAutostartSave?.mundial ||
+      createInitialMundial(initialAutostartSave?.currentYear || 2026)
+  );
+  const [superMundial, setSuperMundial] = useState<SuperMundialState>(
+    () =>
+      initialAutostartSave?.superMundial ||
+      createInitialSuperMundial({
+        userClubId: initialAutostartSave?.userClubId || USER_CLUB_ID,
+        seasonYear: initialAutostartSave?.currentYear || 2026,
+        clubsPool: initialAutostartSave?.clubs || ALL_WORLD_CLUBS,
+        accumulatedUclChampions: initialAutostartSave?.accumulatedUclChampions,
+        accumulatedLibChampions: initialAutostartSave?.accumulatedLibChampions,
+      })
+  );
+  const [accumulatedUclChampions, setAccumulatedUclChampions] = useState<
+    string[]
+  >(() => initialAutostartSave?.accumulatedUclChampions || []);
+  const [accumulatedLibChampions, setAccumulatedLibChampions] = useState<
+    string[]
+  >(() => initialAutostartSave?.accumulatedLibChampions || []);
   const [messages, setMessages] = useState<InboxMessage[]>(
     () => initialAutostartSave?.messages || INITIAL_INBOX_MESSAGES
   );
@@ -594,7 +637,9 @@ export default function App() {
         userClubId,
         fixtures,
         copaDoBrasil,
-        libertadores
+        libertadores,
+        mundial,
+        superMundial
       ) ||
       fixtures.find(
         (f) => f.roundNumber === currentRound && f.isUserMatch
@@ -606,6 +651,8 @@ export default function App() {
       fixtures,
       copaDoBrasil,
       libertadores,
+      mundial,
+      superMundial,
       currentRound,
     ]
   );
@@ -682,6 +729,9 @@ export default function App() {
         secondaryFixtures,
         copaDoBrasil,
         libertadores,
+        championsLeague,
+        mundial,
+        superMundial,
         messages,
         matchState,
         seasonYear: currentYear,
@@ -705,6 +755,9 @@ export default function App() {
       secondaryFixtures,
       copaDoBrasil,
       libertadores,
+      championsLeague,
+      mundial,
+      superMundial,
       messages,
       matchState,
       currentYear,
@@ -724,6 +777,7 @@ export default function App() {
   const [autoSimUi, setAutoSimUi] = useState<{
     isOpen: boolean;
     isRunning: boolean;
+    isPaused: boolean;
     isDone: boolean;
     wasStoppedEarly: boolean;
     targetLabel: string;
@@ -739,6 +793,7 @@ export default function App() {
   }>({
     isOpen: false,
     isRunning: false,
+    isPaused: false,
     isDone: false,
     wasStoppedEarly: false,
     targetLabel: '',
@@ -797,6 +852,14 @@ export default function App() {
         secondaryFixtures: override?.secondaryFixtures ?? secondaryFixtures,
         copaDoBrasil: override?.copaDoBrasil ?? copaDoBrasil,
         libertadores: override?.libertadores ?? libertadores,
+        championsLeague: override?.championsLeague ?? championsLeague,
+        mundial: override?.mundial ?? mundial,
+        superMundial: override?.superMundial ?? superMundial,
+        accumulatedUclChampions:
+          override?.accumulatedUclChampions ?? accumulatedUclChampions,
+        accumulatedLibChampions:
+          override?.accumulatedLibChampions ?? accumulatedLibChampions,
+        globalScaleVersion: GLOBAL_SCALE_VERSION,
         messages: override?.messages ?? messages,
         matchState: override?.matchState ?? matchState,
         matchHistory: override?.matchHistory ?? matchHistory,
@@ -857,6 +920,11 @@ export default function App() {
       secondaryFixtures,
       copaDoBrasil,
       libertadores,
+      championsLeague,
+      mundial,
+      superMundial,
+      accumulatedUclChampions,
+      accumulatedLibChampions,
       messages,
       matchState,
       matchHistory,
@@ -973,6 +1041,22 @@ export default function App() {
     setLibertadores(
       save.libertadores || createInitialLibertadores(save.userClubId, undefined, year)
     );
+    setChampionsLeague(
+      save.championsLeague || createInitialChampionsLeague(year, save.clubs)
+    );
+    setMundial(save.mundial || createInitialMundial(year));
+    setSuperMundial(
+      save.superMundial ||
+        createInitialSuperMundial({
+          userClubId: save.userClubId,
+          seasonYear: year,
+          clubsPool: save.clubs,
+          accumulatedUclChampions: save.accumulatedUclChampions,
+          accumulatedLibChampions: save.accumulatedLibChampions,
+        })
+    );
+    setAccumulatedUclChampions(save.accumulatedUclChampions || []);
+    setAccumulatedLibChampions(save.accumulatedLibChampions || []);
     setMessages(save.messages);
     setFreeAgents(save.freeAgents || createInitialFreeAgents());
     setLoanedOutPlayers(save.loanedOutPlayers || []);
@@ -1155,7 +1239,11 @@ export default function App() {
         rank: userRankNow,
         totalTeams: standings.length || 20,
         competition: comp,
-        stageLabel: currentCalendarStep.copaStage || currentCalendarStep.libStage,
+        stageLabel:
+          currentCalendarStep.copaStage ||
+          currentCalendarStep.libStage ||
+          currentCalendarStep.mundialStage ||
+          currentCalendarStep.superMundialStage,
         isHome: matchState.isUserHome,
       });
 
@@ -1165,6 +1253,8 @@ export default function App() {
       let newSecondaryStandings = secondaryStandings;
       let updatedCopaDoBrasil = copaDoBrasil;
       let updatedLibertadores = libertadores;
+      let updatedMundial = mundial;
+      let updatedSuperMundial = superMundial;
       let updatedAiSquads = aiSquads;
       let prizeMoney = 0;
 
@@ -1247,6 +1337,92 @@ export default function App() {
             currentCalendarStep.libStage,
             userAdvanced,
             currentCalendarStep.libStage === 'Final' && userAdvanced
+          );
+          if (
+            currentCalendarStep.libStage === 'Final' &&
+            updatedLibertadores.championClubId &&
+            championsLeague.championClubId &&
+            !updatedMundial.isSeeded
+          ) {
+            updatedMundial = seedMundialBracket(
+              updatedMundial,
+              championsLeague.championClubId,
+              updatedLibertadores.championClubId,
+              clubs,
+              userClubId
+            );
+          }
+        }
+      } else if (comp === 'MUNDIAL' && currentCalendarStep.mundialStage) {
+        updatedMundial = advanceMundialStage(
+          mundial,
+          currentCalendarStep.mundialStage,
+          userMatchPayload,
+          clubs,
+          userClubId
+        );
+        updatedAiSquads = attributeAiRoundPlayerStats(
+          updatedAiSquads,
+          updatedMundial.fixturesByStage[currentCalendarStep.mundialStage] || [],
+          userClubId
+        );
+        prizeMoney = getCupPrizeMoney(
+          'MUNDIAL',
+          currentCalendarStep.mundialStage,
+          userAdvanced,
+          currentCalendarStep.mundialStage === 'Final' && userAdvanced
+        );
+      } else if (comp === 'SUPER_MUNDIAL' && superMundial.isActiveThisSeason) {
+        if (
+          currentCalendarStep.superMundialStage === 'Grupos' &&
+          currentCalendarStep.superMundialGroupRound
+        ) {
+          updatedSuperMundial = advanceSuperMundialGroupRound(
+            superMundial,
+            currentCalendarStep.superMundialGroupRound,
+            userMatchPayload,
+            clubs,
+            userClubId
+          );
+          const smGrpFixes = updatedSuperMundial.groups.flatMap((g) =>
+            g.fixtures.filter(
+              (f) => f.roundNumber === currentCalendarStep.superMundialGroupRound
+            )
+          );
+          updatedAiSquads = attributeAiRoundPlayerStats(
+            updatedAiSquads,
+            smGrpFixes,
+            userClubId
+          );
+          prizeMoney = getCupPrizeMoney(
+            'SUPER_MUNDIAL',
+            'Grupo',
+            userWon90,
+            false
+          );
+        } else if (
+          currentCalendarStep.superMundialStage &&
+          currentCalendarStep.superMundialStage !== 'Grupos'
+        ) {
+          updatedSuperMundial = advanceSuperMundialKnockoutStage(
+            superMundial,
+            currentCalendarStep.superMundialStage,
+            userMatchPayload,
+            clubs,
+            userClubId
+          );
+          updatedAiSquads = attributeAiRoundPlayerStats(
+            updatedAiSquads,
+            updatedSuperMundial.knockoutFixtures[
+              currentCalendarStep.superMundialStage
+            ] || [],
+            userClubId
+          );
+          prizeMoney = getCupPrizeMoney(
+            'SUPER_MUNDIAL',
+            currentCalendarStep.superMundialStage,
+            userAdvanced,
+            currentCalendarStep.superMundialStage === 'Final' && userAdvanced
           );
         }
       } else {
@@ -1546,6 +1722,8 @@ export default function App() {
       setSecondaryStandings(newSecondaryStandings);
       setCopaDoBrasil(updatedCopaDoBrasil);
       setLibertadores(updatedLibertadores);
+      setMundial(updatedMundial);
+      setSuperMundial(updatedSuperMundial);
       setFinanceLedger(updatedFinanceLedger);
       setYouthAcademy(finalYouthAcademy);
       setTransferHistory(updatedTransferHistory);
@@ -1564,6 +1742,8 @@ export default function App() {
         secondaryStandings: newSecondaryStandings,
         copaDoBrasil: updatedCopaDoBrasil,
         libertadores: updatedLibertadores,
+        mundial: updatedMundial,
+        superMundial: updatedSuperMundial,
         financeLedger: updatedFinanceLedger,
         youthAcademy: finalYouthAcademy,
         transferHistory: updatedTransferHistory,
@@ -1584,6 +1764,9 @@ export default function App() {
     secondaryStandings,
     copaDoBrasil,
     libertadores,
+    championsLeague,
+    mundial,
+    superMundial,
     aiSquads,
     financeLedger,
     transferHistory,
@@ -2031,6 +2214,9 @@ export default function App() {
     setSecondaryFixtures(snap.secondaryFixtures);
     setCopaDoBrasil(snap.copaDoBrasil);
     setLibertadores(snap.libertadores);
+    if (snap.championsLeague) setChampionsLeague(snap.championsLeague);
+    if (snap.mundial) setMundial(snap.mundial);
+    if (snap.superMundial) setSuperMundial(snap.superMundial);
     setMessages(snap.messages);
     setMatchState(snap.matchState);
     if (snap.matchHistory) setMatchHistory(snap.matchHistory);
@@ -2106,6 +2292,9 @@ export default function App() {
             secondaryStandings: withSummary.secondaryStandings,
             copaDoBrasil: withSummary.copaDoBrasil,
             libertadores: withSummary.libertadores,
+            championsLeague: withSummary.championsLeague,
+            mundial: withSummary.mundial,
+            superMundial: withSummary.superMundial,
           })
         : null;
 
@@ -2126,6 +2315,9 @@ export default function App() {
         secondaryFixtures: withSummary.secondaryFixtures,
         copaDoBrasil: withSummary.copaDoBrasil,
         libertadores: withSummary.libertadores,
+        championsLeague: withSummary.championsLeague,
+        mundial: withSummary.mundial,
+        superMundial: withSummary.superMundial,
         messages: withSummary.messages,
         matchState: withSummary.matchState,
         matchHistory: withSummary.matchHistory,
@@ -2165,6 +2357,9 @@ export default function App() {
       secondaryFixtures,
       copaDoBrasil,
       libertadores,
+      championsLeague,
+      mundial,
+      superMundial,
       messages,
       matchState,
       matchHistory,
@@ -2190,6 +2385,7 @@ export default function App() {
     setAutoSimUi({
       isOpen: true,
       isRunning: true,
+      isPaused: false,
       isDone: false,
       wasStoppedEarly: false,
       targetLabel,
@@ -2206,7 +2402,29 @@ export default function App() {
   };
 
   const handlePauseAutoSimulation = () => {
-    if (!autoSimUi.isRunning && !autoSimUi.pausedOffer) return;
+    if (!autoSimUi.isRunning || autoSimUi.pausedOffer) return;
+    setAutoSimUi((prev) => ({
+      ...prev,
+      isRunning: false,
+      isPaused: true,
+      wasStoppedEarly: false,
+    }));
+  };
+
+  const handleResumeAutoSimulation = () => {
+    if (!autoSimUi.isPaused || autoSimUi.pausedOffer || autoSimUi.isDone || autoSimUi.wasStoppedEarly) {
+      return;
+    }
+    setAutoSimUi((prev) => ({
+      ...prev,
+      isRunning: true,
+      isPaused: false,
+      wasStoppedEarly: false,
+    }));
+  };
+
+  const handleStopAutoSimulation = () => {
+    if (!autoSimUi.isRunning && !autoSimUi.isPaused && !autoSimUi.pausedOffer) return;
     const snap = autoSimSnapshotRef.current;
     if (snap) {
       finalizeAutoSimSummary(snap, autoSimUi.logs, autoSimUi.targetLabel, true);
@@ -2214,6 +2432,7 @@ export default function App() {
     setAutoSimUi((prev) => ({
       ...prev,
       isRunning: false,
+      isPaused: false,
       isDone: false,
       wasStoppedEarly: true,
       pausedOffer: null,
@@ -2256,6 +2475,7 @@ export default function App() {
         setAutoSimUi((prev) => ({
           ...prev,
           isRunning: false,
+          isPaused: false,
           isDone: false,
           wasStoppedEarly: false,
           currentDayOffset: working.dayOffset,
@@ -2271,6 +2491,7 @@ export default function App() {
       setAutoSimUi((prev) => ({
         ...prev,
         isRunning: false,
+        isPaused: false,
         isDone: true,
         wasStoppedEarly: false,
         currentDayOffset: working.dayOffset,
@@ -2395,6 +2616,7 @@ export default function App() {
       setAutoSimUi((prev) => ({
         ...prev,
         isRunning: false,
+        isPaused: false,
         isDone: true,
         wasStoppedEarly: false,
         pausedOffer: null,
@@ -2424,6 +2646,7 @@ export default function App() {
     setAutoSimUi((prev) => ({
       ...prev,
       isRunning: true,
+      isPaused: false,
       pausedOffer: null,
       pendingDoneAfterOffer: false,
       offerResolutionNote: resolutionNote,
@@ -2450,6 +2673,7 @@ export default function App() {
           return {
             ...prev,
             isRunning: false,
+            isPaused: false,
             isDone: false,
             wasStoppedEarly: false,
             currentDayOffset: stepRes.snapshot.dayOffset,
@@ -2470,6 +2694,7 @@ export default function App() {
           return {
             ...prev,
             isRunning: false,
+            isPaused: false,
             isDone: true,
             wasStoppedEarly: false,
             currentDayOffset: stepRes.snapshot.dayOffset,
@@ -2510,6 +2735,9 @@ export default function App() {
         secondaryStandings,
         copaDoBrasil,
         libertadores,
+        championsLeague,
+        mundial,
+        superMundial,
       });
     setSeasonEndReport(report);
     setIsSeasonEndModalOpen(true);
@@ -2525,6 +2753,9 @@ export default function App() {
     secondaryStandings,
     copaDoBrasil,
     libertadores,
+    championsLeague,
+    mundial,
+    superMundial,
     persistCareer,
   ]);
 
@@ -2541,6 +2772,11 @@ export default function App() {
       secondaryStandings,
       copaDoBrasil,
       libertadores,
+      championsLeague,
+      mundial,
+      superMundial,
+      accumulatedUclChampions,
+      accumulatedLibChampions,
       seasonHistory,
       managerName,
       youthAcademy,
@@ -2563,6 +2799,11 @@ export default function App() {
     setSecondaryFixtures(rollover.nextSecondaryFixtures);
     setCopaDoBrasil(rollover.nextCopaDoBrasil);
     setLibertadores(rollover.nextLibertadores);
+    setChampionsLeague(rollover.nextChampionsLeague);
+    setMundial(rollover.nextMundial);
+    setSuperMundial(rollover.nextSuperMundial);
+    setAccumulatedUclChampions(rollover.nextAccumulatedUclChampions);
+    setAccumulatedLibChampions(rollover.nextAccumulatedLibChampions);
     setFinanceLedger(rollover.nextFinanceLedger);
     setYouthAcademy(rollover.nextYouthAcademy);
     setMatchState(rollover.nextMatchState);
@@ -2593,6 +2834,11 @@ export default function App() {
       secondaryFixtures: rollover.nextSecondaryFixtures,
       copaDoBrasil: rollover.nextCopaDoBrasil,
       libertadores: rollover.nextLibertadores,
+      championsLeague: rollover.nextChampionsLeague,
+      mundial: rollover.nextMundial,
+      superMundial: rollover.nextSuperMundial,
+      accumulatedUclChampions: rollover.nextAccumulatedUclChampions,
+      accumulatedLibChampions: rollover.nextAccumulatedLibChampions,
       financeLedger: rollover.nextFinanceLedger,
       youthAcademy: rollover.nextYouthAcademy,
       matchState: rollover.nextMatchState,
@@ -2619,15 +2865,45 @@ export default function App() {
     let nextIdx = Math.min(SEASON_CALENDAR.length - 1, seasonStepIndex + 1);
     let nextCdb = copaDoBrasil;
     let nextLib = libertadores;
+    let nextUcl = championsLeague;
+    let nextMundial = mundial;
+    let nextSuperMundial = superMundial;
     let nextAiSquads = aiSquads;
     let nextLeagueRound = currentRound;
+    const extraInboxMessages: InboxMessage[] = [];
+    let seasonEndedDuringSkip = false;
 
-    // Auto-simulate any cup rounds where user does not participate or was eliminated
-    while (nextIdx < SEASON_CALENDAR.length - 1) {
+    // Auto-simulate any cup/European rounds where user does not participate or was eliminated
+    while (nextIdx < SEASON_CALENDAR.length) {
       const candidateStep = SEASON_CALENDAR[nextIdx];
       if (candidateStep.leagueRound) {
         nextLeagueRound = candidateStep.leagueRound;
         break;
+      }
+
+      if (
+        candidateStep.competition === 'SUPER_MUNDIAL' &&
+        !nextSuperMundial.isActiveThisSeason
+      ) {
+        if (nextIdx >= SEASON_CALENDAR.length - 1) {
+          seasonEndedDuringSkip = true;
+          break;
+        }
+        nextIdx += 1;
+        continue;
+      }
+
+      if (
+        candidateStep.competition === 'MUNDIAL' &&
+        !nextMundial.isSeeded
+      ) {
+        nextMundial = seedMundialBracket(
+          nextMundial,
+          nextUcl.championClubId,
+          nextLib.championClubId,
+          clubs,
+          userClubId
+        );
       }
 
       const candidateUserFix = findUserFixtureForStep(
@@ -2635,7 +2911,9 @@ export default function App() {
         userClubId,
         fixtures,
         nextCdb,
-        nextLib
+        nextLib,
+        nextMundial,
+        nextSuperMundial
       );
       if (candidateUserFix) {
         break;
@@ -2696,6 +2974,113 @@ export default function App() {
             userClubId
           );
         }
+      } else if (
+        candidateStep.competition === 'CHAMPIONS_LEAGUE' &&
+        candidateStep.uclStage
+      ) {
+        nextUcl = advanceChampionsLeagueStage(
+          nextUcl,
+          candidateStep.uclStage,
+          clubs
+        );
+        nextAiSquads = attributeAiRoundPlayerStats(
+          nextAiSquads,
+          nextUcl.fixturesByStage[candidateStep.uclStage] || [],
+          userClubId
+        );
+        if (
+          candidateStep.uclStage === 'Final' &&
+          nextUcl.championClubId
+        ) {
+          nextSuperMundial = syncSuperMundialWithChampionsResults(
+            nextSuperMundial,
+            nextUcl,
+            clubs,
+            userClubId
+          );
+          const uclChamp = clubs.find((c) => c.id === nextUcl.championClubId);
+          extraInboxMessages.push({
+            id: `msg-ucl-champ-${currentYear}-${Date.now()}`,
+            date: formatCalendarDate(
+              candidateStep.dayOffset ?? dayOffset,
+              currentYear
+            ),
+            sender: 'Central UEFA',
+            senderRole: 'Competição Europeia',
+            subject: `${uclChamp?.shortName || 'Campeão'} vence a Champions League ${currentYear}!`,
+            category: 'Imprensa',
+            priority: 'normal',
+            read: false,
+            body: [
+              `${uclChamp?.name || 'O campeão europeu'} conquistou a UEFA Champions League ${currentYear} e garantiu vaga oficial no Mundial de Clubes de dezembro e no ciclo do Super Mundial.`,
+            ],
+            actionLabel: 'Ver Champions',
+            actionTargetTab: 'competitions',
+          });
+        }
+      } else if (
+        candidateStep.competition === 'MUNDIAL' &&
+        candidateStep.mundialStage
+      ) {
+        nextMundial = advanceMundialStage(
+          nextMundial,
+          candidateStep.mundialStage,
+          null,
+          clubs,
+          userClubId
+        );
+        nextAiSquads = attributeAiRoundPlayerStats(
+          nextAiSquads,
+          nextMundial.fixturesByStage[candidateStep.mundialStage] || [],
+          userClubId
+        );
+      } else if (
+        candidateStep.competition === 'SUPER_MUNDIAL' &&
+        nextSuperMundial.isActiveThisSeason
+      ) {
+        if (
+          candidateStep.superMundialStage === 'Grupos' &&
+          candidateStep.superMundialGroupRound
+        ) {
+          nextSuperMundial = advanceSuperMundialGroupRound(
+            nextSuperMundial,
+            candidateStep.superMundialGroupRound,
+            null,
+            clubs,
+            userClubId
+          );
+          const smFixes = nextSuperMundial.groups.flatMap((g) =>
+            g.fixtures.filter(
+              (f) => f.roundNumber === candidateStep.superMundialGroupRound
+            )
+          );
+          nextAiSquads = attributeAiRoundPlayerStats(
+            nextAiSquads,
+            smFixes,
+            userClubId
+          );
+        } else if (
+          candidateStep.superMundialStage &&
+          candidateStep.superMundialStage !== 'Grupos'
+        ) {
+          nextSuperMundial = advanceSuperMundialKnockoutStage(
+            nextSuperMundial,
+            candidateStep.superMundialStage,
+            null,
+            clubs,
+            userClubId
+          );
+          nextAiSquads = attributeAiRoundPlayerStats(
+            nextAiSquads,
+            nextSuperMundial.knockoutFixtures[candidateStep.superMundialStage] || [],
+            userClubId
+          );
+        }
+      }
+
+      if (nextIdx >= SEASON_CALENDAR.length - 1) {
+        seasonEndedDuringSkip = true;
+        break;
       }
       nextIdx += 1;
     }
@@ -2712,7 +3097,9 @@ export default function App() {
         userClubId,
         fixtures,
         nextCdb,
-        nextLib
+        nextLib,
+        nextMundial,
+        nextSuperMundial
       ) ||
       fixtures.find(
         (f) => f.roundNumber === nextLeagueRound && f.isUserMatch
@@ -2777,7 +3164,10 @@ export default function App() {
     let finalSquad = recoveredSquad;
     let finalClubs = updatedClubs;
     let finalAiSquads = nextAiSquads;
-    let nextMessagesList = messages;
+    let nextMessagesList =
+      extraInboxMessages.length > 0
+        ? [...extraInboxMessages, ...messages].slice(0, 80)
+        : messages;
     let newMidSeasonProcessedYear = midSeasonEvolutionProcessedYear;
 
     if (nextDayOffset >= 154 && midSeasonEvolutionProcessedYear !== currentYear) {
@@ -2802,7 +3192,10 @@ export default function App() {
       }).updatedAcademy;
       newMidSeasonProcessedYear = currentYear;
       setMidSeasonEvolutionProcessedYear(currentYear);
-      nextMessagesList = [midRes.inboxMessage, ...messages];
+      nextMessagesList = [midRes.inboxMessage, ...nextMessagesList];
+    }
+
+    if (nextMessagesList !== messages) {
       setMessages(nextMessagesList);
     }
 
@@ -2823,6 +3216,23 @@ export default function App() {
           o.status === 'PENDING' ? { ...o, status: 'EXPIRED' as const } : o
         );
 
+    const endReportIfFinished = seasonEndedDuringSkip
+      ? buildSeasonEndSummary({
+          seasonYear: currentYear,
+          clubs: finalClubs,
+          userClubId,
+          userSquad: finalSquad,
+          aiSquads: finalAiSquads,
+          standings,
+          secondaryStandings,
+          copaDoBrasil: nextCdb,
+          libertadores: nextLib,
+          championsLeague: nextUcl,
+          mundial: nextMundial,
+          superMundial: nextSuperMundial,
+        })
+      : null;
+
     setClubs(finalClubs);
     setFinanceLedger(updatedLedger);
     setYouthAcademy(updatedYouthAcademy);
@@ -2830,12 +3240,19 @@ export default function App() {
     setAiSquads(finalAiSquads);
     setCopaDoBrasil(nextCdb);
     setLibertadores(nextLib);
+    setChampionsLeague(nextUcl);
+    setMundial(nextMundial);
+    setSuperMundial(nextSuperMundial);
     setPendingOffers(nextPendingOffers);
     setSeasonStepIndex(nextIdx);
     setCurrentRound(nextLeagueRound);
     setDayOffset(nextDayOffset);
     setIsMatchDay(false);
     setMatchState(nextMatch);
+    if (endReportIfFinished) {
+      setSeasonEndReport(endReportIfFinished);
+      setIsSeasonEndModalOpen(true);
+    }
     setActiveTab('competitions');
 
     persistCareer({
@@ -2846,6 +3263,9 @@ export default function App() {
       aiSquads: finalAiSquads,
       copaDoBrasil: nextCdb,
       libertadores: nextLib,
+      championsLeague: nextUcl,
+      mundial: nextMundial,
+      superMundial: nextSuperMundial,
       pendingOffers: nextPendingOffers,
       messages: nextMessagesList,
       seasonStepIndex: nextIdx,
@@ -2855,6 +3275,7 @@ export default function App() {
       isMatchDay: false,
       matchState: nextMatch,
       midSeasonEvolutionProcessedYear: newMidSeasonProcessedYear,
+      ...(endReportIfFinished ? { seasonEndReport: endReportIfFinished } : {}),
     });
   };
 
@@ -3758,11 +4179,43 @@ export default function App() {
         return libertadores.knockoutFixtures[currentCalendarStep.libStage] || [];
       }
     }
+    if (
+      currentCalendarStep.competition === 'MUNDIAL' &&
+      currentCalendarStep.mundialStage
+    ) {
+      return mundial.fixturesByStage[currentCalendarStep.mundialStage] || [];
+    }
+    if (
+      currentCalendarStep.competition === 'SUPER_MUNDIAL' &&
+      superMundial.isActiveThisSeason
+    ) {
+      if (
+        currentCalendarStep.superMundialStage === 'Grupos' &&
+        currentCalendarStep.superMundialGroupRound
+      ) {
+        const grpRound = currentCalendarStep.superMundialGroupRound;
+        const all = superMundial.groups.flatMap((g) =>
+          g.fixtures.filter((f) => f.roundNumber === grpRound)
+        );
+        return all.sort((a, b) => Number(b.isUserMatch) - Number(a.isUserMatch));
+      }
+      if (
+        currentCalendarStep.superMundialStage &&
+        currentCalendarStep.superMundialStage !== 'Grupos'
+      ) {
+        return (
+          superMundial.knockoutFixtures[currentCalendarStep.superMundialStage] ||
+          []
+        );
+      }
+    }
     return fixtures.filter((f) => f.roundNumber === matchState.roundNumber);
   }, [
     currentCalendarStep,
     copaDoBrasil,
     libertadores,
+    mundial,
+    superMundial,
     fixtures,
     matchState.roundNumber,
   ]);
@@ -4412,8 +4865,11 @@ export default function App() {
         <main className="flex-1 p-3.5 sm:p-5 lg:p-6 pb-24 lg:pb-6 overflow-y-auto overflow-x-hidden">
           {/* Unified Sub-Navigation Bar for Football Department Hub (Elenco | Táticas | Base) */}
           {isFootballHubActive && (
-            <div className="mb-4 flex items-center justify-between gap-2 bg-[#14171f] border border-white/[0.08] p-1.5 rounded-2xl shadow-lg">
-              <div className="grid grid-cols-3 gap-1 w-full">
+            <div
+              data-testid="football-subnav"
+              className="mb-4 bg-[#14171f] border border-white/[0.08] p-1.5 rounded-2xl shadow-lg"
+            >
+              <div className="grid grid-cols-3 gap-1.5 w-full">
                 {(
                   [
                     {
@@ -4433,7 +4889,7 @@ export default function App() {
                     {
                       id: 'youth' as NavigationTab,
                       label: 'Base & Sub-20',
-                      mobileLabel: 'Base Sub-20',
+                      mobileLabel: 'Base',
                       badge:
                         youthReadyCount > 0 ? `${youthReadyCount}` : undefined,
                       icon: GraduationCap,
@@ -4447,21 +4903,27 @@ export default function App() {
                       key={sub.id}
                       type="button"
                       onClick={() => setActiveTab(sub.id)}
-                      className={`min-h-[40px] px-2.5 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap ${
+                      className={`min-w-0 min-h-[44px] sm:min-h-[42px] px-2 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 overflow-hidden cursor-pointer ${
                         active
                           ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold shadow-sm'
                           : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
                       }`}
                     >
-                      <SubIcon className="w-3.5 h-3.5 shrink-0" />
-                      <span className="hidden sm:inline">{sub.label}</span>
-                      <span className="sm:hidden">{sub.mobileLabel}</span>
+                      <span className="flex items-center justify-center gap-1 sm:gap-1.5 min-w-0 max-w-full">
+                        <SubIcon className="w-3.5 h-3.5 shrink-0" />
+                        <span className="hidden sm:inline truncate">
+                          {sub.label}
+                        </span>
+                        <span className="sm:hidden truncate">
+                          {sub.mobileLabel}
+                        </span>
+                      </span>
                       {sub.badge && (
                         <span
-                          className={`font-mono text-[10px] px-1.5 py-0.5 rounded-full ${
+                          className={`font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-full shrink-0 ${
                             active
                               ? 'bg-[#090a0f]/15 text-[#090a0f] font-extrabold'
-                              : 'bg-white/[0.06] text-zinc-400'
+                              : 'bg-white/[0.07] text-zinc-400'
                           }`}
                         >
                           {sub.badge}
@@ -4476,8 +4938,11 @@ export default function App() {
 
           {/* Unified Sub-Navigation Bar for Season Hub (Competições | Calendário Anual) */}
           {isSeasonHubActive && (
-            <div className="mb-4 flex items-center justify-between gap-2 bg-[#14171f] border border-white/[0.08] p-1.5 rounded-2xl shadow-lg">
-              <div className="grid grid-cols-2 gap-1 w-full">
+            <div
+              data-testid="season-subnav"
+              className="mb-4 bg-[#14171f] border border-white/[0.08] p-1.5 rounded-2xl shadow-lg"
+            >
+              <div className="grid grid-cols-2 gap-1.5 w-full">
                 {(
                   [
                     {
@@ -4485,17 +4950,17 @@ export default function App() {
                       label: 'Ligas, Copas & Tabelas',
                       mobileLabel: 'Ligas & Copas',
                       badge: `${userRank}º na Série ${userClub.division}`,
-                      mobileBadge: `${userRank}º`,
+                      mobileBadge: `${userRank}º · Série ${userClub.division}`,
                       icon: Trophy,
                     },
                     {
                       id: 'calendar' as NavigationTab,
                       label: 'Calendário & Simulação Rápida',
-                      mobileLabel: 'Calendário & Simular',
+                      mobileLabel: 'Calendário',
                       badge: formatCalendarDate(dayOffset, currentYear)
                         .split(',')[1]
                         ?.trim(),
-                      mobileBadge: String(currentYear),
+                      mobileBadge: `Simular · ${currentYear}`,
                       icon: Calendar,
                     },
                   ] as const
@@ -4507,20 +4972,26 @@ export default function App() {
                       key={sub.id}
                       type="button"
                       onClick={() => setActiveTab(sub.id)}
-                      className={`min-h-[40px] px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap ${
+                      className={`min-w-0 min-h-[44px] sm:min-h-[42px] px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2 overflow-hidden cursor-pointer ${
                         active
                           ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold shadow-sm'
                           : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
                       }`}
                     >
-                      <SubIcon className="w-3.5 h-3.5 shrink-0" />
-                      <span className="hidden sm:inline">{sub.label}</span>
-                      <span className="sm:hidden">{sub.mobileLabel}</span>
+                      <span className="flex items-center justify-center gap-1.5 min-w-0 max-w-full">
+                        <SubIcon className="w-3.5 h-3.5 shrink-0" />
+                        <span className="hidden sm:inline truncate">
+                          {sub.label}
+                        </span>
+                        <span className="sm:hidden truncate">
+                          {sub.mobileLabel}
+                        </span>
+                      </span>
                       <span
-                        className={`font-mono text-[10px] px-1.5 py-0.5 rounded-full ${
+                        className={`font-mono text-[10px] leading-none px-1.5 py-0.5 rounded-full shrink-0 ${
                           active
                             ? 'bg-[#090a0f]/15 text-[#090a0f] font-extrabold'
-                            : 'bg-white/[0.06] text-zinc-400'
+                            : 'bg-white/[0.07] text-zinc-400'
                         }`}
                       >
                         <span className="hidden sm:inline">{sub.badge}</span>
@@ -4659,6 +5130,9 @@ export default function App() {
               fixtures={fixtures}
               copaDoBrasil={copaDoBrasil}
               libertadores={libertadores}
+              championsLeague={championsLeague}
+              mundial={mundial}
+              superMundial={superMundial}
               seasonStepIndex={seasonStepIndex}
               dayOffset={dayOffset}
               seasonYear={currentYear}
@@ -4687,6 +5161,9 @@ export default function App() {
               secondaryFixtures={secondaryFixtures}
               copaDoBrasil={copaDoBrasil}
               libertadores={libertadores}
+              championsLeague={championsLeague}
+              mundial={mundial}
+              superMundial={superMundial}
               activeCompetition={currentCalendarStep.competition}
             />
           )}
@@ -4798,6 +5275,7 @@ export default function App() {
       <AutoSimModal
         isOpen={autoSimUi.isOpen}
         isRunning={autoSimUi.isRunning}
+        isPaused={autoSimUi.isPaused}
         isDone={autoSimUi.isDone}
         wasStoppedEarly={autoSimUi.wasStoppedEarly}
         targetLabel={autoSimUi.targetLabel}
@@ -4815,7 +5293,9 @@ export default function App() {
         offerResolutionNote={autoSimUi.offerResolutionNote}
         onResolveOffer={handleResolveAutoSimOffer}
         onInspectPlayer={(p) => setInspectedPlayerId(p.id)}
-        onPauseOrStop={handlePauseAutoSimulation}
+        onPause={handlePauseAutoSimulation}
+        onResume={handleResumeAutoSimulation}
+        onPauseOrStop={handleStopAutoSimulation}
         onFinishInstant={handleFinishAutoSimulationInstant}
         onClose={() => {
           setAutoSimUi((prev) => ({ ...prev, isOpen: false }));

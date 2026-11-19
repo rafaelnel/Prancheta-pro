@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <clipPath id="oliClip">
+      <path d="M36 42 H164 V116 C164 152 134 176 100 186 C66 176 36 152 36 116 Z"/>
+    </clipPath>
+  </defs>
+  <g fill="#FACC15">
+    <polygon points="72,14 75,22 83,22 77,27 79,35 72,30 65,35 67,27 61,22 69,22"/>
+    <polygon points="100,10 103,18 111,18 105,23 107,31 100,26 93,31 95,23 89,18 97,18"/>
+    <polygon points="128,14 131,22 139,22 133,27 135,35 128,30 121,35 123,27 117,22 125,22"/>
+  </g>
+  <path d="M32 38 H168 V116 C168 155 136 180 100 190 C64 180 32 155 32 116 Z" fill="#111111" stroke="#ffffff" stroke-width="4.5"/>
+  <g clip-path="url(#oliClip)">
+    <rect x="36" y="42" width="128" height="144" fill="#111111"/>
+    <polygon points="24,58 54,32 178,154 148,180" fill="#ffffff"/>
+  </g>
+  <rect x="44" y="88" width="112" height="32" rx="4" fill="#111111" stroke="#ffffff" stroke-width="2.5"/>
+  <text x="100" y="111" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="20" fill="#ffffff" letter-spacing="1.5">OLIMPIA</text>
+</svg>

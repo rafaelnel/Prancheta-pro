@@ -188,7 +188,13 @@ export interface OpponentStarPlayer {
   highlightAttribute: string;
 }
 
-export type CompetitionType = 'BRASILEIRAO' | 'COPA_DO_BRASIL' | 'LIBERTADORES';
+export type CompetitionType =
+  | 'BRASILEIRAO'
+  | 'COPA_DO_BRASIL'
+  | 'LIBERTADORES'
+  | 'CHAMPIONS_LEAGUE'
+  | 'MUNDIAL'
+  | 'SUPER_MUNDIAL';
 
 export type CopaDoBrasilStage =
   | '3ª Fase'
@@ -215,9 +221,25 @@ export type LibertadoresGroupName =
   | 'G'
   | 'H';
 
+export type ChampionsKnockoutStage =
+  | 'Oitavas'
+  | 'Quartas'
+  | 'Semifinal'
+  | 'Final';
+
+export type MundialStage = 'Semifinal' | 'Final';
+
+export type SuperMundialGroupName = 'A' | 'B' | 'C' | 'D';
+
+export type SuperMundialKnockoutStage = 'Quartas' | 'Semifinal' | 'Final';
+
+export type SuperMundialStage = 'Grupos' | SuperMundialKnockoutStage;
+
+export type ClubDivision = 'A' | 'B' | 'LIB' | 'UCL' | 'WORLD';
+
 export interface Club {
   id: string;
-  division: 'A' | 'B' | 'LIB';
+  division: ClubDivision;
   country?: string;
   countryCode?: string;
   name: string;
@@ -257,7 +279,7 @@ export interface StandingsRow {
 
 export interface RoundFixture {
   id: string;
-  division?: 'A' | 'B' | 'LIB';
+  division?: ClubDivision;
   competition?: CompetitionType;
   stageLabel?: string;
   groupName?: LibertadoresGroupName;
@@ -300,6 +322,56 @@ export interface LibertadoresState {
   championClubId: string | null;
 }
 
+export interface ChampionsLeagueState {
+  seasonYear: number;
+  participantIds: string[];
+  currentStage: ChampionsKnockoutStage;
+  fixturesByStage: Record<ChampionsKnockoutStage, RoundFixture[]>;
+  eliminatedIds: string[];
+  quarterfinalistIds: string[];
+  semifinalistIds: string[];
+  runnerUpClubId: string | null;
+  championClubId: string | null;
+}
+
+export interface MundialState {
+  seasonYear: number;
+  isSeeded: boolean;
+  participantIds: string[];
+  uefaChampionId: string | null;
+  conmebolChampionId: string | null;
+  globalClubIds: string[];
+  currentStage: MundialStage;
+  fixturesByStage: Record<MundialStage, RoundFixture[]>;
+  eliminatedIds: string[];
+  runnerUpClubId: string | null;
+  championClubId: string | null;
+}
+
+export interface SuperMundialGroup {
+  name: SuperMundialGroupName;
+  clubIds: string[];
+  standings: StandingsRow[];
+  fixtures: RoundFixture[];
+}
+
+export interface SuperMundialState {
+  editionYear: number;
+  isActiveThisSeason: boolean;
+  nextEditionYear: number;
+  participantIds: string[];
+  uefaQualifiedIds: string[];
+  conmebolQualifiedIds: string[];
+  globalQualifiedIds: string[];
+  currentPhase: SuperMundialStage;
+  groupRound: number; // 1..3 during group stage
+  groups: SuperMundialGroup[];
+  knockoutFixtures: Record<SuperMundialKnockoutStage, RoundFixture[]>;
+  eliminatedIds: string[];
+  runnerUpClubId: string | null;
+  championClubId: string | null;
+}
+
 export interface SeasonCalendarStep {
   index: number;
   competition: CompetitionType;
@@ -307,6 +379,10 @@ export interface SeasonCalendarStep {
   copaStage?: CopaDoBrasilStage;
   libStage?: LibertadoresStage;
   libGroupRound?: number;
+  uclStage?: ChampionsKnockoutStage;
+  mundialStage?: MundialStage;
+  superMundialStage?: SuperMundialStage;
+  superMundialGroupRound?: number;
   dayOffset?: number;
   label: string;
 }
@@ -739,6 +815,12 @@ export interface SeasonEndReport {
   cdbChampionName: string | null;
   libChampionId: string | null;
   libChampionName: string | null;
+  uclChampionId?: string | null;
+  uclChampionName?: string | null;
+  mundialChampionId?: string | null;
+  mundialChampionName?: string | null;
+  superMundialChampionId?: string | null;
+  superMundialChampionName?: string | null;
   userFinalDivision: 'A' | 'B';
   userFinalRank: number;
   userFinalPoints: number;
@@ -769,6 +851,12 @@ export interface SeasonArchiveEntry {
   cdbChampionName: string | null;
   libChampionId: string | null;
   libChampionName: string | null;
+  uclChampionId?: string | null;
+  uclChampionName?: string | null;
+  mundialChampionId?: string | null;
+  mundialChampionName?: string | null;
+  superMundialChampionId?: string | null;
+  superMundialChampionName?: string | null;
   topScorerName: string;
   topScorerClubName: string;
   topScorerGoals: number;
@@ -833,6 +921,11 @@ export interface CareerSaveData {
   secondaryFixtures?: RoundFixture[];
   copaDoBrasil?: CopaDoBrasilState;
   libertadores?: LibertadoresState;
+  championsLeague?: ChampionsLeagueState;
+  mundial?: MundialState;
+  superMundial?: SuperMundialState;
+  accumulatedUclChampions?: string[];
+  accumulatedLibChampions?: string[];
   messages: InboxMessage[];
   matchState: LiveMatchState;
   matchHistory?: MatchHistoryRecord[];
@@ -848,6 +941,7 @@ export interface CareerSaveData {
   seasonEndReport?: SeasonEndReport | null;
   midSeasonEvolutionProcessedYear?: number;
   negotiationStates?: Record<string, PlayerNegotiationState>;
+  globalScaleVersion?: number;
 }
 
 

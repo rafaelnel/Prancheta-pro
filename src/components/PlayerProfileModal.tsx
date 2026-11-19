@@ -239,9 +239,9 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
             <div className="text-right pr-3 border-r border-white/[0.08] whitespace-nowrap">
               <div
                 className="text-[10px] sm:text-[11px] text-zinc-400 whitespace-nowrap"
-                title="Escala 60 a 99 (99 = Pelé ou Messi no auge)"
+                title="Escala 60 a 95 (95 = fora de série histórico)"
               >
-                OVR (60–99)
+                OVR (60–95)
               </div>
               <div className="flex items-center justify-end gap-2">
                 <div className="font-display text-2xl sm:text-3xl font-extrabold tabular-nums text-[#b5ff00] leading-none">

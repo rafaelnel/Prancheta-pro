@@ -52,6 +52,8 @@ export function clubToMarketProfile(club: Club): MarketClubProfile {
       ? 'SERIE_B'
       : club.division === 'LIB'
       ? 'LIBERTADORES'
+      : club.division === 'UCL' || club.division === 'WORLD'
+      ? 'INTERNACIONAL'
       : 'SERIE_A';
 
   const leagueName =
@@ -59,6 +61,10 @@ export function clubToMarketProfile(club: Club): MarketClubProfile {
       ? 'Brasileirão Série B'
       : scope === 'LIBERTADORES'
       ? `Libertadores · ${club.country || 'CONMEBOL'}`
+      : club.division === 'UCL'
+      ? `Champions League · ${club.country || 'Europa'}`
+      : club.division === 'WORLD'
+      ? `Mundial · ${club.country || 'Internacional'}`
       : 'Brasileirão Série A';
 
   const avgStrength = Math.round(

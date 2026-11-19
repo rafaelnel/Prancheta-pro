@@ -10,9 +10,16 @@ import {
   CONMEBOL_FOREIGN_CLUBS,
   LIBERTADORES_BR_CLUB_IDS,
 } from './libertadoresClubs';
+import {
+  UCL_CLUBS,
+  GLOBAL_WORLD_CLUBS,
+  UCL_CLUB_IDS,
+  GLOBAL_WORLD_CLUB_IDS,
+} from './championsClubs';
 import { REAL_SQUADS_SERIE_A } from './realSquadsA';
 import { REAL_SQUADS_SERIE_B } from './realSquadsB';
 import { REAL_SQUADS_LIBERTADORES } from './realSquadsLibertadores';
+import { REAL_SQUADS_CHAMPIONS } from './realSquadsChampions';
 import { buildPlayersFromSeeds, RealPlayerSeed } from './squadBuilder';
 
 export {
@@ -20,6 +27,10 @@ export {
   SERIE_B_CLUBS,
   CONMEBOL_FOREIGN_CLUBS,
   LIBERTADORES_BR_CLUB_IDS,
+  UCL_CLUBS,
+  GLOBAL_WORLD_CLUBS,
+  UCL_CLUB_IDS,
+  GLOBAL_WORLD_CLUB_IDS,
 };
 
 export const USER_CLUB_ID = 'flamengo';
@@ -28,12 +39,15 @@ export const INITIAL_CLUBS: Club[] = ALL_REAL_CLUBS;
 export const ALL_WORLD_CLUBS: Club[] = [
   ...ALL_REAL_CLUBS,
   ...CONMEBOL_FOREIGN_CLUBS,
+  ...UCL_CLUBS,
+  ...GLOBAL_WORLD_CLUBS,
 ];
 
 export const REAL_SQUAD_SEEDS: Record<string, RealPlayerSeed[]> = {
   ...REAL_SQUADS_SERIE_A,
   ...REAL_SQUADS_SERIE_B,
   ...REAL_SQUADS_LIBERTADORES,
+  ...REAL_SQUADS_CHAMPIONS,
 };
 
 export function getRealSquadForClub(club: Club): Player[] {

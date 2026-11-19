@@ -49,90 +49,6 @@ function createRng(seedStr: string): () => number {
 
 export const INTERNATIONAL_MARKET_CLUBS: MarketClubProfile[] = [
   {
-    id: 'intl-real-madrid',
-    name: 'Real Madrid CF',
-    shortName: 'Real Madrid',
-    abbr: 'RMA',
-    country: 'Espanha',
-    leagueName: 'La Liga',
-    scope: 'INTERNACIONAL',
-    primaryColor: '#f8fafc',
-    reputation: 96,
-    avgStrength: 90,
-  },
-  {
-    id: 'intl-man-city',
-    name: 'Manchester City FC',
-    shortName: 'Man. City',
-    abbr: 'MCI',
-    country: 'Inglaterra',
-    leagueName: 'Premier League',
-    scope: 'INTERNACIONAL',
-    primaryColor: '#38bdf8',
-    reputation: 95,
-    avgStrength: 89,
-  },
-  {
-    id: 'intl-arsenal',
-    name: 'Arsenal FC',
-    shortName: 'Arsenal',
-    abbr: 'ARS',
-    country: 'Inglaterra',
-    leagueName: 'Premier League',
-    scope: 'INTERNACIONAL',
-    primaryColor: '#ef4444',
-    reputation: 91,
-    avgStrength: 86,
-  },
-  {
-    id: 'intl-psg',
-    name: 'Paris Saint-Germain',
-    shortName: 'PSG',
-    abbr: 'PSG',
-    country: 'França',
-    leagueName: 'Ligue 1',
-    scope: 'INTERNACIONAL',
-    primaryColor: '#1d4ed8',
-    reputation: 92,
-    avgStrength: 87,
-  },
-  {
-    id: 'intl-bayern',
-    name: 'FC Bayern München',
-    shortName: 'Bayern',
-    abbr: 'BAY',
-    country: 'Alemanha',
-    leagueName: 'Bundesliga',
-    scope: 'INTERNACIONAL',
-    primaryColor: '#dc2626',
-    reputation: 94,
-    avgStrength: 88,
-  },
-  {
-    id: 'intl-inter-milan',
-    name: 'FC Internazionale Milano',
-    shortName: 'Inter de Milão',
-    abbr: 'INT',
-    country: 'Itália',
-    leagueName: 'Serie A Itália',
-    scope: 'INTERNACIONAL',
-    primaryColor: '#2563eb',
-    reputation: 90,
-    avgStrength: 86,
-  },
-  {
-    id: 'intl-benfica',
-    name: 'SL Benfica',
-    shortName: 'Benfica',
-    abbr: 'SLB',
-    country: 'Portugal',
-    leagueName: 'Liga Portugal',
-    scope: 'INTERNACIONAL',
-    primaryColor: '#e11d48',
-    reputation: 86,
-    avgStrength: 82,
-  },
-  {
     id: 'intl-porto',
     name: 'FC Porto',
     shortName: 'Porto',
@@ -141,20 +57,8 @@ export const INTERNATIONAL_MARKET_CLUBS: MarketClubProfile[] = [
     leagueName: 'Liga Portugal',
     scope: 'INTERNACIONAL',
     primaryColor: '#0284c7',
-    reputation: 85,
-    avgStrength: 81,
-  },
-  {
-    id: 'intl-sporting',
-    name: 'Sporting CP',
-    shortName: 'Sporting',
-    abbr: 'SCP',
-    country: 'Portugal',
-    leagueName: 'Liga Portugal',
-    scope: 'INTERNACIONAL',
-    primaryColor: '#16a34a',
-    reputation: 85,
-    avgStrength: 82,
+    reputation: 84,
+    avgStrength: 80,
   },
   {
     id: 'intl-brighton',
@@ -179,30 +83,6 @@ export const INTERNATIONAL_MARKET_CLUBS: MarketClubProfile[] = [
     primaryColor: '#f43f5e',
     reputation: 79,
     avgStrength: 77,
-  },
-  {
-    id: 'intl-inter-miami',
-    name: 'Inter Miami CF',
-    shortName: 'Inter Miami',
-    abbr: 'MIA',
-    country: 'EUA',
-    leagueName: 'MLS',
-    scope: 'INTERNACIONAL',
-    primaryColor: '#f472b6',
-    reputation: 79,
-    avgStrength: 77,
-  },
-  {
-    id: 'intl-al-hilal',
-    name: 'Al-Hilal SFC',
-    shortName: 'Al-Hilal',
-    abbr: 'HIL',
-    country: 'Arábia Saudita',
-    leagueName: 'Saudi Pro League',
-    scope: 'INTERNACIONAL',
-    primaryColor: '#1e40af',
-    reputation: 83,
-    avgStrength: 82,
   },
   {
     id: 'intl-shaktar',
@@ -235,66 +115,20 @@ type IntlSeed = [
 ];
 
 /**
- * Catálogo Internacional curado e coerente (estilo PES / EA FC):
- * - Jovens promessas (Sub-23) reservas em gigantes europeus: listados APENAS para EMPRÉSTIMO ('LOAN')
- * - Veteranos / reservas sem espaço (24+ anos): listados para COMPRA ('TRANSFER')
- * - Titulares absolutos: NÃO listados ('NONE' — exigem proposta forte para compra e não saem por empréstimo)
+ * Catálogo Internacional complementar (clubes fora da Champions/Mundial):
+ * - Os 16 clubes da Champions League e os 4 clubes do Mundial/Super Mundial já estão integrados
+ *   com elencos completos de 18 atletas em ALL_WORLD_CLUBS e aiSquads (sem duplicidade).
  */
 const INTERNATIONAL_PLAYER_SEEDS: IntlSeed[] = [
-  // Real Madrid
-  ['intl-real-madrid', 16, 'Endrick', 19, 'Brasil', 'ATA', 16.0, false, 'LOAN', 5.0, { finalizacao: 17, aceleracao: 18, forca: 16 }],
-  ['intl-real-madrid', 15, 'Arda Güler', 21, 'Turquia', 'MEI', 16.3, false, 'LOAN', 5.0, { visaoDeJogo: 18, passe: 17, drible: 17 }],
-  ['intl-real-madrid', 21, 'Brahim Díaz', 26, 'Marrocos', 'PD', 16.3, false, 'TRANSFER', 4.0, { drible: 18, agilidade: 18 }],
-  ['intl-real-madrid', 35, 'Raúl Asencio', 23, 'Espanha', 'ZAG', 15.5, false, 'LOAN', 4.0],
-
-  // Man City
-  ['intl-man-city', 26, 'Savinho', 21, 'Brasil', 'PD', 16.4, true, 'NONE', 5.0, { drible: 18, velocidade: 18, agilidade: 18 }],
-  ['intl-man-city', 52, 'Oscar Bobb', 22, 'Noruega', 'PE', 15.5, false, 'LOAN', 4.5, { drible: 17, agilidade: 17 }],
-  ['intl-man-city', 82, 'Rico Lewis', 21, 'Inglaterra', 'LD', 15.8, false, 'LOAN', 4.5, { passe: 16, decisoes: 16 }],
-  ['intl-man-city', 22, 'Vitor Reis', 20, 'Brasil', 'ZAG', 15.2, false, 'LOAN', 4.5, { desarme: 16, posicionamento: 16 }],
-
-  // Arsenal
-  ['intl-arsenal', 9, 'Gabriel Jesus', 29, 'Brasil', 'ATA', 16.3, false, 'TRANSFER', 4.0, { semBola: 17, drible: 17 }],
-  ['intl-arsenal', 11, 'Gabriel Martinelli', 24, 'Brasil', 'PE', 16.8, true, 'NONE', 4.5, { velocidade: 18, aceleracao: 18, drible: 17 }],
-  ['intl-arsenal', 23, 'Mikel Merino', 29, 'Espanha', 'MC', 16.2, false, 'TRANSFER', 4.0],
-  ['intl-arsenal', 17, 'Oleksandr Zinchenko', 29, 'Ucrânia', 'LE', 15.8, false, 'TRANSFER', 3.5],
-
-  // PSG
-  ['intl-psg', 35, 'Lucas Beraldo', 22, 'Brasil', 'ZAG', 15.8, false, 'LOAN', 4.5, { passe: 17, posicionamento: 16 }],
-  ['intl-psg', 19, 'Lee Kang-in', 25, 'Coreia do Sul', 'MEI', 16.0, false, 'TRANSFER', 4.0, { visaoDeJogo: 17, passe: 17 }],
-  ['intl-psg', 9, 'Gonçalo Ramos', 24, 'Portugal', 'ATA', 16.3, false, 'TRANSFER', 4.0, { finalizacao: 17, semBola: 17 }],
-  ['intl-psg', 20, 'Gabriel Moscardo', 20, 'Brasil', 'VOL', 15.1, false, 'LOAN', 4.5, { desarme: 16, resistencia: 16 }],
-
-  // Bayern
-  ['intl-bayern', 16, 'João Palhinha', 30, 'Portugal', 'VOL', 16.4, false, 'TRANSFER', 4.0, { desarme: 18, forca: 17 }],
-  ['intl-bayern', 18, 'Daniel Peretz', 25, 'Israel', 'GOL', 15.0, false, 'BOTH', 3.5],
-  ['intl-bayern', 20, 'Tom Bischof', 20, 'Alemanha', 'MC', 15.2, false, 'LOAN', 4.5],
-
-  // Inter Milan
-  ['intl-inter-milan', 30, 'Carlos Augusto', 27, 'Brasil', 'LE', 16.1, false, 'TRANSFER', 4.0, { cruzamento: 16, velocidade: 16 }],
-  ['intl-inter-milan', 21, 'Kristjan Asllani', 24, 'Albânia', 'VOL', 15.5, false, 'BOTH', 4.0],
-  ['intl-inter-milan', 99, 'Mehdi Taremi', 33, 'Irã', 'ATA', 15.8, false, 'TRANSFER', 3.5, { finalizacao: 17, decisoes: 17 }],
-
-  // Benfica
-  ['intl-benfica', 30, 'Nicolás Otamendi', 38, 'Argentina', 'ZAG', 15.8, true, 'NONE', 3.5, { desarme: 17, posicionamento: 17 }],
-  ['intl-benfica', 32, 'Gianluca Prestianni', 20, 'Argentina', 'PD', 15.1, false, 'LOAN', 4.5, { drible: 17, agilidade: 17 }],
-  ['intl-benfica', 17, 'Kerem Aktürkoğlu', 27, 'Turquia', 'PE', 16.2, true, 'NONE', 4.0],
-  ['intl-benfica', 1, 'Anatoliy Trubin', 24, 'Ucrânia', 'GOL', 16.3, true, 'NONE', 4.5],
-
   // Porto
   ['intl-porto', 11, 'Pepê', 29, 'Brasil', 'PD', 16.2, true, 'NONE', 4.0, { drible: 17, velocidade: 17 }],
   ['intl-porto', 22, 'Alan Varela', 24, 'Argentina', 'VOL', 16.1, true, 'NONE', 4.0, { desarme: 17, passe: 16 }],
-  ['intl-porto', 4, 'Otávio Ataíde', 23, 'Brasil', 'ZAG', 15.3, false, 'LOAN', 4.0],
+  ['intl-porto', 4, 'Otávio Ataíde', 23, 'Brasil', 'ZAG', 15.3, false, 'LOAN', 3.5],
   ['intl-porto', 19, 'Danny Namaso', 25, 'Inglaterra', 'ATA', 15.1, false, 'TRANSFER', 3.5],
-
-  // Sporting
-  ['intl-sporting', 42, 'Morten Hjulmand', 26, 'Dinamarca', 'VOL', 16.4, true, 'NONE', 4.0],
-  ['intl-sporting', 17, 'Francisco Trincão', 26, 'Portugal', 'PD', 16.2, true, 'NONE', 4.0],
-  ['intl-sporting', 11, 'Nuno Santos', 31, 'Portugal', 'LE', 15.5, false, 'TRANSFER', 3.5],
 
   // Brighton
   ['intl-brighton', 30, 'Pervis Estupiñán', 28, 'Equador', 'LE', 15.9, true, 'NONE', 4.0],
-  ['intl-brighton', 20, 'Julio Enciso', 22, 'Paraguai', 'MEI', 15.5, false, 'LOAN', 4.5, { drible: 17, finalizacao: 16 }],
+  ['intl-brighton', 20, 'Julio Enciso', 22, 'Paraguai', 'MEI', 15.5, false, 'LOAN', 4.0, { drible: 17, finalizacao: 16 }],
   ['intl-brighton', 2, 'Igor Julio', 28, 'Brasil', 'ZAG', 15.4, false, 'TRANSFER', 3.5],
 
   // Girona
@@ -302,19 +136,8 @@ const INTERNATIONAL_PLAYER_SEEDS: IntlSeed[] = [
   ['intl-girona', 18, 'Oriol Romeu', 34, 'Espanha', 'VOL', 15.1, false, 'TRANSFER', 3.0],
   ['intl-girona', 9, 'Abel Ruiz', 26, 'Espanha', 'ATA', 15.3, false, 'TRANSFER', 3.5],
 
-  // Inter Miami
-  ['intl-inter-miami', 9, 'Luis Suárez', 39, 'Uruguai', 'ATA', 15.8, true, 'NONE', 3.5, { finalizacao: 18, compostura: 18, velocidade: 11 }],
-  ['intl-inter-miami', 5, 'Sergio Busquets', 37, 'Espanha', 'VOL', 15.8, true, 'NONE', 3.5, { passe: 18, visaoDeJogo: 18, velocidade: 10 }],
-  ['intl-inter-miami', 21, 'Tadeo Allende', 27, 'Argentina', 'PD', 14.9, false, 'TRANSFER', 3.0],
-
-  // Al-Hilal
-  ['intl-al-hilal', 11, 'Marcos Leonardo', 22, 'Brasil', 'ATA', 15.9, false, 'LOAN', 4.5, { finalizacao: 17, semBola: 17 }],
-  ['intl-al-hilal', 77, 'Malcom', 29, 'Brasil', 'PD', 16.5, true, 'NONE', 4.0, { drible: 17, velocidade: 17 }],
-  ['intl-al-hilal', 8, 'Rúben Neves', 29, 'Portugal', 'VOL', 16.6, true, 'NONE', 4.0, { passe: 18, visaoDeJogo: 17 }],
-  ['intl-al-hilal', 6, 'Renan Lodi', 27, 'Brasil', 'LE', 15.6, false, 'TRANSFER', 3.5],
-
   // Shakhtar
-  ['intl-shaktar', 7, 'Eguinaldo', 21, 'Brasil', 'ATA', 14.9, false, 'LOAN', 4.0, { velocidade: 17 }],
+  ['intl-shaktar', 7, 'Eguinaldo', 21, 'Brasil', 'ATA', 14.9, false, 'LOAN', 3.5, { velocidade: 17 }],
   ['intl-shaktar', 11, 'Kevin', 23, 'Brasil', 'PE', 15.4, true, 'NONE', 4.0, { drible: 17, aceleracao: 17 }],
   ['intl-shaktar', 22, 'Mykola Matviyenko', 29, 'Ucrânia', 'ZAG', 15.5, true, 'NONE', 3.5],
 ];
@@ -347,7 +170,7 @@ function buildCatalogPlayer(
   let ovr = calculatePlayerOverall(attributes, position);
   const clubRep = isIntl ? Math.round(80 * repFactor) : 74;
   const potentialStars =
-    explicitStars ?? assignPotentialStars(ovr, age, clubRep, id);
+    explicitStars ?? assignPotentialStars(ovr, age, clubRep, id, name);
   const maxAllowedForAge = getMaxRealisticOvrForAgeAndPotential(
     age,
     potentialStars

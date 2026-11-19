@@ -43,8 +43,8 @@ export const StarRating: React.FC<StarRatingProps> = ({
   return (
     <span
       className="inline-flex items-center gap-0.5 whitespace-nowrap"
-      title={`Potencial: ${value} de 5 estrelas`}
-      aria-label={`Potencial ${value} de 5 estrelas`}
+      title={`Projeção / Expectativa: ${value} de 5 estrelas`}
+      aria-label={`Projeção e expectativa ${value} de 5 estrelas`}
     >
       {[1, 2, 3, 4, 5].map((idx) => {
         const isFull = idx <= value;

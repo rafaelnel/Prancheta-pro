@@ -27,12 +27,15 @@ import {
 import { getTransferWindowStatus } from '../engine/transferEngine';
 import { formatCalendarDate } from '../utils/formatters';
 import {
+  ChampionsLeagueState,
   Club,
   CompetitionType,
   CopaDoBrasilState,
   LibertadoresState,
+  MundialState,
   RoundFixture,
   SeasonCalendarStep,
+  SuperMundialState,
 } from '../types/football';
 import { ClubBadge } from './ClubBadge';
 
@@ -42,6 +45,9 @@ interface AnnualCalendarViewProps {
   fixtures: RoundFixture[];
   copaDoBrasil: CopaDoBrasilState;
   libertadores: LibertadoresState;
+  championsLeague?: ChampionsLeagueState;
+  mundial?: MundialState;
+  superMundial?: SuperMundialState;
   seasonStepIndex: number;
   dayOffset: number;
   seasonYear?: number;
@@ -115,6 +121,9 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
   fixtures,
   copaDoBrasil,
   libertadores,
+  championsLeague,
+  mundial,
+  superMundial,
   seasonStepIndex,
   dayOffset,
   seasonYear = 2026,
@@ -161,9 +170,24 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
 
   const participatesInLib = libertadores.participantIds.includes(userClub.id);
   const participatesInCdb = copaDoBrasil.participantIds.includes(userClub.id);
+  const isSuperMundialActive = superMundial?.isActiveThisSeason ?? false;
+  const participatesInSuperMundial =
+    isSuperMundialActive &&
+    (superMundial?.participantIds.includes(userClub.id) ?? false);
+  const participatesInMundial =
+    mundial?.participantIds.includes(userClub.id) ?? false;
+
+  const activeCalendarSteps = useMemo(
+    () =>
+      SEASON_CALENDAR.filter(
+        (step) =>
+          step.competition !== 'SUPER_MUNDIAL' || isSuperMundialActive
+      ),
+    [isSuperMundialActive]
+  );
 
   const entries: CalendarEntry[] = useMemo(() => {
-    return SEASON_CALENDAR.map((step) => {
+    return activeCalendarSteps.map((step) => {
       const offset = step.dayOffset ?? step.index * 6;
       const date = dayOffsetToDate(offset, seasonYear);
       const monthIndex = date.getMonth();
@@ -201,6 +225,39 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
                 f.homeClubId === userClub.id || f.awayClubId === userClub.id
             ) || null;
         }
+      } else if (step.competition === 'MUNDIAL' && step.mundialStage && mundial) {
+        fixture =
+          (mundial.fixturesByStage[step.mundialStage] || []).find(
+            (f) => f.homeClubId === userClub.id || f.awayClubId === userClub.id
+          ) || null;
+      } else if (
+        step.competition === 'SUPER_MUNDIAL' &&
+        superMundial?.isActiveThisSeason
+      ) {
+        if (step.superMundialStage === 'Grupos' && step.superMundialGroupRound) {
+          for (const grp of superMundial.groups) {
+            const found = grp.fixtures.find(
+              (f) =>
+                f.roundNumber === step.superMundialGroupRound &&
+                (f.homeClubId === userClub.id || f.awayClubId === userClub.id)
+            );
+            if (found) {
+              fixture = found;
+              break;
+            }
+          }
+        } else if (
+          step.superMundialStage &&
+          step.superMundialStage !== 'Grupos'
+        ) {
+          fixture =
+            (
+              superMundial.knockoutFixtures[step.superMundialStage] || []
+            ).find(
+              (f) =>
+                f.homeClubId === userClub.id || f.awayClubId === userClub.id
+            ) || null;
+        }
       }
 
       const isUserHome = fixture ? fixture.homeClubId === userClub.id : true;
@@ -215,14 +272,33 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
         : undefined;
       const stadium = homeClubObj?.stadium || userClub.stadium;
       const kickoffTime =
-        step.competition === 'BRASILEIRAO' ? '16:00' : '21:30';
+        step.competition === 'BRASILEIRAO'
+          ? '16:00'
+          : step.competition === 'CHAMPIONS_LEAGUE'
+          ? '16:00'
+          : step.competition === 'MUNDIAL' ||
+            step.competition === 'SUPER_MUNDIAL'
+          ? '17:00'
+          : '21:30';
 
       let status: CalendarEntry['status'] = 'TBD';
       let outcome: CalendarEntry['outcome'] = null;
       let scoreLabel: string | null = null;
       let penaltiesLabel: string | null = null;
 
-      if (fixture?.played && fixture.homeGoals !== null && fixture.awayGoals !== null) {
+      if (step.competition === 'CHAMPIONS_LEAGUE') {
+        const uclFixtures =
+          step.uclStage && championsLeague
+            ? championsLeague.fixturesByStage[step.uclStage] || []
+            : [];
+        const stagePlayed =
+          uclFixtures.length > 0 && uclFixtures.every((f) => f.played);
+        status = stagePlayed ? 'PLAYED' : 'NOT_PARTICIPATING';
+      } else if (
+        fixture?.played &&
+        fixture.homeGoals !== null &&
+        fixture.awayGoals !== null
+      ) {
         status = 'PLAYED';
         scoreLabel = `${fixture.homeGoals} × ${fixture.awayGoals}`;
         if (
@@ -250,11 +326,35 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
       } else if (step.competition === 'LIBERTADORES' && !participatesInLib) {
         status = 'NOT_PARTICIPATING';
       } else if (
+        step.competition === 'SUPER_MUNDIAL' &&
+        !participatesInSuperMundial
+      ) {
+        status = 'NOT_PARTICIPATING';
+      } else if (
+        step.competition === 'MUNDIAL' &&
+        mundial?.isSeeded &&
+        !participatesInMundial
+      ) {
+        status = 'NOT_PARTICIPATING';
+      } else if (
+        step.competition === 'MUNDIAL' &&
+        !mundial?.isSeeded &&
+        (!participatesInLib ||
+          libertadores.eliminatedIds.includes(userClub.id) ||
+          (libertadores.championClubId !== null &&
+            libertadores.championClubId !== userClub.id))
+      ) {
+        status = 'NOT_PARTICIPATING';
+      } else if (
         (step.competition === 'LIBERTADORES' &&
           libertadores.eliminatedIds.includes(userClub.id)) ||
         (step.competition === 'COPA_DO_BRASIL' &&
           (!participatesInCdb ||
-            copaDoBrasil.eliminatedIds.includes(userClub.id)))
+            copaDoBrasil.eliminatedIds.includes(userClub.id))) ||
+        (step.competition === 'SUPER_MUNDIAL' &&
+          superMundial?.eliminatedIds.includes(userClub.id)) ||
+        (step.competition === 'MUNDIAL' &&
+          mundial?.eliminatedIds.includes(userClub.id))
       ) {
         status = 'ELIMINATED';
       } else if (step.index < seasonStepIndex) {
@@ -281,14 +381,20 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
       };
     });
   }, [
+    activeCalendarSteps,
+    championsLeague,
     clubMap,
     copaDoBrasil,
     fixtures,
     libertadores,
+    mundial,
     participatesInCdb,
     participatesInLib,
+    participatesInMundial,
+    participatesInSuperMundial,
     seasonStepIndex,
     seasonYear,
+    superMundial,
     userClub.id,
     userClub.stadium,
   ]);
@@ -464,6 +570,33 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
         Icon: Globe2,
       };
     }
+    if (comp === 'CHAMPIONS_LEAGUE') {
+      return {
+        label: 'Champions League',
+        short: 'UCL',
+        pillClass: 'bg-indigo-400/15 text-indigo-300 border-indigo-400/30',
+        dotClass: 'bg-indigo-400',
+        Icon: Trophy,
+      };
+    }
+    if (comp === 'MUNDIAL') {
+      return {
+        label: 'Mundial de Clubes',
+        short: 'MUN',
+        pillClass: 'bg-yellow-400/15 text-yellow-300 border-yellow-400/30',
+        dotClass: 'bg-yellow-400',
+        Icon: Trophy,
+      };
+    }
+    if (comp === 'SUPER_MUNDIAL') {
+      return {
+        label: 'Super Mundial',
+        short: 'SMUN',
+        pillClass: 'bg-purple-400/15 text-purple-300 border-purple-400/30',
+        dotClass: 'bg-purple-400',
+        Icon: Globe2,
+      };
+    }
     return {
       label: `Série ${userClub.division === 'B' ? 'B' : 'A'}`,
       short: userClub.division === 'B' ? 'SÉRIE B' : 'SÉRIE A',
@@ -479,7 +612,7 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
         <div>
           <span className="text-xs text-zinc-400 block mb-0.5">
-            Temporada {seasonYear} · Brasileirão (38 rodadas), Copa do Brasil e Libertadores
+            Temporada {seasonYear} · Brasileirão, Copa do Brasil, Libertadores, Champions, Mundial{isSuperMundialActive ? ' e Super Mundial' : ''}
           </span>
           <h2 className="font-display text-3xl sm:text-4xl font-extrabold uppercase tracking-tight text-white leading-none">
             CALENDÁRIO ANUAL {seasonYear}
@@ -489,11 +622,16 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
         <div className="flex flex-wrap items-center gap-1.5 bg-[#14171f] border border-white/[0.08] rounded-2xl sm:rounded-full p-1.5 sm:p-1">
           {(
             [
-              { id: 'ALL', label: `Todos (${SEASON_CALENDAR.length})` },
+              { id: 'ALL', label: `Todos (${activeCalendarSteps.length})` },
               { id: 'BRASILEIRAO', label: 'Brasileirão (38)' },
-              { id: 'COPA_DO_BRASIL', label: 'Copa do Brasil (5)' },
+              { id: 'COPA_DO_BRASIL', label: 'Copa BR (5)' },
               { id: 'LIBERTADORES', label: 'Libertadores (10)' },
-            ] as const
+              { id: 'CHAMPIONS_LEAGUE', label: 'Champions (4)' },
+              { id: 'MUNDIAL', label: 'Mundial (2)' },
+              ...(isSuperMundialActive
+                ? [{ id: 'SUPER_MUNDIAL' as const, label: 'Super Mundial (6)' }]
+                : []),
+            ] as ReadonlyArray<{ id: CalendarFilterComp; label: string }>
           ).map((f) => (
             <button
               key={f.id}
@@ -838,9 +976,7 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
                         {String(entry.dayOfMonth).padStart(2, '0')}{' '}
                         {entry.opponentClub
                           ? entry.opponentClub.abbr
-                          : entry.step.competition === 'COPA_DO_BRASIL'
-                          ? 'CdB'
-                          : 'LIB'}
+                          : getCompBadge(entry.step.competition).short}
                       </span>
                     </div>
                   ))}
@@ -1083,7 +1219,7 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                Ano Inteiro ({SEASON_CALENDAR.length})
+                Ano Inteiro ({activeCalendarSteps.length})
               </button>
             </div>
           </div>
@@ -1181,7 +1317,9 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
                           </div>
                         ) : (
                           <div className="text-xs font-medium text-zinc-400">
-                            {entry.status === 'NOT_PARTICIPATING'
+                            {entry.step.competition === 'CHAMPIONS_LEAGUE'
+                              ? 'Simulação europeia automática · Define vaga UEFA no Mundial'
+                              : entry.status === 'NOT_PARTICIPATING'
                               ? 'Clube não classificado para esta competição'
                               : entry.status === 'ELIMINATED'
                               ? 'Clube eliminado em fase anterior'

@@ -19,6 +19,7 @@ import {
   BookmarkCheck,
   TrendingDown,
   Trash2,
+  Star,
 } from 'lucide-react';
 import { calculatePlayerOverall } from '../engine/matchEngine';
 import {
@@ -140,14 +141,15 @@ type WatchlistSortKey =
   | 'VALUE_ASC';
 
 type DomesticScopeFilter = 'ALL' | 'SERIE_A' | 'SERIE_B' | 'LIBERTADORES';
+type IntlScopeFilter = 'ALL' | 'CHAMPIONS' | 'MUNDIAL_OUTROS';
 type ClubListingFilter = 'ALL' | 'LISTED_ANY' | 'LISTED_BUY' | 'LISTED_LOAN';
 type PriceRangeFilter =
   | 'ALL'
   | 'FREE_ONLY'
-  | 'UP_TO_10M'
-  | '10M_TO_25M'
-  | '25M_TO_50M'
-  | 'OVER_50M';
+  | 'UP_TO_25M'
+  | '25M_TO_80M'
+  | '80M_TO_250M'
+  | 'OVER_250M';
 type AgeRangeFilter = 'ALL' | 'SUB_23' | 'AUGE_24_29' | 'EXP_30_PLUS';
 type DifficultyFilter =
   | 'ALL'
@@ -157,6 +159,7 @@ type DifficultyFilter =
   | 'DIFICIL';
 type SortKey =
   | 'OVR_DESC'
+  | 'STARS_DESC'
   | 'OVR_ASC'
   | 'FEE_ASC'
   | 'FEE_DESC'
@@ -316,6 +319,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
   const [subTab, setSubTab] = useState<MarketSubTab>('NACIONAL_LIB');
   const [domesticScope, setDomesticScope] =
     useState<DomesticScopeFilter>('ALL');
+  const [intlScope, setIntlScope] = useState<IntlScopeFilter>('ALL');
   const [clubListingFilter, setClubListingFilter] =
     useState<ClubListingFilter>('ALL');
   const [showClubRadar, setShowClubRadar] = useState<boolean>(false);
@@ -327,7 +331,8 @@ export const MarketView: React.FC<MarketViewProps> = ({
     useState<PriceRangeFilter>('ALL');
   const [maxSalaryFilter, setMaxSalaryFilter] = useState<number>(0); // 0 = all
   const [minOvrFilter, setMinOvrFilter] = useState<number>(60);
-  const [maxOvrFilter, setMaxOvrFilter] = useState<number>(99);
+  const [maxOvrFilter, setMaxOvrFilter] = useState<number>(95);
+  const [minStarsFilter, setMinStarsFilter] = useState<number>(0); // 0 = todas estrelas
   const [ageRangeFilter, setAgeRangeFilter] = useState<AgeRangeFilter>('ALL');
   const [difficultyFilter, setDifficultyFilter] =
     useState<DifficultyFilter>('ALL');
@@ -412,7 +417,8 @@ export const MarketView: React.FC<MarketViewProps> = ({
     if (positionFilter !== 'ALL') count++;
     if (priceRangeFilter !== 'ALL') count++;
     if (maxSalaryFilter > 0) count++;
-    if (minOvrFilter > 60 || maxOvrFilter < 99) count++;
+    if (minOvrFilter > 60 || maxOvrFilter < 95) count++;
+    if (minStarsFilter > 0) count++;
     if (ageRangeFilter !== 'ALL') count++;
     if (difficultyFilter !== 'ALL') count++;
     if (keyAttributeFilter !== 'NONE') count++;
@@ -425,6 +431,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
     maxSalaryFilter,
     minOvrFilter,
     maxOvrFilter,
+    minStarsFilter,
     ageRangeFilter,
     difficultyFilter,
     keyAttributeFilter,
@@ -433,13 +440,15 @@ export const MarketView: React.FC<MarketViewProps> = ({
 
   const handleResetFilters = () => {
     setDomesticScope('ALL');
+    setIntlScope('ALL');
     setClubListingFilter('ALL');
     setSectorFilter('ALL');
     setPositionFilter('ALL');
     setPriceRangeFilter('ALL');
     setMaxSalaryFilter(0);
     setMinOvrFilter(60);
-    setMaxOvrFilter(99);
+    setMaxOvrFilter(95);
+    setMinStarsFilter(0);
     setAgeRangeFilter('ALL');
     setDifficultyFilter('ALL');
     setKeyAttributeFilter('NONE');
@@ -467,6 +476,11 @@ export const MarketView: React.FC<MarketViewProps> = ({
         if (domesticScope !== 'ALL' && item.scope !== domesticScope) continue;
       } else if (subTab === 'INTERNACIONAL') {
         if (item.scope !== 'INTERNACIONAL') continue;
+        const isChampionsClub = Boolean(
+          item.originClub?.leagueName.startsWith('Champions League')
+        );
+        if (intlScope === 'CHAMPIONS' && !isChampionsClub) continue;
+        if (intlScope === 'MUNDIAL_OUTROS' && isChampionsClub) continue;
       } else if (subTab === 'LIVRES') {
         continue;
       } else if (subTab === 'EMPRESTIMOS') {
@@ -479,7 +493,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
     }
 
     return { listedAny, listedBuy, listedLoan };
-  }, [allListings, subTab, domesticScope]);
+  }, [allListings, subTab, domesticScope, intlScope]);
 
   // Strategic Market Profiles for all opponent clubs (needs, purchases, sales, loans)
   const aiClubProfilesMap = useMemo(() => {
@@ -599,6 +613,11 @@ export const MarketView: React.FC<MarketViewProps> = ({
           }
         } else if (subTab === 'INTERNACIONAL') {
           if (item.scope !== 'INTERNACIONAL') return false;
+          const isChampionsClub = Boolean(
+            item.originClub?.leagueName.startsWith('Champions League')
+          );
+          if (intlScope === 'CHAMPIONS' && !isChampionsClub) return false;
+          if (intlScope === 'MUNDIAL_OUTROS' && isChampionsClub) return false;
         } else if (subTab === 'LIVRES') {
           if (item.scope !== 'LIVRES') return false;
         } else if (subTab === 'EMPRESTIMOS') {
@@ -630,6 +649,12 @@ export const MarketView: React.FC<MarketViewProps> = ({
           return false;
         }
 
+        // Potential stars filter
+        if (minStarsFilter > 0) {
+          const stars = item.player.potentialStars ?? 3;
+          if (stars < minStarsFilter) return false;
+        }
+
         // Specific attribute minimum filter
         if (keyAttributeFilter !== 'NONE') {
           const attrVal = item.player.attributes[keyAttributeFilter] ?? 0;
@@ -645,19 +670,19 @@ export const MarketView: React.FC<MarketViewProps> = ({
             : item.buyFee;
 
         if (priceRangeFilter === 'FREE_ONLY' && relevantFee > 0) return false;
-        if (priceRangeFilter === 'UP_TO_10M' && relevantFee > 10_000_000)
+        if (priceRangeFilter === 'UP_TO_25M' && relevantFee > 25_000_000)
           return false;
         if (
-          priceRangeFilter === '10M_TO_25M' &&
-          (relevantFee < 10_000_000 || relevantFee > 25_000_000)
+          priceRangeFilter === '25M_TO_80M' &&
+          (relevantFee < 25_000_000 || relevantFee > 80_000_000)
         )
           return false;
         if (
-          priceRangeFilter === '25M_TO_50M' &&
-          (relevantFee < 25_000_000 || relevantFee > 50_000_000)
+          priceRangeFilter === '80M_TO_250M' &&
+          (relevantFee < 80_000_000 || relevantFee > 250_000_000)
         )
           return false;
-        if (priceRangeFilter === 'OVER_50M' && relevantFee <= 50_000_000)
+        if (priceRangeFilter === 'OVER_250M' && relevantFee <= 250_000_000)
           return false;
 
         // Monthly salary ceiling filter
@@ -712,6 +737,11 @@ export const MarketView: React.FC<MarketViewProps> = ({
         return true;
       })
       .sort((a, b) => {
+        if (sortBy === 'STARS_DESC') {
+          const starsA = a.player.potentialStars ?? 3;
+          const starsB = b.player.potentialStars ?? 3;
+          return starsB - starsA || b.ovr - a.ovr;
+        }
         if (sortBy === 'OVR_ASC') {
           return a.ovr - b.ovr;
         }
@@ -742,11 +772,13 @@ export const MarketView: React.FC<MarketViewProps> = ({
     allListings,
     subTab,
     domesticScope,
+    intlScope,
     clubListingFilter,
     sectorFilter,
     positionFilter,
     minOvrFilter,
     maxOvrFilter,
+    minStarsFilter,
     keyAttributeFilter,
     minAttributeValue,
     priceRangeFilter,
@@ -3431,70 +3463,192 @@ export const MarketView: React.FC<MarketViewProps> = ({
         subTab !== 'OBSERVADOS' && (
         <div className="space-y-3 sm:space-y-4">
           {/* Primary & Advanced Filter Panel */}
-          <div className="bg-[#14171f] border border-white/[0.08] rounded-2xl sm:rounded-[24px] p-2.5 sm:p-4 space-y-2 sm:space-y-3.5">
-            {/* Top Search & Sector Row */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 sm:gap-3">
-              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 flex-1">
-                <div className="relative flex-1 min-w-[140px] sm:min-w-[200px] sm:max-w-xs">
-                  <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Buscar atleta, clube ou país..."
-                    aria-label="Buscar no mercado de transferências"
-                    className="w-full bg-[#0b0c10] border border-white/[0.08] rounded-full pl-8 pr-3 py-1.5 sm:py-2 text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-[#b5ff00]"
-                  />
-                </div>
+          <div
+            data-testid="market-filter-panel"
+            className="bg-[#14171f] border border-white/[0.08] rounded-2xl sm:rounded-[24px] p-3 sm:p-4 space-y-2.5 sm:space-y-3"
+          >
+            {/* Row 1: Search, Competition Scope & Sort (Balanced Full-Width Grid) */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+              <div
+                className={`relative ${
+                  subTab === 'NACIONAL_LIB' || subTab === 'INTERNACIONAL'
+                    ? 'sm:col-span-5'
+                    : 'sm:col-span-8'
+                }`}
+              >
+                <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Buscar atleta, clube ou país..."
+                  aria-label="Buscar no mercado de transferências"
+                  className="w-full bg-[#0b0c10] border border-white/[0.08] rounded-xl pl-8 pr-3 py-2 text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-[#b5ff00]"
+                />
+              </div>
 
-                {subTab === 'NACIONAL_LIB' && (
+              {subTab === 'NACIONAL_LIB' && (
+                <div className="grid grid-cols-2 sm:contents gap-2">
                   <select
                     aria-label="Filtrar competição"
                     value={domesticScope}
                     onChange={(e) =>
                       setDomesticScope(e.target.value as DomesticScopeFilter)
                     }
-                    className="bg-[#0b0c10] border border-white/[0.08] rounded-full px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs text-white focus:outline-none focus:border-[#b5ff00]"
+                    className="w-full sm:col-span-3 bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#b5ff00]"
                   >
                     <option value="ALL">Todas Ligas (A/B/Lib)</option>
                     <option value="SERIE_A">Série A</option>
                     <option value="SERIE_B">Série B</option>
                     <option value="LIBERTADORES">Libertadores</option>
                   </select>
-                )}
 
-                <div className="flex items-center gap-0.5 sm:gap-1 bg-[#0b0c10] p-0.5 sm:p-1 rounded-full border border-white/[0.07]">
-                  {(['ALL', 'GOL', 'DEF', 'MEI', 'ATA'] as const).map((sec) => (
-                    <button
-                      key={sec}
-                      type="button"
-                      onClick={() => {
-                        setSectorFilter(sec);
-                        if (sec !== 'ALL') setPositionFilter('ALL');
-                      }}
-                      className={`px-2 sm:px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-bold transition-colors ${
-                        sectorFilter === sec
-                          ? 'bg-[#b5ff00] text-[#090a0f]'
-                          : 'text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      {sec === 'ALL' ? 'Todos' : sec}
-                    </button>
-                  ))}
+                  <select
+                    aria-label="Ordenar mercado"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as SortKey)}
+                    className="w-full sm:col-span-4 bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#b5ff00]"
+                  >
+                    <option value="OVR_DESC">Maior Nível (OVR)</option>
+                    <option value="STARS_DESC">Maior Potencial (★)</option>
+                    <option value="EASIEST">Menor Dificuldade</option>
+                    <option value="FEE_ASC">Menor Preço / Taxa</option>
+                    <option value="FEE_DESC">Maior Preço / Taxa</option>
+                    <option value="SALARY_ASC">Menor Salário Mensal</option>
+                    <option value="AGE_ASC">Mais Jovens Primeiro</option>
+                    <option value="OVR_ASC">Menor OVR</option>
+                  </select>
                 </div>
+              )}
+
+              {subTab === 'INTERNACIONAL' && (
+                <div className="grid grid-cols-2 sm:contents gap-2">
+                  <select
+                    aria-label="Filtrar liga internacional"
+                    value={intlScope}
+                    onChange={(e) =>
+                      setIntlScope(e.target.value as IntlScopeFilter)
+                    }
+                    className="w-full sm:col-span-3 bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#b5ff00]"
+                  >
+                    <option value="ALL">Todas Internacionais</option>
+                    <option value="CHAMPIONS">Champions (16)</option>
+                    <option value="MUNDIAL_OUTROS">Mundial & Europa</option>
+                  </select>
+
+                  <select
+                    aria-label="Ordenar mercado"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value as SortKey)}
+                    className="w-full sm:col-span-4 bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#b5ff00]"
+                  >
+                    <option value="OVR_DESC">Maior Nível (OVR)</option>
+                    <option value="STARS_DESC">Maior Potencial (★)</option>
+                    <option value="EASIEST">Menor Dificuldade</option>
+                    <option value="FEE_ASC">Menor Preço / Taxa</option>
+                    <option value="FEE_DESC">Maior Preço / Taxa</option>
+                    <option value="SALARY_ASC">Menor Salário Mensal</option>
+                    <option value="AGE_ASC">Mais Jovens Primeiro</option>
+                    <option value="OVR_ASC">Menor OVR</option>
+                  </select>
+                </div>
+              )}
+
+              {subTab !== 'NACIONAL_LIB' && subTab !== 'INTERNACIONAL' && (
+                <select
+                  aria-label="Ordenar mercado"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as SortKey)}
+                  className="w-full sm:col-span-4 bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#b5ff00]"
+                >
+                  <option value="OVR_DESC">Maior Nível (OVR)</option>
+                  <option value="STARS_DESC">Maior Potencial (★)</option>
+                  <option value="EASIEST">Menor Dificuldade</option>
+                  <option value="FEE_ASC">Menor Preço / Taxa</option>
+                  <option value="FEE_DESC">Maior Preço / Taxa</option>
+                  <option value="SALARY_ASC">Menor Salário Mensal</option>
+                  <option value="AGE_ASC">Mais Jovens Primeiro</option>
+                  <option value="OVR_ASC">Menor OVR</option>
+                </select>
+              )}
+            </div>
+
+            {/* Row 2: Sectors + Star Potential Filter + Quick Toggles (Zero Scrollbar, Full Occupancy) */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 items-center">
+              {/* Sector Filter (5 equal columns) */}
+              <div className="lg:col-span-4 grid grid-cols-5 gap-1 bg-[#0b0c10] p-1 rounded-xl border border-white/[0.07]">
+                {(['ALL', 'GOL', 'DEF', 'MEI', 'ATA'] as const).map((sec) => (
+                  <button
+                    key={sec}
+                    type="button"
+                    onClick={() => {
+                      setSectorFilter(sec);
+                      if (sec !== 'ALL') setPositionFilter('ALL');
+                    }}
+                    className={`py-1.5 rounded-lg text-[11px] font-bold transition-colors text-center cursor-pointer ${
+                      sectorFilter === sec
+                        ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    {sec === 'ALL' ? 'Todos' : sec}
+                  </button>
+                ))}
               </div>
 
-              <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-0.5 sm:pb-0">
+              {/* Potential Stars Filter (6 equal columns) */}
+              <div
+                data-testid="market-star-filter"
+                aria-label="Filtrar por estrelas de potencial"
+                className="lg:col-span-5 grid grid-cols-6 gap-1 bg-[#0b0c10] p-1 rounded-xl border border-white/[0.07]"
+              >
+                {(
+                  [
+                    { val: 0, label: 'Todas' },
+                    { val: 3, label: '3★+' },
+                    { val: 3.5, label: '3.5★' },
+                    { val: 4, label: '4★+' },
+                    { val: 4.5, label: '4.5★' },
+                    { val: 5, label: '5★' },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.val}
+                    type="button"
+                    onClick={() => setMinStarsFilter(opt.val)}
+                    title={
+                      opt.val === 0
+                        ? 'Mostrar todas as estrelas'
+                        : `Filtrar atletas com pelo menos ${opt.val} estrelas`
+                    }
+                    className={`min-w-0 py-1.5 px-1 rounded-lg text-[10px] sm:text-[11px] font-bold transition-colors flex items-center justify-center gap-0.5 whitespace-nowrap cursor-pointer ${
+                      minStarsFilter === opt.val
+                        ? opt.val === 0
+                          ? 'bg-white/[0.12] text-white font-extrabold'
+                          : 'bg-amber-400 text-[#090a0f] font-extrabold'
+                        : 'text-zinc-400 hover:text-amber-300'
+                    }`}
+                  >
+                    {opt.val === 0 && (
+                      <Star className="w-2.5 h-2.5 shrink-0 fill-amber-400 text-amber-400" />
+                    )}
+                    <span className="truncate">{opt.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Filters & Affordable Quick Actions (2 equal columns) */}
+              <div className="lg:col-span-3 grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setShowAdvancedFilters((v) => !v)}
-                  className={`px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-bold border transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                  className={`py-2 px-2.5 rounded-xl text-[11px] sm:text-xs font-bold border transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer ${
                     showAdvancedFilters || activeAdvancedFilterCount > 0
                       ? 'bg-[#b5ff00]/15 border-[#b5ff00] text-[#b5ff00]'
                       : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
                   }`}
                 >
-                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
                   <span>
                     Filtros
                     {activeAdvancedFilterCount > 0
@@ -3506,86 +3660,77 @@ export const MarketView: React.FC<MarketViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setOnlyAffordable((v) => !v)}
-                  className={`px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-bold border transition-colors whitespace-nowrap shrink-0 ${
+                  className={`py-2 px-2.5 rounded-xl text-[11px] sm:text-xs font-bold border transition-colors flex items-center justify-center whitespace-nowrap cursor-pointer ${
                     onlyAffordable
-                      ? 'bg-[#b5ff00] border-[#b5ff00] text-[#090a0f]'
+                      ? 'bg-[#b5ff00] border-[#b5ff00] text-[#090a0f] font-extrabold'
                       : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
                   }`}
                 >
                   {onlyAffordable ? '✓ Acessíveis' : 'Acessíveis'}
                 </button>
-
-                <select
-                  aria-label="Ordenar mercado"
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as SortKey)}
-                  className="bg-[#0b0c10] border border-white/[0.08] rounded-full px-2.5 sm:px-3.5 py-1.5 sm:py-2 text-[11px] sm:text-xs text-white focus:outline-none focus:border-[#b5ff00] shrink-0"
-                >
-                  <option value="OVR_DESC">Maior Nível (OVR)</option>
-                  <option value="EASIEST">Menor Dificuldade</option>
-                  <option value="FEE_ASC">Menor Preço / Taxa</option>
-                  <option value="FEE_DESC">Maior Preço / Taxa</option>
-                  <option value="SALARY_ASC">Menor Salário Mensal</option>
-                  <option value="AGE_ASC">Mais Jovens Primeiro</option>
-                  <option value="OVR_ASC">Menor OVR</option>
-                </select>
               </div>
             </div>
 
-            {/* Club Availability Filter Bar (Placed for Purchase or Loan by Opponent Clubs) + Opponent Club Needs Radar Toggle */}
+            {/* Row 3: Club Availability Filter Bar + Opponent Club Needs Radar Toggle (Zero Horizontal Overflow) */}
             {subTab !== 'LIVRES' && (
-              <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between gap-1.5 overflow-x-auto pb-0.5 sm:pb-0">
-                <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                  <span className="hidden sm:inline text-[10px] font-mono uppercase tracking-wider text-zinc-400 mr-1">
-                    Disponibilizados pelos Clubes:
+              <div className="pt-2.5 border-t border-white/[0.06] flex flex-col lg:flex-row lg:items-center justify-between gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
+                  <span className="hidden xl:inline text-[10px] font-mono uppercase tracking-wider text-zinc-400 shrink-0">
+                    Clubes:
                   </span>
-                  {(
-                    [
-                      {
-                        id: 'ALL',
-                        label: 'Todos',
-                        badgeClass: 'bg-[#b5ff00] text-[#090a0f] border-[#b5ff00]',
-                      },
-                      {
-                        id: 'LISTED_ANY',
-                        label: `Listados (${clubListingCounts.listedAny})`,
-                        badgeClass: 'bg-[#b5ff00] text-[#090a0f] border-[#b5ff00]',
-                      },
-                      {
-                        id: 'LISTED_BUY',
-                        label: `Compra (${clubListingCounts.listedBuy})`,
-                        badgeClass: 'bg-amber-400 text-[#090a0f] border-amber-400',
-                      },
-                      {
-                        id: 'LISTED_LOAN',
-                        label: `Empréstimo (${clubListingCounts.listedLoan})`,
-                        badgeClass: 'bg-sky-400 text-[#090a0f] border-sky-400',
-                      },
-                    ] as const
-                  ).map((opt) => (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => {
-                        setClubListingFilter(opt.id);
-                        if (opt.id === 'LISTED_LOAN') setDealMode('LOAN');
-                        if (opt.id === 'LISTED_BUY') setDealMode('BUY');
-                      }}
-                      className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full text-[10px] sm:text-[11px] font-bold border transition-colors whitespace-nowrap shrink-0 ${
-                        clubListingFilter === opt.id
-                          ? opt.badgeClass
-                          : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 w-full lg:max-w-2xl">
+                    {(
+                      [
+                        {
+                          id: 'ALL',
+                          label: 'Todos',
+                          badgeClass:
+                            'bg-[#b5ff00] text-[#090a0f] border-[#b5ff00] font-extrabold',
+                        },
+                        {
+                          id: 'LISTED_ANY',
+                          label: `Listados (${clubListingCounts.listedAny})`,
+                          badgeClass:
+                            'bg-[#b5ff00] text-[#090a0f] border-[#b5ff00] font-extrabold',
+                        },
+                        {
+                          id: 'LISTED_BUY',
+                          label: `Compra (${clubListingCounts.listedBuy})`,
+                          badgeClass:
+                            'bg-amber-400 text-[#090a0f] border-amber-400 font-extrabold',
+                        },
+                        {
+                          id: 'LISTED_LOAN',
+                          label: `Empréstimo (${clubListingCounts.listedLoan})`,
+                          badgeClass:
+                            'bg-sky-400 text-[#090a0f] border-sky-400 font-extrabold',
+                        },
+                      ] as const
+                    ).map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => {
+                          setClubListingFilter(opt.id);
+                          if (opt.id === 'LISTED_LOAN') setDealMode('LOAN');
+                          if (opt.id === 'LISTED_BUY') setDealMode('BUY');
+                        }}
+                        className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-colors text-center truncate cursor-pointer ${
+                          clubListingFilter === opt.id
+                            ? opt.badgeClass
+                            : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 <button
                   type="button"
                   onClick={() => setShowClubRadar((v) => !v)}
-                  className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-full text-[10px] sm:text-[11px] font-bold border transition-colors whitespace-nowrap shrink-0 ${
+                  className={`w-full lg:w-auto px-3 py-1.5 rounded-xl text-[11px] font-bold border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     showClubRadar
                       ? 'bg-[#b5ff00]/20 border-[#b5ff00] text-[#b5ff00]'
                       : 'bg-[#0b0c10] border-white/[0.08] text-zinc-300 hover:text-white'
@@ -3625,7 +3770,9 @@ export const MarketView: React.FC<MarketViewProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 max-h-72 overflow-y-auto pr-1">
                   {Array.from(aiClubProfilesMap.values())
                     .filter(({ club }) => {
-                      if (subTab === 'NACIONAL_LIB' && domesticScope !== 'ALL') {
+                      if (subTab === 'NACIONAL_LIB') {
+                        if (club.division === 'UCL' || club.division === 'WORLD')
+                          return false;
                         if (domesticScope === 'SERIE_A' && club.division !== 'A')
                           return false;
                         if (domesticScope === 'SERIE_B' && club.division !== 'B')
@@ -3633,6 +3780,16 @@ export const MarketView: React.FC<MarketViewProps> = ({
                         if (
                           domesticScope === 'LIBERTADORES' &&
                           club.division !== 'LIB'
+                        )
+                          return false;
+                      } else if (subTab === 'INTERNACIONAL') {
+                        if (club.division !== 'UCL' && club.division !== 'WORLD')
+                          return false;
+                        if (intlScope === 'CHAMPIONS' && club.division !== 'UCL')
+                          return false;
+                        if (
+                          intlScope === 'MUNDIAL_OUTROS' &&
+                          club.division !== 'WORLD'
                         )
                           return false;
                       }
@@ -3746,14 +3903,14 @@ export const MarketView: React.FC<MarketViewProps> = ({
                     >
                       <option value="ALL">Qualquer Faixa de Preço</option>
                       <option value="FREE_ONLY">Sem Custo (Passe Livre)</option>
-                      <option value="UP_TO_10M">Até {formatCompactBRL(10_000_000)}</option>
-                      <option value="10M_TO_25M">
-                        {formatCompactBRL(10_000_000)} a {formatCompactBRL(25_000_000)}
+                      <option value="UP_TO_25M">Até {formatCompactBRL(25_000_000)}</option>
+                      <option value="25M_TO_80M">
+                        {formatCompactBRL(25_000_000)} a {formatCompactBRL(80_000_000)}
                       </option>
-                      <option value="25M_TO_50M">
-                        {formatCompactBRL(25_000_000)} a {formatCompactBRL(50_000_000)}
+                      <option value="80M_TO_250M">
+                        {formatCompactBRL(80_000_000)} a {formatCompactBRL(250_000_000)}
                       </option>
-                      <option value="OVER_50M">Acima de {formatCompactBRL(50_000_000)}</option>
+                      <option value="OVER_250M">Acima de {formatCompactBRL(250_000_000)}</option>
                     </select>
                   </div>
 
@@ -3774,11 +3931,11 @@ export const MarketView: React.FC<MarketViewProps> = ({
                       className="w-full bg-[#0b0c10] border border-white/10 rounded-xl px-2.5 py-2 text-xs text-white focus:outline-none focus:border-[#b5ff00]"
                     >
                       <option value={0}>Qualquer Salário</option>
-                      <option value={300000}>Até {formatCompactBRL(300_000)}/mês</option>
                       <option value={500000}>Até {formatCompactBRL(500_000)}/mês</option>
-                      <option value={800000}>Até {formatCompactBRL(800_000)}/mês</option>
-                      <option value={1200000}>Até {formatCompactBRL(1_200_000)}/mês</option>
-                      <option value={1800000}>Até {formatCompactBRL(1_800_000)}/mês</option>
+                      <option value={1000000}>Até {formatCompactBRL(1_000_000)}/mês</option>
+                      <option value={2000000}>Até {formatCompactBRL(2_000_000)}/mês</option>
+                      <option value={5000000}>Até {formatCompactBRL(5_000_000)}/mês</option>
+                      <option value={10000000}>Até {formatCompactBRL(10_000_000)}/mês</option>
                     </select>
                   </div>
 
@@ -3816,7 +3973,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                         }
                         className="bg-[#0b0c10] border border-white/10 rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-[#b5ff00]"
                       >
-                        <option value={99}>Máx: 99</option>
+                        <option value={95}>Máx: 95</option>
                         <option value={85}>Máx: 85</option>
                         <option value={81}>Máx: 81</option>
                         <option value={78}>Máx: 78</option>
@@ -3924,6 +4081,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                   {(activeAdvancedFilterCount > 0 ||
                     sectorFilter !== 'ALL' ||
                     domesticScope !== 'ALL' ||
+                    intlScope !== 'ALL' ||
                     searchQuery.trim() !== '') && (
                     <button
                       type="button"

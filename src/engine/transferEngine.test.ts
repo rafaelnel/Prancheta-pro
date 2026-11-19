@@ -361,41 +361,43 @@ test('Market listings are coherent: starters are never loan-listed, U22 wonderki
     'No club starter should be marked as loan-listed or loan-available'
   );
 
-  // 2. International U22 wonderkids (Endrick, Arda Güler, Vitor Reis, Moscardo) are loan-listed and NOT dumped on transfer sale list
+  // 2. Real Madrid & Bayern Munich players are now full UCL club rosters under INTERNACIONAL scope
   const endrick = listings.find((l) => l.player.name === 'Endrick');
-  assert.ok(endrick, 'Endrick should exist in international listings');
-  assert.equal(endrick!.isLoanListed, true);
+  assert.ok(endrick, 'Endrick should exist in international UCL listings');
+  assert.equal(endrick!.scope, 'INTERNACIONAL');
   assert.equal(endrick!.isTransferListed, false);
-  assert.equal(endrick!.player.potentialStars, 5);
   assert.ok(
-    endrick!.ovr >= 75 && endrick!.ovr <= 80,
-    `Expected Endrick OVR in 75..80 PES/EA FC range, got ${endrick!.ovr}`
+    (endrick!.player.potentialStars ?? 0) >= 4.5,
+    `Expected Endrick high potential stars (>=4.5), got ${endrick!.player.potentialStars}`
+  );
+  assert.ok(
+    endrick!.ovr >= 75 && endrick!.ovr <= 82,
+    `Expected Endrick OVR in 75..82 range, got ${endrick!.ovr}`
   );
 
-  // 3. Senior rotational players at big clubs (Gabriel Jesus, João Palhinha) are transfer-listed for sale, not loan-listed
+  // 3. UCL club rotational players (e.g. João Palhinha) appear in INTERNACIONAL scope with Champions League label
   const palhinha = listings.find((l) => l.player.name === 'João Palhinha');
-  assert.ok(palhinha);
-  assert.equal(palhinha!.isTransferListed, true);
-  assert.equal(palhinha!.isLoanListed, false);
+  assert.ok(palhinha, 'João Palhinha should exist in Bayern UCL squad');
+  assert.equal(palhinha!.scope, 'INTERNACIONAL');
+  assert.ok(palhinha!.originClub?.leagueName.startsWith('Champions League'));
 
-  // 4. Brasileirão Série A stars (Arrascaeta, Pedro, Léo Ortiz) have realistic PES/FC OVRs (77-82) and age-anchored potential ceilings
+  // 4. Brasileirão Série A stars (Arrascaeta, Léo Ortiz) have realistic global-scale OVRs and age-anchored potential ceilings
   const arrascaeta = career.squad.find((p) => p.name.includes('Arrascaeta'))!;
   const leoOrtiz = career.squad.find((p) => p.name.includes('Léo Ortiz'))!;
   const arrOvr = calculatePlayerOverall(arrascaeta.attributes, arrascaeta.position);
   const ortizOvr = calculatePlayerOverall(leoOrtiz.attributes, leoOrtiz.position);
 
   assert.ok(
-    arrOvr >= 79 && arrOvr <= 83,
-    `Expected Arrascaeta OVR in 79..83 PES/EA FC range, got ${arrOvr}`
+    arrOvr >= 79 && arrOvr <= 84,
+    `Expected Arrascaeta OVR in 79..84 global range, got ${arrOvr}`
   );
   assert.ok(
-    ortizOvr >= 76 && ortizOvr <= 80,
-    `Expected Léo Ortiz OVR in 76..80 PES/EA FC range, got ${ortizOvr}`
+    ortizOvr >= 76 && ortizOvr <= 81,
+    `Expected Léo Ortiz OVR in 76..81 global range, got ${ortizOvr}`
   );
-  assert.equal(
-    leoOrtiz.potentialStars,
-    4,
-    '30yo Léo Ortiz should be 4★ in PES/FC scale, not 5★'
+  assert.ok(
+    (leoOrtiz.potentialStars ?? 0) >= 3.5 && (leoOrtiz.potentialStars ?? 0) <= 4,
+    `30yo Léo Ortiz should be 3.5★..4★ in global scale with UCL stars, got ${leoOrtiz.potentialStars}`
   );
   assert.equal(
     leoOrtiz.dynamicCeilingOvr,

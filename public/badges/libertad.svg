@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <clipPath id="libClip">
+      <path d="M36 56 H164 V118 C164 154 134 178 100 186 C66 178 36 154 36 118 Z"/>
+    </clipPath>
+  </defs>
+  <path d="M32 24 H168 V118 C168 157 136 182 100 190 C64 182 32 157 32 118 Z" fill="#111111" stroke="#ffffff" stroke-width="5"/>
+  <rect x="36" y="28" width="128" height="28" fill="#ffffff"/>
+  <text x="100" y="49" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="16" fill="#111111" letter-spacing="1.5">LIBERTAD</text>
+  <g clip-path="url(#libClip)">
+    <rect x="36" y="56" width="22" height="132" fill="#111111"/>
+    <rect x="58" y="56" width="21" height="132" fill="#ffffff"/>
+    <rect x="79" y="56" width="21" height="132" fill="#111111"/>
+    <rect x="100" y="56" width="21" height="132" fill="#ffffff"/>
+    <rect x="121" y="56" width="21" height="132" fill="#111111"/>
+    <rect x="142" y="56" width="22" height="132" fill="#ffffff"/>
+  </g>
+  <circle cx="100" cy="118" r="24" fill="#111111" stroke="#ffffff" stroke-width="3.5"/>
+  <text x="100" y="128" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="28" fill="#ffffff">L</text>
+</svg>

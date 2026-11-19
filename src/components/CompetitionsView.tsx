@@ -14,10 +14,15 @@ import {
   getInitialStandingsForDivision,
 } from '../data/initialDatabase';
 import {
+  CHAMPIONS_STAGES,
   COPA_DO_BRASIL_STAGES,
   LIBERTADORES_KNOCKOUT_STAGES,
+  MUNDIAL_STAGES,
+  SUPER_MUNDIAL_KNOCKOUT_STAGES,
 } from '../data/cupFactory';
 import {
+  ChampionsKnockoutStage,
+  ChampionsLeagueState,
   Club,
   CompetitionType,
   CopaDoBrasilStage,
@@ -25,13 +30,26 @@ import {
   LibertadoresGroupName,
   LibertadoresKnockoutStage,
   LibertadoresState,
+  MundialStage,
+  MundialState,
   RoundFixture,
   SeasonArchiveEntry,
   StandingsRow,
+  SuperMundialGroupName,
+  SuperMundialKnockoutStage,
+  SuperMundialState,
 } from '../types/football';
 import { ClubBadge } from './ClubBadge';
 
-type CompTab = 'A' | 'B' | 'COPA_DO_BRASIL' | 'LIBERTADORES' | 'HALL';
+type CompTab =
+  | 'A'
+  | 'B'
+  | 'COPA_DO_BRASIL'
+  | 'LIBERTADORES'
+  | 'CHAMPIONS'
+  | 'MUNDIAL'
+  | 'SUPER_MUNDIAL'
+  | 'HALL';
 
 interface CompetitionsViewProps {
   standings: StandingsRow[];
@@ -46,6 +64,9 @@ interface CompetitionsViewProps {
   secondaryFixtures?: RoundFixture[];
   copaDoBrasil?: CopaDoBrasilState;
   libertadores?: LibertadoresState;
+  championsLeague?: ChampionsLeagueState;
+  mundial?: MundialState;
+  superMundial?: SuperMundialState;
   activeCompetition?: CompetitionType;
 }
 
@@ -62,6 +83,9 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
   secondaryFixtures,
   copaDoBrasil,
   libertadores,
+  championsLeague,
+  mundial,
+  superMundial,
   activeCompetition = 'BRASILEIRAO',
 }) => {
   const defaultTab: CompTab =
@@ -69,6 +93,12 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
       ? 'COPA_DO_BRASIL'
       : activeCompetition === 'LIBERTADORES'
       ? 'LIBERTADORES'
+      : activeCompetition === 'CHAMPIONS_LEAGUE'
+      ? 'CHAMPIONS'
+      : activeCompetition === 'MUNDIAL'
+      ? 'MUNDIAL'
+      : activeCompetition === 'SUPER_MUNDIAL'
+      ? 'SUPER_MUNDIAL'
       : userDivision;
 
   const [viewedTab, setViewedTab] = useState<CompTab>(defaultTab);
@@ -103,6 +133,37 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
         : 'Oitavas'
     );
 
+  // Champions League UI state
+  const [uclStage, setUclStage] = useState<ChampionsKnockoutStage>(
+    championsLeague?.currentStage || 'Oitavas'
+  );
+
+  // Mundial de Clubes UI state
+  const [mundialStage, setMundialStage] = useState<MundialStage>(
+    mundial?.currentStage || 'Semifinal'
+  );
+
+  // Super Mundial de Clubes UI state
+  const userSmGroup = superMundial?.groups.find((g) =>
+    g.clubIds.includes(userClubId)
+  );
+  const [smSubView, setSmSubView] = useState<'GRUPOS' | 'MATA_MATA'>(
+    superMundial && superMundial.currentPhase !== 'Grupos'
+      ? 'MATA_MATA'
+      : 'GRUPOS'
+  );
+  const [selectedSmGroupName, setSelectedSmGroupName] =
+    useState<SuperMundialGroupName>(userSmGroup?.name || 'A');
+  const [selectedSmGroupRound, setSelectedSmGroupRound] = useState<number>(
+    superMundial?.groupRound || 1
+  );
+  const [smKnockoutStage, setSmKnockoutStage] =
+    useState<SuperMundialKnockoutStage>(
+      superMundial && superMundial.currentPhase !== 'Grupos'
+        ? superMundial.currentPhase
+        : 'Quartas'
+    );
+
   useEffect(() => {
     setViewedTab(defaultTab);
   }, [defaultTab]);
@@ -126,6 +187,28 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
       }
     }
   }, [libertadores]);
+
+  useEffect(() => {
+    if (championsLeague?.currentStage) {
+      setUclStage(championsLeague.currentStage);
+    }
+  }, [championsLeague?.currentStage]);
+
+  useEffect(() => {
+    if (mundial?.currentStage) {
+      setMundialStage(mundial.currentStage);
+    }
+  }, [mundial?.currentStage]);
+
+  useEffect(() => {
+    if (superMundial) {
+      setSelectedSmGroupRound(superMundial.groupRound);
+      if (superMundial.currentPhase !== 'Grupos') {
+        setSmKnockoutStage(superMundial.currentPhase);
+        setSmSubView('MATA_MATA');
+      }
+    }
+  }, [superMundial]);
 
   const clubMap = new Map(clubs.map((c) => [c.id, c]));
 
@@ -267,6 +350,12 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
     libertadores?.participantIds.includes(userClubId) ?? false;
   const userParticipatesCdb =
     copaDoBrasil?.participantIds.includes(userClubId) ?? false;
+  const userParticipatesMundial =
+    mundial?.participantIds.includes(userClubId) ?? false;
+  const userParticipatesSuperMundial =
+    (superMundial?.isActiveThisSeason &&
+      superMundial?.participantIds.includes(userClubId)) ??
+    false;
 
   const headerTitle =
     viewedTab === 'HALL'
@@ -275,6 +364,12 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
       ? 'COPA DO BRASIL'
       : viewedTab === 'LIBERTADORES'
       ? 'LIBERTADORES'
+      : viewedTab === 'CHAMPIONS'
+      ? 'CHAMPIONS LEAGUE'
+      : viewedTab === 'MUNDIAL'
+      ? 'MUNDIAL DE CLUBES'
+      : viewedTab === 'SUPER_MUNDIAL'
+      ? 'SUPER MUNDIAL FIFA'
       : `SÉRIE ${viewedDivision}`;
 
   const headerSubtitle =
@@ -284,12 +379,20 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
       ? `Copa do Brasil ${seasonYear} · 32 Clubes (Série A & B)`
       : viewedTab === 'LIBERTADORES'
       ? `Copa Libertadores ${seasonYear} · 32 Clubes · 10 Países CONMEBOL`
+      : viewedTab === 'CHAMPIONS'
+      ? `UEFA Champions League ${seasonYear} · 16 Gigantes Europeus · Classificatória para Mundial & Super Mundial`
+      : viewedTab === 'MUNDIAL'
+      ? `Mundial de Clubes ${seasonYear} · Campeão da Libertadores vs Campeão da Champions + Convidados Globais`
+      : viewedTab === 'SUPER_MUNDIAL'
+      ? superMundial?.isActiveThisSeason
+        ? `Super Mundial de Clubes ${seasonYear} · 16 Clubes (6 UEFA · 6 CONMEBOL · 4 Globais) · Quadrienal`
+        : `Super Mundial de Clubes · Próxima Edição em ${superMundial?.nextEditionYear ?? seasonYear + 1} (Quadrienal)`
       : `Brasileirão ${seasonYear} · 38 Rodadas (Turno & Returno)`;
 
   return (
     <div className="space-y-5">
       {/* Header + Competition Tabs */}
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 pb-2 border-b border-white/[0.07]">
+      <div className="flex flex-col gap-4 pb-2 border-b border-white/[0.07]">
         <div>
           <span className="block text-xs sm:text-sm font-normal text-zinc-400 tracking-wide">
             {headerSubtitle}
@@ -301,7 +404,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
 
         <div className="flex flex-wrap items-center gap-2">
           {/* Competition Selector */}
-          <div className="flex flex-wrap items-center gap-1 bg-[#14171f] p-1 rounded-full border border-white/[0.08]">
+          <div className="flex flex-wrap items-center gap-1 bg-[#14171f] p-1 rounded-2xl sm:rounded-full border border-white/[0.08]">
             {(
               [
                 { id: 'A', label: `Série A ${userDivision === 'A' ? '★' : ''}` },
@@ -315,11 +418,23 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                   label: `Libertadores ${userParticipatesLib ? '★' : ''}`,
                 },
                 {
+                  id: 'CHAMPIONS',
+                  label: 'Champions',
+                },
+                {
+                  id: 'MUNDIAL',
+                  label: `Mundial ${userParticipatesMundial ? '★' : ''}`,
+                },
+                {
+                  id: 'SUPER_MUNDIAL',
+                  label: `Super Mundial ${userParticipatesSuperMundial ? '★' : ''}`,
+                },
+                {
                   id: 'HALL',
                   label:
                     seasonHistory.length > 0
                       ? `Hall (${seasonHistory.length})`
-                      : 'Hall de Campeões',
+                      : 'Hall',
                 },
               ] as Array<{ id: CompTab; label: string }>
             ).map((tab) => (
@@ -329,7 +444,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                   setViewedTab(tab.id);
                   setZoneFilter('ALL');
                 }}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-extrabold transition-colors whitespace-nowrap ${
+                className={`px-3 py-1.5 rounded-full text-xs font-extrabold transition-colors whitespace-nowrap ${
                   viewedTab === tab.id
                     ? 'bg-[#b5ff00] text-[#090a0f]'
                     : 'text-zinc-400 hover:text-white'
@@ -1079,6 +1194,606 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
         </div>
       )}
 
+      {/* VIEW: UEFA CHAMPIONS LEAGUE */}
+      {viewedTab === 'CHAMPIONS' && championsLeague && (
+        <div className="space-y-5">
+          <div className="bg-[#14171f] border border-indigo-400/25 rounded-[28px] p-5 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-indigo-500 text-white flex items-center justify-center shrink-0">
+                <Trophy className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs text-indigo-300 font-mono uppercase">
+                  Simulação Europeia · Fase Atual: {championsLeague.currentStage}
+                </div>
+                <div className="font-display text-2xl font-extrabold uppercase text-white">
+                  {championsLeague.championClubId
+                    ? `Campeão Europeu: ${clubMap.get(championsLeague.championClubId)?.name}`
+                    : '16 Clubes da Elite Europeia na Disputa'}
+                </div>
+                <div className="text-[11px] text-zinc-400 mt-0.5">
+                  Torneio simulado automaticamente para definir o representante UEFA no Mundial de Clubes e as vagas no Super Mundial.
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              {CHAMPIONS_STAGES.map((stage) => {
+                const count = championsLeague.fixturesByStage[stage]?.length || 0;
+                return (
+                  <button
+                    key={stage}
+                    onClick={() => setUclStage(stage)}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors whitespace-nowrap ${
+                      uclStage === stage
+                        ? 'bg-indigo-400 text-[#090a0f]'
+                        : count > 0
+                        ? 'bg-[#0b0c10] text-zinc-200 border border-white/10 hover:border-white/25'
+                        : 'bg-[#0b0c10]/60 text-zinc-500 border border-white/[0.05]'
+                    }`}
+                  >
+                    {stage} {count > 0 ? `(${count})` : ''}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="bg-[#14171f] border border-white/[0.07] rounded-[28px] p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-white/[0.07] pb-3">
+              <div className="flex items-center gap-2">
+                <Globe2 className="w-4 h-4 text-indigo-400" />
+                <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white">
+                  Chaveamento UEFA — {uclStage}
+                </h3>
+              </div>
+              <span className="text-xs font-mono text-zinc-400">
+                Jogo único · Define vagas no Mundial & Super Mundial
+              </span>
+            </div>
+
+            {(championsLeague.fixturesByStage[uclStage]?.length || 0) > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
+                {championsLeague.fixturesByStage[uclStage].map((fix) =>
+                  renderKnockoutMatchCard(fix)
+                )}
+              </div>
+            ) : (
+              <div className="py-12 text-center text-sm text-zinc-400">
+                Os confrontos desta fase da Champions serão definidos automaticamente ao avançar o calendário europeu.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* VIEW: MUNDIAL DE CLUBES */}
+      {viewedTab === 'MUNDIAL' && mundial && (
+        <div className="space-y-5">
+          <div className="bg-[#14171f] border border-amber-400/25 rounded-[28px] p-5 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-amber-400 text-[#090a0f] flex items-center justify-center shrink-0">
+                <Trophy className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs text-amber-300 font-mono uppercase">
+                  Torneio Intercontinental · Dezembro {seasonYear}
+                </div>
+                <div className="font-display text-2xl font-extrabold uppercase text-white">
+                  {mundial.championClubId
+                    ? `Campeão Mundial: ${clubMap.get(mundial.championClubId)?.name}`
+                    : mundial.isSeeded
+                    ? userParticipatesMundial
+                      ? `${clubMap.get(userClubId)?.shortName} na disputa do título mundial!`
+                      : 'Semifinais e Final definidas'
+                    : 'Aguardando Campeões da Libertadores e da Champions'}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              {MUNDIAL_STAGES.map((stage) => {
+                const count = mundial.fixturesByStage[stage]?.length || 0;
+                return (
+                  <button
+                    key={stage}
+                    onClick={() => setMundialStage(stage)}
+                    className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors whitespace-nowrap ${
+                      mundialStage === stage
+                        ? 'bg-amber-400 text-[#090a0f]'
+                        : count > 0
+                        ? 'bg-[#0b0c10] text-zinc-200 border border-white/10 hover:border-white/25'
+                        : 'bg-[#0b0c10]/60 text-zinc-500 border border-white/[0.05]'
+                    }`}
+                  >
+                    {stage} {count > 0 ? `(${count})` : ''}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {!mundial.isSeeded ? (
+            <div className="bg-[#14171f] border border-white/[0.07] rounded-[28px] p-5 space-y-4">
+              <div className="border-b border-white/[0.07] pb-3">
+                <h3 className="font-display text-xl font-extrabold uppercase text-white">
+                  Vagas do Mundial de Clubes {seasonYear}
+                </h3>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Vença a Copa Libertadores para representar a América do Sul e enfrentar o Campeão da Champions League e os representantes globais em dezembro.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {[
+                  {
+                    role: 'Campeão Champions (UEFA)',
+                    clubId: championsLeague?.championClubId || null,
+                    accent: 'border-indigo-400/35 text-indigo-300',
+                  },
+                  {
+                    role: 'Campeão Libertadores (CONMEBOL)',
+                    clubId: libertadores?.championClubId || null,
+                    accent: 'border-sky-400/35 text-sky-300',
+                  },
+                  {
+                    role: 'Representante Ásia / África',
+                    clubId: clubs.find((c) => c.division === 'WORLD')?.id || null,
+                    accent: 'border-amber-400/35 text-amber-300',
+                  },
+                  {
+                    role: 'Representante CONCACAF / MLS',
+                    clubId: clubs.filter((c) => c.division === 'WORLD')[1]?.id || null,
+                    accent: 'border-emerald-400/35 text-emerald-300',
+                  },
+                ].map((slot) => {
+                  const c = slot.clubId ? clubMap.get(slot.clubId) : null;
+                  return (
+                    <div
+                      key={slot.role}
+                      className={`bg-[#0b0c10] border rounded-2xl p-4 space-y-2 ${slot.accent}`}
+                    >
+                      <div className="text-[10px] font-mono uppercase">{slot.role}</div>
+                      {c ? (
+                        <div className="flex items-center gap-2.5">
+                          <ClubBadge
+                            clubId={c.id}
+                            abbr={c.abbr}
+                            name={c.name}
+                            primaryColor={c.primaryColor}
+                            size="sm"
+                          />
+                          <div className="min-w-0">
+                            <div className="font-display text-base font-extrabold text-white truncate">
+                              {c.shortName}
+                            </div>
+                            <div className="text-[10px] font-mono text-zinc-400">
+                              {c.countryCode || 'BRA'}
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-xs font-semibold text-zinc-500 py-1.5">
+                          A definir na temporada
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-[#14171f] border border-white/[0.07] rounded-[28px] p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-white/[0.07] pb-3">
+                <div className="flex items-center gap-2">
+                  <Trophy className="w-4 h-4 text-amber-400" />
+                  <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white">
+                    Chaveamento Mundial — {mundialStage}
+                  </h3>
+                </div>
+                <span className="text-xs font-mono text-zinc-400">
+                  Jogo único · Prorrogação/Pênaltis em caso de empate
+                </span>
+              </div>
+
+              {(mundial.fixturesByStage[mundialStage]?.length || 0) > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {mundial.fixturesByStage[mundialStage].map((fix) =>
+                    renderKnockoutMatchCard(fix)
+                  )}
+                </div>
+              ) : (
+                <div className="py-12 text-center text-sm text-zinc-400">
+                  A Final será definida após o encerramento das Semifinais.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* VIEW: SUPER MUNDIAL DE CLUBES (QUADRENNIAL) */}
+      {viewedTab === 'SUPER_MUNDIAL' && superMundial && (
+        <div className="space-y-5">
+          <div className="bg-[#14171f] border border-purple-400/25 rounded-[28px] p-5 flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-purple-500 text-white flex items-center justify-center shrink-0">
+                <Globe2 className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xs text-purple-300 font-mono uppercase">
+                  {superMundial.isActiveThisSeason
+                    ? `Edição ${seasonYear} Ativa · ${
+                        superMundial.currentPhase === 'Grupos'
+                          ? `Fase de Grupos · ${superMundial.groupRound}ª Rodada`
+                          : superMundial.currentPhase
+                      }`
+                    : `Ciclo Quadrienal · Próxima Edição em ${superMundial.nextEditionYear}`}
+                </div>
+                <div className="font-display text-2xl font-extrabold uppercase text-white">
+                  {superMundial.championClubId
+                    ? `Campeão do Super Mundial: ${clubMap.get(superMundial.championClubId)?.name}`
+                    : superMundial.isActiveThisSeason
+                    ? userParticipatesSuperMundial
+                      ? `${clubMap.get(userClubId)?.shortName} · Grupo ${userSmGroup?.name || ''}`
+                      : '16 Clubes · 6 UEFA · 6 CONMEBOL · 4 Globais'
+                    : `Corrida de Classificação para ${superMundial.nextEditionYear}`}
+                </div>
+              </div>
+            </div>
+
+            {superMundial.isActiveThisSeason && (
+              <div className="flex items-center gap-1.5 bg-[#0b0c10] p-1 rounded-full border border-white/[0.08]">
+                <button
+                  onClick={() => setSmSubView('GRUPOS')}
+                  className={`px-4 py-1.5 rounded-full text-xs font-extrabold transition-colors ${
+                    smSubView === 'GRUPOS'
+                      ? 'bg-purple-400 text-[#090a0f]'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  Fase de Grupos (A–D)
+                </button>
+                <button
+                  onClick={() => setSmSubView('MATA_MATA')}
+                  className={`px-4 py-1.5 rounded-full text-xs font-extrabold transition-colors ${
+                    smSubView === 'MATA_MATA'
+                      ? 'bg-purple-400 text-[#090a0f]'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  Mata-Mata (Quartas → Final)
+                </button>
+              </div>
+            )}
+          </div>
+
+          {!superMundial.isActiveThisSeason ? (
+            <div className="bg-[#14171f] border border-white/[0.07] rounded-[28px] p-5 space-y-5">
+              <div className="border-b border-white/[0.07] pb-3">
+                <h3 className="font-display text-xl font-extrabold uppercase text-white">
+                  Classificados Atuais para o Super Mundial {superMundial.nextEditionYear}
+                </h3>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Disputado a cada 4 anos (2026, 2030, 2034...) com 6 clubes da Champions League, 6 da Libertadores e 4 representantes globais. Campeões da Libertadores e da Champions garantem vaga direta!
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[
+                  {
+                    title: 'UEFA Champions League (6)',
+                    ids: superMundial.uefaQualifiedIds,
+                    color: 'text-indigo-300 border-indigo-400/25',
+                  },
+                  {
+                    title: 'CONMEBOL Libertadores (6)',
+                    ids: superMundial.conmebolQualifiedIds,
+                    color: 'text-sky-300 border-sky-400/25',
+                  },
+                  {
+                    title: 'Convidados Globais FIFA (4)',
+                    ids: superMundial.globalQualifiedIds,
+                    color: 'text-amber-300 border-amber-400/25',
+                  },
+                ].map((group) => (
+                  <div
+                    key={group.title}
+                    className={`bg-[#0b0c10] border rounded-2xl p-4 space-y-2.5 ${group.color}`}
+                  >
+                    <div className="text-xs font-mono font-bold uppercase">
+                      {group.title}
+                    </div>
+                    <div className="space-y-1.5">
+                      {group.ids.map((cid) => {
+                        const c = clubMap.get(cid);
+                        const isUser = cid === userClubId;
+                        return (
+                          <div
+                            key={cid}
+                            className={`flex items-center gap-2 rounded-xl px-2.5 py-1.5 text-xs ${
+                              isUser
+                                ? 'bg-[#b5ff00]/15 text-[#b5ff00] font-bold border border-[#b5ff00]/40'
+                                : 'bg-[#14171f] text-white'
+                            }`}
+                          >
+                            {c && (
+                              <ClubBadge
+                                clubId={c.id}
+                                abbr={c.abbr}
+                                name={c.name}
+                                primaryColor={c.primaryColor}
+                                size="xs"
+                              />
+                            )}
+                            <span className="truncate font-semibold">
+                              {c?.shortName || cid}
+                            </span>
+                            <span className="ml-auto text-[10px] font-mono text-zinc-400">
+                              {c?.countryCode || 'BRA'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : smSubView === 'GRUPOS' ? (
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+              <div className="xl:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                {superMundial.groups.map((grp) => {
+                  const isSelected = grp.name === selectedSmGroupName;
+                  const hasUser = grp.clubIds.includes(userClubId);
+                  return (
+                    <div
+                      key={grp.name}
+                      onClick={() => setSelectedSmGroupName(grp.name)}
+                      className={`cursor-pointer rounded-[24px] border overflow-hidden transition-all ${
+                        isSelected
+                          ? 'bg-[#14171f] border-purple-400 shadow-lg'
+                          : 'bg-[#14171f] border-white/[0.07] hover:border-white/20'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.07] bg-[#0b0c10]/50">
+                        <div className="flex items-center gap-2">
+                          <span className="font-display text-lg font-extrabold uppercase text-white">
+                            Grupo {grp.name}
+                          </span>
+                          {hasUser && (
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-[#b5ff00] text-[#090a0f]">
+                              Seu Clube
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] font-mono text-zinc-400">
+                          1º–2º Quartas
+                        </span>
+                      </div>
+
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-white/[0.05] text-[10px] text-zinc-400">
+                            <th className="py-2 px-3">#</th>
+                            <th className="py-2 px-2">Clube</th>
+                            <th className="py-2 px-2 text-right">P</th>
+                            <th className="py-2 px-2 text-right">J</th>
+                            <th className="py-2 px-3 text-right">SG</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/[0.04] font-mono tabular-nums">
+                          {grp.standings.map((row, idx) => {
+                            const c = clubMap.get(row.clubId);
+                            const isUser = row.clubId === userClubId;
+                            return (
+                              <tr
+                                key={row.clubId}
+                                className={
+                                  isUser
+                                    ? 'bg-[#b5ff00]/12 text-[#b5ff00] font-bold'
+                                    : 'text-zinc-200'
+                                }
+                              >
+                                <td
+                                  className={`py-2 px-3 font-bold ${
+                                    idx < 2 ? 'text-purple-300' : 'text-zinc-500'
+                                  }`}
+                                >
+                                  {idx + 1}º
+                                </td>
+                                <td className="py-2 px-2 font-sans">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <ClubBadge
+                                      clubId={c?.id || row.clubId}
+                                      abbr={c?.abbr}
+                                      name={c?.name}
+                                      primaryColor={c?.primaryColor}
+                                      size="xs"
+                                    />
+                                    <span className="truncate max-w-[125px] text-white font-medium">
+                                      {c?.shortName || row.clubId}
+                                    </span>
+                                    <span className="text-[9px] font-mono text-zinc-500 shrink-0">
+                                      {c?.countryCode || 'BRA'}
+                                    </span>
+                                  </div>
+                                </td>
+                                <td className="py-2 px-2 text-right font-bold text-white">
+                                  {row.points}
+                                </td>
+                                <td className="py-2 px-2 text-right text-zinc-400">
+                                  {row.played}
+                                </td>
+                                <td className="py-2 px-3 text-right text-zinc-300">
+                                  {row.goalDifference > 0
+                                    ? `+${row.goalDifference}`
+                                    : row.goalDifference}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="xl:col-span-4 bg-[#14171f] border border-white/[0.07] rounded-[28px] overflow-hidden flex flex-col">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-purple-400" />
+                    <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white">
+                      Grupo {selectedSmGroupName} · {selectedSmGroupRound}ªR
+                    </h3>
+                  </div>
+
+                  <div className="flex items-center gap-1 bg-[#0b0c10] p-1 rounded-full border border-white/[0.07]">
+                    <button
+                      onClick={() =>
+                        setSelectedSmGroupRound((r) => Math.max(1, r - 1))
+                      }
+                      disabled={selectedSmGroupRound <= 1}
+                      aria-label="Rodada anterior Super Mundial"
+                      className="p-1.5 rounded-full hover:bg-white/10 disabled:opacity-40 text-white transition-colors"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <span className="text-xs font-mono font-bold px-2.5 text-purple-300">
+                      R{selectedSmGroupRound}/3
+                    </span>
+                    <button
+                      onClick={() =>
+                        setSelectedSmGroupRound((r) => Math.min(3, r + 1))
+                      }
+                      disabled={selectedSmGroupRound >= 3}
+                      aria-label="Próxima rodada Super Mundial"
+                      className="p-1.5 rounded-full hover:bg-white/10 disabled:opacity-40 text-white transition-colors"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="px-4 pt-3 flex flex-wrap gap-1">
+                  {superMundial.groups.map((g) => (
+                    <button
+                      key={g.name}
+                      onClick={() => setSelectedSmGroupName(g.name)}
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-mono font-bold transition-colors ${
+                        selectedSmGroupName === g.name
+                          ? 'bg-purple-400 text-[#090a0f]'
+                          : 'bg-[#0b0c10] text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      Grupo {g.name}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="p-4 space-y-2.5">
+                  {(
+                    superMundial.groups.find(
+                      (g) => g.name === selectedSmGroupName
+                    )?.fixtures || []
+                  )
+                    .filter((f) => f.roundNumber === selectedSmGroupRound)
+                    .map((fix) => {
+                      const home = clubMap.get(fix.homeClubId);
+                      const away = clubMap.get(fix.awayClubId);
+                      const isUser =
+                        fix.homeClubId === userClubId ||
+                        fix.awayClubId === userClubId;
+
+                      return (
+                        <div
+                          key={fix.id}
+                          className={`rounded-2xl p-3.5 ${
+                            isUser
+                              ? 'bg-gradient-to-r from-[#b5ff00] to-[#98db00] text-[#090a0f]'
+                              : 'bg-[#0b0c10] border border-white/[0.06] text-zinc-200'
+                          }`}
+                        >
+                          <div className="grid grid-cols-7 items-center text-xs">
+                            <div className="col-span-3 truncate font-bold">
+                              {home?.shortName}{' '}
+                              <span className="text-[10px] opacity-70 font-mono">
+                                ({home?.countryCode || 'BRA'})
+                              </span>
+                            </div>
+                            <div
+                              className={`col-span-1 text-center font-mono tabular-nums font-extrabold py-0.5 rounded-full text-[11px] ${
+                                isUser
+                                  ? 'bg-[#090a0f] text-white'
+                                  : 'bg-white/[0.08] text-white'
+                              }`}
+                            >
+                              {fix.played
+                                ? `${fix.homeGoals}:${fix.awayGoals}`
+                                : 'VS'}
+                            </div>
+                            <div className="col-span-3 truncate font-bold text-right">
+                              <span className="text-[10px] opacity-70 font-mono">
+                                ({away?.countryCode || 'BRA'}){' '}
+                              </span>
+                              {away?.shortName}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-[#14171f] border border-white/[0.07] rounded-[28px] p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] pb-3">
+                <div className="flex items-center gap-2">
+                  <Trophy className="w-4 h-4 text-purple-400" />
+                  <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white">
+                    Mata-Mata Super Mundial — {smKnockoutStage}
+                  </h3>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {SUPER_MUNDIAL_KNOCKOUT_STAGES.map((stage) => {
+                    const count =
+                      superMundial.knockoutFixtures[stage]?.length || 0;
+                    return (
+                      <button
+                        key={stage}
+                        onClick={() => setSmKnockoutStage(stage)}
+                        className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${
+                          smKnockoutStage === stage
+                            ? 'bg-purple-400 text-[#090a0f]'
+                            : count > 0
+                            ? 'bg-[#0b0c10] text-zinc-200 border border-white/10'
+                            : 'bg-[#0b0c10]/60 text-zinc-500 border border-white/[0.05]'
+                        }`}
+                      >
+                        {stage} {count > 0 ? `(${count})` : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {(superMundial.knockoutFixtures[smKnockoutStage]?.length || 0) > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
+                  {superMundial.knockoutFixtures[smKnockoutStage].map((fix) =>
+                    renderKnockoutMatchCard(fix)
+                  )}
+                </div>
+              ) : (
+                <div className="py-12 text-center text-sm text-zinc-400">
+                  O chaveamento das {smKnockoutStage} será definido após o fim da Fase de Grupos (3ª Rodada).
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* VIEW: HALL DE CAMPEÕES */}
       {viewedTab === 'HALL' && (
         <div className="space-y-4">
@@ -1089,8 +1804,8 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                 Temporada {seasonYear} em Andamento
               </h3>
               <p className="text-xs sm:text-sm text-zinc-400 max-w-xl mx-auto">
-                Os campeões da Série A, Série B, Copa do Brasil, Libertadores e
-                os prêmios individuais de cada temporada concluída serão
+                Os campeões da Série A, Série B, Copa do Brasil, Libertadores,
+                Champions League, Mundial de Clubes e Super Mundial serão
                 eternizados aqui após a virada de ano.
               </p>
             </div>
@@ -1116,7 +1831,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
                     <div className="bg-[#0b0c10] border border-[#b5ff00]/30 rounded-2xl p-3.5">
                       <div className="text-[10px] font-mono uppercase text-[#b5ff00]">
                         Brasileirão Série A
@@ -1149,6 +1864,36 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                         {entry.libChampionName || '—'}
                       </div>
                     </div>
+                    {entry.uclChampionName && (
+                      <div className="bg-[#0b0c10] border border-indigo-400/30 rounded-2xl p-3.5">
+                        <div className="text-[10px] font-mono uppercase text-indigo-300">
+                          Champions League
+                        </div>
+                        <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                          {entry.uclChampionName}
+                        </div>
+                      </div>
+                    )}
+                    {entry.mundialChampionName && (
+                      <div className="bg-[#0b0c10] border border-yellow-400/30 rounded-2xl p-3.5">
+                        <div className="text-[10px] font-mono uppercase text-yellow-300">
+                          Mundial de Clubes
+                        </div>
+                        <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                          {entry.mundialChampionName}
+                        </div>
+                      </div>
+                    )}
+                    {entry.superMundialChampionName && (
+                      <div className="bg-[#0b0c10] border border-purple-400/30 rounded-2xl p-3.5">
+                        <div className="text-[10px] font-mono uppercase text-purple-300">
+                          Super Mundial FIFA
+                        </div>
+                        <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                          {entry.superMundialChampionName}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">

@@ -31,6 +31,7 @@ import {
 import { formatCompactBRL } from '../utils/formatters';
 import { CurrencyToggle, useCurrency } from '../utils/CurrencyContext';
 import { ClubBadge } from './ClubBadge';
+import { PWAInstallButton } from './PWAInstallButton';
 import {
   CAREER_SLOTS,
   formatSavedTimestamp,
@@ -347,16 +348,18 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
   return (
     <div className="min-h-screen bg-[#0b0c10] text-zinc-100 flex flex-col">
       {/* Top Brand Header */}
-      <header className="h-14 sm:h-16 border-b border-white/[0.07] bg-[#111319]/90 px-4 sm:px-8 flex items-center justify-between gap-3 shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-[#b5ff00] flex items-center justify-center font-display font-extrabold text-[#090a0f] text-sm sm:text-base shadow-md shrink-0">
-            FM
-          </div>
+      <header className="h-14 sm:h-16 border-b border-white/[0.07] bg-[#111319]/90 px-3 sm:px-8 flex items-center justify-between gap-2 sm:gap-3 shrink-0">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+          <img
+            src="/pwa-192x192.png"
+            alt="Prancheta Pro"
+            className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl shadow-md shrink-0"
+          />
           <div className="min-w-0">
-            <div className="font-display text-lg sm:text-xl font-extrabold uppercase tracking-tight text-white leading-none truncate">
+            <div className="font-display text-base sm:text-xl font-extrabold uppercase tracking-tight text-white leading-none truncate">
               Prancheta Pro
             </div>
-            <div className="text-[11px] text-[#b5ff00] font-mono mt-0.5 leading-none">
+            <div className="hidden sm:block text-[11px] text-[#b5ff00] font-mono mt-0.5 leading-none">
               Brasileirão Série A & B · 2026
             </div>
           </div>
@@ -373,7 +376,8 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
             <button
               type="button"
               onClick={onOpenAccountModal}
-              className={`px-3 py-2 rounded-full text-xs font-bold border transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ${
+              aria-label={currentUser ? 'Conta sincronizada na nuvem' : 'Entrar ou criar conta'}
+              className={`p-2 sm:px-3 sm:py-2 rounded-full text-xs font-bold border transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ${
                 currentUser
                   ? 'bg-emerald-500/15 border-emerald-500/45 text-emerald-300 hover:bg-emerald-500/25'
                   : 'bg-cyan-500/15 border-cyan-500/45 text-cyan-300 hover:bg-cyan-500/25'
@@ -381,16 +385,15 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
             >
               {currentUser ? (
                 <>
-                  <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <UserCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                   <span className="hidden sm:inline truncate max-w-[120px]">
                     {currentUser.displayName || currentUser.email?.split('@')[0] || 'Conta Nuvem'}
                   </span>
-                  <span className="sm:hidden">Nuvem</span>
                 </>
               ) : (
                 <>
-                  <Cloud className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Entrar / Conta</span>
+                  <Cloud className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span className="hidden sm:inline">Entrar / Conta</span>
                 </>
               )}
               {cloudSyncStatus === 'syncing' && (
@@ -408,21 +411,24 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="px-3 py-2 rounded-full text-xs font-semibold bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 transition-colors flex items-center gap-1.5"
+            aria-label="Importar save"
+            title="Importar Save"
+            className="p-2 sm:px-3 sm:py-2 rounded-full text-xs font-semibold bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 transition-colors flex items-center gap-1.5"
           >
-            <Upload className="w-3.5 h-3.5 text-[#b5ff00]" />
+            <Upload className="w-3.5 h-3.5 text-[#b5ff00] shrink-0" />
             <span className="hidden sm:inline">Importar Save</span>
-            <span className="sm:hidden">Importar</span>
           </button>
+
+          <PWAInstallButton variant="hub" />
 
           {activeCareerSlot && onReturnToActiveCareer && (
             <button
               type="button"
               onClick={onReturnToActiveCareer}
-              className="px-4 py-2 rounded-full text-xs font-extrabold bg-white text-[#090a0f] hover:bg-[#b5ff00] transition-colors flex items-center gap-1.5"
+              className="px-3 sm:px-4 py-2 rounded-full text-xs font-extrabold bg-white text-[#090a0f] hover:bg-[#b5ff00] transition-colors flex items-center gap-1.5"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Voltar</span>
+              <span className="hidden sm:inline">Voltar</span>
             </button>
           )}
         </div>
@@ -491,6 +497,8 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
                       <Plus className="w-4 h-4" />
                       <span>Novo Jogo</span>
                     </button>
+
+                    <PWAInstallButton variant="hero" />
                   </div>
                 </div>
 

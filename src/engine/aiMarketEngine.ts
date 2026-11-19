@@ -971,6 +971,16 @@ export function maybeGenerateIncomingOfferForUser(params: {
       ? `identificou carência prioritária na posição (${p.position})`
       : `busca qualificar o setor de ${p.sector} (${p.position})`;
 
+  const potentialOvr = Math.max(
+    picked.ovr,
+    p.dynamicCeilingOvr ??
+      p.basePotentialOvr ??
+      Math.min(96, picked.ovr + Math.max(0, Math.round((picked.stars - 2.5) * 4)))
+  );
+  const contractYearsRemaining =
+    p.contractYearsRemaining ??
+    (p.contractEndYear ? Math.max(1, p.contractEndYear - seasonYear + 1) : 2);
+
   return {
     id: `offer-${seasonYear}-${dayOffset}-${p.id}-${Math.round(rng() * 9999)}`,
     createdAtDate: formatCalendarDate(dayOffset, seasonYear),
@@ -985,6 +995,11 @@ export function maybeGenerateIncomingOfferForUser(params: {
     playerOvr: picked.ovr,
     playerAge: p.age,
     playerPotentialStars: picked.stars,
+    playerMarketValue: p.marketValue,
+    playerSalary: p.salary,
+    playerPotentialOvr: potentialOvr,
+    playerIsStarter: p.isStarter,
+    playerContractYearsRemaining: contractYearsRemaining,
     dealType: isLoan ? 'LOAN' : 'BUY',
     offeredFee: rawFee,
     wageShareCovered: isLoan ? 0.9 : 1.0,
@@ -1003,6 +1018,12 @@ export function createOfferInboxMessage(
 ): InboxMessage {
   const dealLabel =
     offer.dealType === 'LOAN' ? 'Proposta de Empréstimo' : 'Proposta Oficial de Compra';
+  const marketValText = offer.playerMarketValue
+    ? ` · Valor de mercado: ${formatCompactBRL(offer.playerMarketValue)}`
+    : '';
+  const potentialText = offer.playerPotentialOvr
+    ? ` · Potencial OVR ${offer.playerPotentialOvr}`
+    : '';
   return {
     id: `msg-offer-${offer.id}`,
     date: `${offer.createdAtDate} · Mercado`,
@@ -1023,13 +1044,23 @@ export function createOfferInboxMessage(
             offer.offeredFee
           )} com cobertura de ${Math.round(
             offer.wageShareCovered * 100
-          )}% dos salários.`
+          )}% dos salários${marketValText}.`
         : `Valor oferecido pela transferência definitiva: ${formatCompactBRL(
             offer.offeredFee
-          )}.`,
+          )}${marketValText}.`,
     ],
     bulletPoints: [
-      `Atleta: ${offer.playerName} (${offer.playerPosition} · ${offer.playerAge} anos · ${offer.playerPotentialStars}★)`,
+      `Atleta: ${offer.playerName} (${offer.playerPosition} · ${offer.playerAge} anos · ${offer.playerIsStarter ? 'Titular' : 'Reserva'})`,
+      `Avaliação & Potencial: OVR ${offer.playerOvr}${potentialText} (${offer.playerPotentialStars}★)${marketValText}`,
+      ...(offer.playerSalary
+        ? [
+            `Salário atual: ${formatCompactBRL(offer.playerSalary)}/mês${
+              offer.playerContractYearsRemaining
+                ? ` · Contrato restante: ${offer.playerContractYearsRemaining} ano(s)`
+                : ''
+            }`,
+          ]
+        : []),
       `Motivo do interesse: ${offer.rationale}`,
     ],
     actionLabel: 'Analisar no Mercado',

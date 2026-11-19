@@ -13,7 +13,6 @@ import {
   Target,
   AlertTriangle,
   FastForward,
-  Lock,
 } from 'lucide-react';
 import {
   Club,
@@ -36,6 +35,7 @@ import {
 } from '../engine/opponentScout';
 import { ClubBadge } from './ClubBadge';
 import { PlayerOvrBadge } from './PlayerJersey';
+import { IncomingOfferCard } from './IncomingOfferCard';
 
 interface DashboardInboxProps {
   messages: InboxMessage[];
@@ -59,6 +59,7 @@ interface DashboardInboxProps {
   onQuickSimulateMatch?: () => void;
   pendingOffers?: IncomingTransferOffer[];
   dayOffset?: number;
+  seasonYear?: number;
   onResolveIncomingOffer?: (
     offerId: string,
     action: IncomingOfferAction
@@ -87,6 +88,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   onQuickSimulateMatch,
   pendingOffers = [],
   dayOffset = 0,
+  seasonYear = 2026,
   onResolveIncomingOffer,
 }) => {
   const windowStatus = getTransferWindowStatus(dayOffset);
@@ -896,64 +898,21 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                         );
                       }
                       return (
-                        <div className="rounded-2xl bg-[#0b0c10] border border-[#b5ff00]/35 p-3 space-y-2.5">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-bold text-white">
-                              Responder {matchedOffer.fromClubName} ·{' '}
-                              {matchedOffer.dealType === 'LOAN' ? 'Empréstimo' : 'Compra'}
-                            </span>
-                            <span className="font-mono font-extrabold text-[#b5ff00]">
-                              {formatCompactBRL(matchedOffer.offeredFee)}
-                            </span>
-                          </div>
-                          {!windowStatus.isOpen ? (
-                            <div className="flex items-start gap-2 rounded-xl bg-rose-950/35 border border-rose-500/35 px-3 py-2 text-[11px] text-rose-200">
-                              <Lock className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
-                              <span>
-                                Janela de transferências fechada — {windowStatus.description}
-                              </span>
-                            </div>
-                          ) : (
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  onResolveIncomingOffer(matchedOffer.id, 'ACCEPT')
-                                }
-                                className="px-3.5 py-1.5 rounded-full text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors"
-                              >
-                                Aceitar ({formatCompactBRL(matchedOffer.offeredFee)})
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  onResolveIncomingOffer(matchedOffer.id, 'COUNTER_15')
-                                }
-                                className="px-3 py-1.5 rounded-full text-xs font-bold bg-white/[0.08] hover:bg-white/[0.15] text-white transition-colors"
-                              >
-                                Negociar +15%
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  onResolveIncomingOffer(matchedOffer.id, 'COUNTER_30')
-                                }
-                                className="px-3 py-1.5 rounded-full text-xs font-bold bg-white/[0.08] hover:bg-white/[0.15] text-amber-300 transition-colors"
-                              >
-                                Negociar +30%
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  onResolveIncomingOffer(matchedOffer.id, 'REJECT')
-                                }
-                                className="px-3 py-1.5 rounded-full text-xs font-bold bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 transition-colors"
-                              >
-                                Recusar
-                              </button>
-                            </div>
-                          )}
-                        </div>
+                        <IncomingOfferCard
+                          offer={matchedOffer}
+                          userClub={userClub}
+                          squad={squad}
+                          seasonYear={seasonYear}
+                          variant="inbox"
+                          disabled={!windowStatus.isOpen}
+                          disabledReason={
+                            !windowStatus.isOpen
+                              ? `Janela de transferências fechada — ${windowStatus.description}`
+                              : undefined
+                          }
+                          onResolve={onResolveIncomingOffer}
+                          onInspectPlayer={onInspectPlayer}
+                        />
                       );
                     })()}
 

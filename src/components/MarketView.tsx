@@ -62,6 +62,7 @@ import { CurrencyToggle } from '../utils/CurrencyContext';
 import { ClubBadge } from './ClubBadge';
 import { StarRating } from './StarRating';
 import { PlayerJersey, PlayerOvrBadge } from './PlayerJersey';
+import { IncomingOfferCard } from './IncomingOfferCard';
 
 export type MarketFeedback = {
   type: 'success' | 'counter' | 'rejected' | 'error';
@@ -2296,85 +2297,23 @@ export const MarketView: React.FC<MarketViewProps> = ({
             </span>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
             {activePendingOffers.map((offer) => (
-              <div
+              <IncomingOfferCard
                 key={offer.id}
-                className="bg-[#0b0c10] border border-white/[0.08] rounded-2xl p-3.5 space-y-3"
-              >
-                <div className="flex items-start justify-between gap-2.5">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <PlayerOvrBadge
-                      ovr={offer.playerOvr}
-                      position={offer.playerPosition}
-                      size="sm"
-                    />
-                    <ClubBadge
-                      clubId={offer.fromClubId}
-                      abbr={offer.fromClubAbbr}
-                      name={offer.fromClubName}
-                      primaryColor={offer.fromClubPrimaryColor}
-                      size="sm"
-                    />
-                    <div className="min-w-0">
-                      <div className="text-xs font-bold text-white truncate">
-                        {offer.fromClubName} quer {offer.playerName}
-                      </div>
-                      <div className="text-[11px] font-mono text-zinc-400">
-                        <strong className="text-white">{offer.playerAge} anos</strong> · {offer.playerPotentialStars}★ ·{' '}
-                        {offer.dealType === 'LOAN' ? 'Empréstimo' : 'Compra'}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="font-mono font-extrabold text-sm text-[#b5ff00] tabular-nums">
-                      {formatCompactBRL(offer.offeredFee)}
-                    </div>
-                    <div className="text-[10px] font-mono text-zinc-400">
-                      {offer.createdAtDate}
-                    </div>
-                  </div>
-                </div>
-
-                <p className="text-[11px] text-zinc-300 leading-snug">
-                  {offer.rationale}
-                </p>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                  <button
-                    type="button"
-                    disabled={!windowStatus.isOpen}
-                    onClick={() => onResolveIncomingOffer(offer.id, 'ACCEPT')}
-                    className="py-1.5 px-2.5 rounded-xl bg-[#b5ff00] hover:bg-[#c8ff33] disabled:bg-zinc-800 disabled:text-zinc-500 disabled:cursor-not-allowed text-[#090a0f] text-[11px] font-extrabold transition-colors"
-                  >
-                    Aceitar
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!windowStatus.isOpen}
-                    onClick={() => onResolveIncomingOffer(offer.id, 'COUNTER_15')}
-                    className="py-1.5 px-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-bold transition-colors"
-                  >
-                    Pedir +15%
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!windowStatus.isOpen}
-                    onClick={() => onResolveIncomingOffer(offer.id, 'COUNTER_30')}
-                    className="py-1.5 px-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] disabled:opacity-40 disabled:cursor-not-allowed text-amber-300 text-[11px] font-bold transition-colors"
-                  >
-                    Pedir +30%
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!windowStatus.isOpen}
-                    onClick={() => onResolveIncomingOffer(offer.id, 'REJECT')}
-                    className="py-1.5 px-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 disabled:opacity-40 disabled:cursor-not-allowed border border-rose-500/30 text-rose-300 text-[11px] font-bold transition-colors"
-                  >
-                    Recusar
-                  </button>
-                </div>
-              </div>
+                offer={offer}
+                userClub={userClub}
+                squad={squad}
+                seasonYear={seasonYear}
+                disabled={!windowStatus.isOpen}
+                disabledReason={
+                  !windowStatus.isOpen
+                    ? `Janela de transferências fechada — ${windowStatus.description}`
+                    : undefined
+                }
+                onResolve={onResolveIncomingOffer}
+                onInspectPlayer={(player) => onInspectPlayer(player)}
+              />
             ))}
           </div>
         </div>

@@ -143,6 +143,8 @@ import { CompetitionsView } from './components/CompetitionsView';
 import { FinancesView } from './components/FinancesView';
 import { PlayerProfileModal } from './components/PlayerProfileModal';
 import { SeasonEndModal } from './components/SeasonEndModal';
+import { PWAInstallButton } from './components/PWAInstallButton';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import {
   AutoSimCareerSnapshot,
   AutoSimMatchLogEntry,
@@ -3767,6 +3769,7 @@ export default function App() {
 
   const globalOverlayNodes = (
     <>
+      <OfflineIndicator />
       {actionToast && (
         <div
           data-testid="global-action-toast"
@@ -4061,9 +4064,11 @@ export default function App() {
         <div>
           {/* Brand Lockup */}
           <div className="h-16 px-5 border-b border-white/[0.07] flex items-center gap-3">
-            <div className="w-9 h-9 rounded-full bg-[#b5ff00] flex items-center justify-center font-display font-extrabold text-[#090a0f] text-base shadow-md">
-              FM
-            </div>
+            <img
+              src="/pwa-192x192.png"
+              alt="Prancheta Pro"
+              className="w-9 h-9 rounded-xl shadow-md shrink-0"
+            />
             <div className="min-w-0">
               <div className="font-display text-lg font-extrabold uppercase tracking-tight text-white leading-none truncate">
                 Prancheta Pro
@@ -4376,6 +4381,9 @@ export default function App() {
               </span>
             </button>
 
+            {/* PWA Install Button (hidden automatically when already in standalone mode) */}
+            <PWAInstallButton variant="header" />
+
             {/* Mobile/Compact Return to Career Hub Button */}
             <button
               type="button"
@@ -4558,6 +4566,7 @@ export default function App() {
               onQuickSimulateMatch={handleQuickSimulateFromOutside}
               pendingOffers={pendingOffers}
               dayOffset={dayOffset}
+              seasonYear={currentYear}
               onResolveIncomingOffer={handleResolveIncomingOffer}
             />
           )}
@@ -4798,12 +4807,14 @@ export default function App() {
         plannedUserMatches={autoSimUi.plannedUserMatches}
         logs={autoSimUi.logs}
         userClub={userClub}
+        squad={squad}
         clubs={clubs}
         userRank={userRank}
         seasonYear={currentYear}
         pausedOffer={autoSimUi.pausedOffer}
         offerResolutionNote={autoSimUi.offerResolutionNote}
         onResolveOffer={handleResolveAutoSimOffer}
+        onInspectPlayer={(p) => setInspectedPlayerId(p.id)}
         onPauseOrStop={handlePauseAutoSimulation}
         onFinishInstant={handleFinishAutoSimulationInstant}
         onClose={() => {

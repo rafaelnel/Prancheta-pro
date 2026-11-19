@@ -12,9 +12,10 @@ import {
 } from 'lucide-react';
 import { AutoSimMatchLogEntry } from '../engine/autoTacticsAndSim';
 import { IncomingOfferAction } from '../engine/aiMarketEngine';
-import { Club, IncomingTransferOffer } from '../types/football';
+import { Club, IncomingTransferOffer, Player } from '../types/football';
 import { formatCalendarDate, formatCompactBRL } from '../utils/formatters';
 import { ClubBadge } from './ClubBadge';
+import { IncomingOfferCard } from './IncomingOfferCard';
 
 interface AutoSimModalProps {
   isOpen: boolean;
@@ -29,11 +30,13 @@ interface AutoSimModalProps {
   plannedUserMatches: number;
   logs: AutoSimMatchLogEntry[];
   userClub: Club;
+  squad: Player[];
   clubs: Club[];
   userRank: number;
   pausedOffer?: IncomingTransferOffer | null;
   offerResolutionNote?: string | null;
   onResolveOffer?: (offerId: string, action: IncomingOfferAction) => void;
+  onInspectPlayer?: (player: Player) => void;
   onPauseOrStop: () => void;
   onFinishInstant: () => void;
   onClose: () => void;
@@ -53,11 +56,13 @@ export const AutoSimModal: React.FC<AutoSimModalProps> = ({
   plannedUserMatches,
   logs,
   userClub,
+  squad,
   clubs,
   userRank,
   pausedOffer = null,
   offerResolutionNote = null,
   onResolveOffer,
+  onInspectPlayer,
   onPauseOrStop,
   onFinishInstant,
   onClose,
@@ -90,9 +95,9 @@ export const AutoSimModal: React.FC<AutoSimModalProps> = ({
       aria-modal="true"
       aria-label="Simulação Automática de Calendário"
     >
-      <div className="w-full max-w-3xl bg-[#111319] border border-white/15 rounded-[26px] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div className="w-full max-w-4xl bg-[#111319] border border-white/15 rounded-[26px] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="px-5 py-4 border-b border-white/[0.08] bg-[#0b0c10] flex items-start justify-between gap-3">
+        <div className="shrink-0 px-5 py-3.5 border-b border-white/[0.08] bg-[#0b0c10] flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1">
               {pausedOffer ? (
@@ -143,7 +148,7 @@ export const AutoSimModal: React.FC<AutoSimModalProps> = ({
         </div>
 
         {/* Progress Bar & Summary Strip */}
-        <div className="px-5 py-3.5 bg-[#14171f] border-b border-white/[0.07] space-y-3">
+        <div className="shrink-0 px-5 py-3 bg-[#14171f] border-b border-white/[0.07] space-y-2.5">
           <div className="space-y-1.5">
             <div className="flex items-center justify-between text-[11px] font-mono">
               <span className="text-zinc-400">
@@ -208,97 +213,48 @@ export const AutoSimModal: React.FC<AutoSimModalProps> = ({
           </div>
         </div>
 
-        {/* Latest Match Spotlight + Match-by-Match Chronological Log */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
-          {pausedOffer && onResolveOffer && (
-            <div className="bg-amber-950/30 border-2 border-amber-400/70 rounded-2xl p-4 space-y-3 shadow-xl">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Handshake className="w-4 h-4 text-amber-300" />
-                  <span className="font-display text-base font-extrabold uppercase text-amber-300">
-                    Proposta Recebida Durante a Simulação!
-                  </span>
-                </div>
-                <span className="text-[10px] font-mono text-amber-200 bg-amber-400/15 border border-amber-400/30 px-2.5 py-0.5 rounded-full">
-                  Escolha para retomar automaticamente
+        {/* Pinned Incoming Proposal Area — strictly OUTSIDE the match history scroll */}
+        {pausedOffer && onResolveOffer && (
+          <div
+            data-testid="autosim-paused-offer"
+            className="shrink-0 px-4 sm:px-5 py-3.5 bg-[#151822] border-b-2 border-amber-400/55 space-y-2.5 max-h-[54vh] overflow-y-auto"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Handshake className="w-4 h-4 text-amber-300" />
+                <span className="font-display text-sm sm:text-base font-extrabold uppercase tracking-tight text-amber-300">
+                  Proposta Recebida Durante a Simulação
                 </span>
               </div>
-
-              <div className="bg-[#0b0c10] border border-white/10 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <ClubBadge
-                    clubId={pausedOffer.fromClubId}
-                    abbr={pausedOffer.fromClubAbbr}
-                    name={pausedOffer.fromClubName}
-                    primaryColor={pausedOffer.fromClubPrimaryColor}
-                    size="sm"
-                  />
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold text-white truncate">
-                      {pausedOffer.fromClubName} quer {pausedOffer.playerName}
-                    </div>
-                    <div className="text-[11px] font-mono text-zinc-400">
-                      {pausedOffer.playerPosition} · OVR {pausedOffer.playerOvr} ·{' '}
-                      {pausedOffer.playerAge} anos · {pausedOffer.playerPotentialStars}★ ·{' '}
-                      {pausedOffer.dealType === 'LOAN'
-                        ? `Empréstimo (${Math.round(pausedOffer.wageShareCovered * 100)}% sal.)`
-                        : 'Compra Definitiva'}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-left sm:text-right shrink-0">
-                  <div className="font-mono font-extrabold text-lg text-[#b5ff00] tabular-nums">
-                    {formatCompactBRL(pausedOffer.offeredFee)}
-                  </div>
-                  <div className="text-[10px] font-mono text-zinc-400">
-                    {pausedOffer.createdAtDate}
-                  </div>
-                </div>
-              </div>
-
-              <p className="text-xs text-zinc-300 leading-snug">
-                {pausedOffer.rationale}
-              </p>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <button
-                  type="button"
-                  onClick={() => onResolveOffer(pausedOffer.id, 'ACCEPT')}
-                  className="py-2 px-3 rounded-xl bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] text-xs font-extrabold transition-colors"
-                >
-                  Aceitar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onResolveOffer(pausedOffer.id, 'COUNTER_15')}
-                  className="py-2 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] text-white text-xs font-bold transition-colors"
-                >
-                  Pedir +15%
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onResolveOffer(pausedOffer.id, 'COUNTER_30')}
-                  className="py-2 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] text-amber-300 text-xs font-bold transition-colors"
-                >
-                  Pedir +30%
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onResolveOffer(pausedOffer.id, 'REJECT')}
-                  className="py-2 px-3 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-xs font-bold transition-colors"
-                >
-                  Recusar
-                </button>
-              </div>
+              <span className="text-[11px] font-mono text-amber-200/90">
+                Decida para retomar automaticamente
+              </span>
             </div>
-          )}
 
-          {offerResolutionNote && !pausedOffer && (
-            <div className="rounded-xl bg-[#b5ff00]/10 border border-[#b5ff00]/35 px-3.5 py-2 text-xs text-zinc-200 flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-[#b5ff00] shrink-0" />
-              <span>{offerResolutionNote}</span>
-            </div>
-          )}
+            <IncomingOfferCard
+              offer={pausedOffer}
+              userClub={userClub}
+              squad={squad}
+              seasonYear={seasonYear}
+              variant="autosim"
+              onResolve={onResolveOffer}
+              onInspectPlayer={onInspectPlayer}
+            />
+          </div>
+        )}
+
+        {offerResolutionNote && !pausedOffer && (
+          <div className="shrink-0 px-4 sm:px-5 py-2.5 bg-[#101610] border-b border-[#b5ff00]/30 text-xs text-zinc-200 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-[#b5ff00] shrink-0" />
+            <span>{offerResolutionNote}</span>
+          </div>
+        )}
+
+        {/* Latest Match Spotlight + Match-by-Match Chronological Log (Independent Scroll) */}
+        <div
+          data-testid="autosim-match-history-scroll"
+          className="flex-1 min-h-[140px] overflow-y-auto p-4 sm:p-5 space-y-4"
+        >
 
           {latestUserMatch && latestUserMatch.outcome !== 'BYE' && (
             <div className="bg-[#0b0c10] border border-[#b5ff00]/30 rounded-2xl p-4 space-y-3">
@@ -460,7 +416,7 @@ export const AutoSimModal: React.FC<AutoSimModalProps> = ({
         </div>
 
         {/* Footer Controls */}
-        <div className="px-5 py-3.5 border-t border-white/[0.08] bg-[#0b0c10] flex flex-wrap items-center justify-between gap-2.5">
+        <div className="shrink-0 px-5 py-3.5 border-t border-white/[0.08] bg-[#0b0c10] flex flex-wrap items-center justify-between gap-2.5">
           {pausedOffer ? (
             <div className="w-full flex flex-wrap items-center justify-between gap-2 text-xs text-amber-200 font-mono">
               <span>

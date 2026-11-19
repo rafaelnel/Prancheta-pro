@@ -665,6 +665,11 @@ export interface IncomingTransferOffer {
   playerOvr: number;
   playerAge: number;
   playerPotentialStars: PotentialStars;
+  playerMarketValue?: number;
+  playerSalary?: number;
+  playerPotentialOvr?: number;
+  playerIsStarter?: boolean;
+  playerContractYearsRemaining?: number;
   dealType: 'BUY' | 'LOAN';
   offeredFee: number;
   wageShareCovered: number; // 0..1 (for loan)

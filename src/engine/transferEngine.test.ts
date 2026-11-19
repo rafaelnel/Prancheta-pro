@@ -702,5 +702,79 @@ test('Player walks away after 2 to 4 failed proposals and is locked for 1 full y
   assert.equal(acceptedClear.nextStates[target.player.id], undefined);
 });
 
+test('Incoming offers populate market value, potential ceiling, salary, role and contract snapshots for manager decision analysis', async () => {
+  const { maybeGenerateIncomingOfferForUser, createOfferInboxMessage } = await import(
+    './aiMarketEngine'
+  );
+  const career = createNewCareerSave(1, 'flamengo', 'Técnico');
+  const userClub = career.clubs.find((c) => c.id === 'flamengo')!;
+  const targetPlayer = career.squad.find((p) => p.isStarter && p.position !== 'GOL')!;
+  const listedSquad = career.squad.map((p) =>
+    p.id === targetPlayer.id ? { ...p, isTransferListed: true } : p
+  );
+
+  const offer = maybeGenerateIncomingOfferForUser({
+    userClub,
+    userSquad: listedSquad,
+    clubs: career.clubs,
+    aiSquads: career.aiSquads || {},
+    pendingOffers: [],
+    dayOffset: 14,
+    seasonYear: 2026,
+    specificPlayerId: targetPlayer.id,
+    rng: () => 0.4,
+  });
+
+  assert.ok(offer, 'Expected an incoming offer to be generated for the listed player');
+  assert.equal(offer!.playerId, targetPlayer.id);
+  assert.equal(offer!.playerMarketValue, targetPlayer.marketValue);
+  assert.equal(offer!.playerSalary, targetPlayer.salary);
+  assert.equal(offer!.playerIsStarter, targetPlayer.isStarter);
+  assert.ok(
+    typeof offer!.playerPotentialOvr === 'number' &&
+      offer!.playerPotentialOvr >= offer!.playerOvr,
+    `Expected playerPotentialOvr >= playerOvr, got ${offer!.playerPotentialOvr} vs ${offer!.playerOvr}`
+  );
+  assert.ok(
+    typeof offer!.playerContractYearsRemaining === 'number' &&
+      offer!.playerContractYearsRemaining >= 1,
+    `Expected playerContractYearsRemaining >= 1, got ${offer!.playerContractYearsRemaining}`
+  );
+
+  const inboxMsg = createOfferInboxMessage(offer!, userClub);
+  const bulletsJoined = (inboxMsg.bulletPoints || []).join(' | ');
+  assert.ok(
+    bulletsJoined.includes('Valor de mercado'),
+    `Expected inbox bullet points to include market value, got: ${bulletsJoined}`
+  );
+  assert.ok(
+    bulletsJoined.includes('Potencial'),
+    `Expected inbox bullet points to include potential ceiling, got: ${bulletsJoined}`
+  );
+});
+
+test('AutoSimModal renders paused incoming offer strictly outside the scrollable match history container', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const modalSource = fs.readFileSync(
+    path.resolve('src/components/AutoSimModal.tsx'),
+    'utf-8'
+  );
+  const pausedIdx = modalSource.indexOf('data-testid="autosim-paused-offer"');
+  const historyIdx = modalSource.indexOf('data-testid="autosim-match-history-scroll"');
+  assert.ok(pausedIdx > 0, 'AutoSimModal must declare autosim-paused-offer container');
+  assert.ok(historyIdx > 0, 'AutoSimModal must declare autosim-match-history-scroll container');
+  assert.ok(
+    pausedIdx < historyIdx,
+    'Paused offer container must appear before and outside the match history scroll container'
+  );
+  const afterHistory = modalSource.slice(historyIdx);
+  assert.equal(
+    afterHistory.includes('pausedOffer && onResolveOffer'),
+    false,
+    'Match history scroll container must not contain the paused incoming offer block'
+  );
+});
+
 
 

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <clipPath id="idvClip">
+      <path d="M36 26 H164 V118 C164 154 134 178 100 188 C66 178 36 154 36 118 Z"/>
+    </clipPath>
+  </defs>
+  <path d="M32 22 H168 V118 C168 157 136 182 100 192 C64 182 32 157 32 118 Z" fill="#0F172A" stroke="#F472B6" stroke-width="4"/>
+  <g clip-path="url(#idvClip)">
+    <rect x="36" y="26" width="26" height="162" fill="#0F172A"/>
+    <rect x="62" y="26" width="25" height="162" fill="#2563EB"/>
+    <rect x="87" y="26" width="26" height="162" fill="#0F172A"/>
+    <rect x="113" y="26" width="25" height="162" fill="#2563EB"/>
+    <rect x="138" y="26" width="26" height="162" fill="#0F172A"/>
+  </g>
+  <polygon points="100,48 134,102 100,156 66,102" fill="#0F172A" stroke="#F472B6" stroke-width="4"/>
+  <text x="100" y="112" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="24" fill="#ffffff" letter-spacing="1">IDV</text>
+</svg>

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <clipPath id="ovalClip"><ellipse cx="100" cy="100" rx="56" ry="78"/></clipPath>
+    <clipPath id="leftHalf"><rect x="44" y="22" width="56" height="156"/></clipPath>
+    <clipPath id="rightHalf"><rect x="100" y="22" width="56" height="156"/></clipPath>
+  </defs>
+  <ellipse cx="100" cy="100" rx="68" ry="92" fill="#111111" stroke="#FB090B" stroke-width="5"/>
+  <ellipse cx="100" cy="100" rx="62" ry="86" fill="none" stroke="#ffffff" stroke-width="2.5"/>
+  <g clip-path="url(#ovalClip)">
+    <g clip-path="url(#leftHalf)">
+      <rect x="44" y="22" width="12" height="156" fill="#FB090B"/>
+      <rect x="56" y="22" width="11" height="156" fill="#111111"/>
+      <rect x="67" y="22" width="11" height="156" fill="#FB090B"/>
+      <rect x="78" y="22" width="11" height="156" fill="#111111"/>
+      <rect x="89" y="22" width="11" height="156" fill="#FB090B"/>
+    </g>
+    <g clip-path="url(#rightHalf)">
+      <rect x="100" y="22" width="56" height="156" fill="#ffffff"/>
+      <rect x="122" y="22" width="12" height="156" fill="#FB090B"/>
+      <rect x="100" y="94" width="56" height="12" fill="#FB090B"/>
+    </g>
+    <rect x="44" y="22" width="112" height="32" fill="#111111"/>
+    <rect x="44" y="146" width="112" height="32" fill="#111111"/>
+    <line x1="100" y1="54" x2="100" y2="146" stroke="#111111" stroke-width="3"/>
+  </g>
+  <ellipse cx="100" cy="100" rx="56" ry="78" fill="none" stroke="#ffffff" stroke-width="3"/>
+  <text x="100" y="45" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="18" fill="#ffffff" letter-spacing="1.5">ACM</text>
+  <text x="100" y="168" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="16" fill="#ffffff" letter-spacing="1">1899</text>
+</svg>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <circle cx="100" cy="100" r="88" fill="#E32221" stroke="#111111" stroke-width="8"/>
+  <circle cx="100" cy="100" r="76" fill="none" stroke="#F6D100" stroke-width="4"/>
+  <rect x="36" y="79" width="128" height="42" rx="6" fill="#111111" stroke="#ffffff" stroke-width="3"/>
+  <text x="100" y="108" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="25" fill="#ffffff" letter-spacing="1.5">BAYER</text>
+  <text x="100" y="59" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="26" fill="#F6D100">04</text>
+  <text x="100" y="156" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="14" fill="#ffffff" letter-spacing="1">LEVERKUSEN</text>
+</svg>

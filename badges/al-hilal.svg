@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <path d="M40 24 H160 V116 C160 152 132 176 100 188 C68 176 40 152 40 116 Z" fill="#004B93" stroke="#FFFFFF" stroke-width="5"/>
+  <path d="M48 32 H152 V114 C152 145 128 166 100 177 C72 166 48 145 48 114 Z" fill="none" stroke="#38BDF8" stroke-width="3"/>
+  <path d="M114 54 A34 34 0 1 0 114 118 A26 26 0 1 1 114 54 Z" fill="#FFFFFF"/>
+  <circle cx="116" cy="86" r="14" fill="#FFFFFF"/>
+  <rect x="44" y="126" width="112" height="24" rx="4" fill="#002D5C" stroke="#38BDF8" stroke-width="2"/>
+  <text x="100" y="143" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="15" fill="#FFFFFF" letter-spacing="1">AL-HILAL</text>
+</svg>

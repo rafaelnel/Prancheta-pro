@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <path d="M100 14 L126 30 L166 26 L142 50 L114 48 L100 62 L86 48 L58 50 L34 26 L74 30 Z" fill="#D4AF37" stroke="#111111" stroke-width="2.5"/>
+  <circle cx="100" cy="116" r="68" fill="#E83030" stroke="#D4AF37" stroke-width="6"/>
+  <circle cx="100" cy="116" r="56" fill="#ffffff" stroke="#111111" stroke-width="2.5"/>
+  <path d="M100 66 L142 84 V120 C142 146 122 162 100 172 C78 162 58 146 58 120 V84 Z" fill="#E83030" stroke="#D4AF37" stroke-width="4"/>
+  <path d="M100 66 L142 84 V120 C142 146 122 162 100 172 Z" fill="#C8102E"/>
+  <line x1="60" y1="95" x2="140" y2="142" stroke="#ffffff" stroke-width="11"/>
+  <text x="100" y="128" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="28" fill="#111111" stroke="#ffffff" stroke-width="1.5">SLB</text>
+</svg>

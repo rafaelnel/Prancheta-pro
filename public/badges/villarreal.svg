@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <circle cx="100" cy="100" r="92" fill="#ffe114" stroke="#005187" stroke-width="6"/>
+  <circle cx="100" cy="100" r="82" fill="none" stroke="#d41e2a" stroke-width="3.5"/>
+  <circle cx="100" cy="100" r="56" fill="#005187" stroke="#ffe114" stroke-width="3"/>
+  <text x="100" y="34" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="14" fill="#0f172a" letter-spacing="1.5">VILLARREAL</text>
+  <text x="100" y="114" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="38" fill="#ffffff" letter-spacing="1">VIL</text>
+  <text x="100" y="178" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="14" fill="#0f172a" letter-spacing="2">C.F.</text>
+</svg>

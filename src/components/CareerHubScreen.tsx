@@ -19,9 +19,10 @@ import {
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import {
-  INITIAL_CLUBS,
-  INITIAL_STANDINGS_A,
-  INITIAL_STANDINGS_B,
+  ALL_PLAYABLE_CLUBS,
+  getInitialStandingsForDivision,
+  getPlayableDivisionForClub,
+  getPlayableLeagueShortLabel,
 } from '../data/initialDatabase';
 import {
   CareerSaveData,
@@ -40,7 +41,7 @@ import {
 } from '../utils/saveManager';
 
 type HubViewMode = 'landing' | 'saves' | 'new_game';
-type DivisionFilter = 'A' | 'B' | 'ALL';
+type DivisionFilter = 'A' | 'B' | 'PL' | 'LALIGA' | 'ALL';
 
 interface CareerHubScreenProps {
   slots: Array<CareerSaveData | null>;
@@ -93,7 +94,7 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
   const [selectedSlot, setSelectedSlot] =
     useState<CareerSlotIndex>(firstEmptySlot);
   const [selectedClubId, setSelectedClubId] = useState<string>(
-    INITIAL_CLUBS[0].id
+    ALL_PLAYABLE_CLUBS[0].id
   );
   const [managerName, setManagerName] = useState<string>('Treinador Silva');
   const [clubSearch, setClubSearch] = useState<string>('');
@@ -109,14 +110,16 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const selectedClub = useMemo(
-    () => INITIAL_CLUBS.find((c) => c.id === selectedClubId) || INITIAL_CLUBS[0],
+    () =>
+      ALL_PLAYABLE_CLUBS.find((c) => c.id === selectedClubId) ||
+      ALL_PLAYABLE_CLUBS[0],
     [selectedClubId]
   );
 
   const getClubInitialRank = (club: Club): number => {
-    const table =
-      club.division === 'B' ? INITIAL_STANDINGS_B : INITIAL_STANDINGS_A;
-    return table.findIndex((row) => row.clubId === club.id) + 1;
+    const playableDiv = getPlayableDivisionForClub(club);
+    const table = getInitialStandingsForDivision(playableDiv);
+    return Math.max(1, table.findIndex((row) => row.clubId === club.id) + 1);
   };
 
   const selectedClubInitialRank = getClubInitialRank(selectedClub);
@@ -124,8 +127,9 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
 
   const filteredClubs = useMemo(() => {
     const q = clubSearch.trim().toLowerCase();
-    return INITIAL_CLUBS.filter((club) => {
-      if (divisionFilter !== 'ALL' && club.division !== divisionFilter) {
+    return ALL_PLAYABLE_CLUBS.filter((club) => {
+      const clubDiv = getPlayableDivisionForClub(club);
+      if (divisionFilter !== 'ALL' && clubDiv !== divisionFilter) {
         return false;
       }
       if (!q) return true;
@@ -133,7 +137,8 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
         club.name.toLowerCase().includes(q) ||
         club.shortName.toLowerCase().includes(q) ||
         club.city.toLowerCase().includes(q) ||
-        club.state.toLowerCase().includes(q)
+        club.state.toLowerCase().includes(q) ||
+        (club.countryCode || '').toLowerCase().includes(q)
       );
     });
   }, [clubSearch, divisionFilter]);
@@ -243,7 +248,7 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#b5ff00]">
-                  Slot 0{slotIdx} · Série {save.division} ·{' '}
+                  Slot 0{slotIdx} · {getPlayableLeagueShortLabel(save.division)} ·{' '}
                   {save.currentYear || 2026}
                 </span>
                 {activeCareerSlot === slotIdx && (
@@ -360,7 +365,7 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
               Prancheta Pro
             </div>
             <div className="hidden sm:block text-[11px] text-[#b5ff00] font-mono mt-0.5 leading-none">
-              Brasileirão Série A & B · 2026
+              Brasileirão · Premier League · La Liga · 2026
             </div>
           </div>
         </div>
@@ -463,10 +468,10 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
                 <div className="lg:col-span-7 p-6 sm:p-9 flex flex-col justify-between gap-6">
                   <div className="space-y-2.5">
                     <span className="block text-xs font-mono font-bold uppercase tracking-wider text-[#b5ff00]">
-                      Série A & Série B · 40 Clubes · Elencos Reais
+                      4 Ligas Jogáveis · 80 Clubes · Elencos Reais
                     </span>
                     <h1 className="font-display text-4xl sm:text-6xl font-extrabold uppercase tracking-tight text-white leading-[0.94]">
-                      BRASILEIRÃO 2026
+                      TEMPORADA 2026
                     </h1>
                   </div>
 
@@ -508,7 +513,8 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
                     <>
                       <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase opacity-80">
                         <span>
-                          Slot 0{latestSave.slotIndex} · Série {latestSave.division}
+                          Slot 0{latestSave.slotIndex} ·{' '}
+                          {getPlayableLeagueShortLabel(latestSave.division)}
                         </span>
                         <span>{formatSavedTimestamp(latestSave.savedAt)}</span>
                       </div>
@@ -568,28 +574,28 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
                     <>
                       <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase opacity-80">
                         <span>Temporada 2026</span>
-                        <span>Série A & Série B</span>
+                        <span>BR · ING · ESP</span>
                       </div>
 
                       <div className="font-display text-3xl sm:text-4xl font-extrabold uppercase tracking-tight leading-none">
-                        40 CLUBES REAIS
+                        80 CLUBES JOGÁVEIS
                       </div>
 
                       <div className="grid grid-cols-3 gap-2 bg-[#0b0c10] text-white rounded-2xl p-3.5 text-center">
                         <div>
                           <div className="font-display text-2xl font-extrabold text-[#b5ff00]">
-                            20+20
+                            4
                           </div>
                           <div className="text-[10px] text-zinc-400">
-                            Série A e B
+                            Ligas Reais
                           </div>
                         </div>
                         <div>
                           <div className="font-display text-2xl font-extrabold text-white">
-                            880
+                            80
                           </div>
                           <div className="text-[10px] text-zinc-400">
-                            Atletas Reais
+                            Clubes Jogáveis
                           </div>
                         </div>
                         <div>
@@ -760,7 +766,11 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
                 <div className="rounded-[28px] overflow-hidden border border-white/10 bg-[#14171f] shadow-2xl">
                   <div className="bg-gradient-to-b from-[#b5ff00] to-[#8fd400] p-5 text-[#090a0f]">
                     <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase opacity-75 mb-2.5">
-                      <span>Série {selectedClub.division}</span>
+                      <span>
+                        {getPlayableLeagueShortLabel(
+                          getPlayableDivisionForClub(selectedClub)
+                        )}
+                      </span>
                       <span>
                         {selectedClub.city} · {selectedClub.state}
                       </span>
@@ -901,20 +911,22 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
                   </div>
                 </div>
 
-                {/* Division Filter Pills: Série A (20), Série B (20), Todos (40) */}
+                {/* Division Filter Pills: Série A, Série B, Premier League, La Liga, Todos */}
                 <div className="flex flex-wrap items-center gap-1.5">
                   {(
                     [
                       { id: 'A', label: 'Série A (20)' },
                       { id: 'B', label: 'Série B (20)' },
-                      { id: 'ALL', label: 'Todos (40)' },
+                      { id: 'PL', label: 'Premier League (20)' },
+                      { id: 'LALIGA', label: 'La Liga (20)' },
+                      { id: 'ALL', label: 'Todos (80)' },
                     ] as const
                   ).map((pill) => (
                     <button
                       key={pill.id}
                       type="button"
                       onClick={() => setDivisionFilter(pill.id)}
-                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-colors ${
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${
                         divisionFilter === pill.id
                           ? 'bg-[#b5ff00] text-[#090a0f]'
                           : 'bg-[#0b0c10] text-zinc-400 hover:text-white border border-white/[0.07]'
@@ -964,7 +976,10 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
                               {club.shortName}
                             </div>
                             <div className="text-[11px] text-zinc-400 truncate">
-                              Série {club.division} · {club.city}/{club.state} · {clubRank}º
+                              {getPlayableLeagueShortLabel(
+                                getPlayableDivisionForClub(club)
+                              )}{' '}
+                              · {club.city}/{club.state} · {clubRank}º
                             </div>
                           </div>
                         </div>

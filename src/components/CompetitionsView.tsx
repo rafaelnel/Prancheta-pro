@@ -12,6 +12,9 @@ import {
   USER_CLUB_ID,
   generateLeagueSchedule,
   getInitialStandingsForDivision,
+  getPlayableLeagueLabel,
+  getPlayableLeagueShortLabel,
+  isEuropeanPlayableDivision,
 } from '../data/initialDatabase';
 import {
   CHAMPIONS_STAGES,
@@ -32,6 +35,7 @@ import {
   LibertadoresState,
   MundialStage,
   MundialState,
+  PlayableDivision,
   RoundFixture,
   SeasonArchiveEntry,
   StandingsRow,
@@ -44,6 +48,8 @@ import { ClubBadge } from './ClubBadge';
 type CompTab =
   | 'A'
   | 'B'
+  | 'PL'
+  | 'LALIGA'
   | 'COPA_DO_BRASIL'
   | 'LIBERTADORES'
   | 'CHAMPIONS'
@@ -59,7 +65,7 @@ interface CompetitionsViewProps {
   seasonYear?: number;
   seasonHistory?: SeasonArchiveEntry[];
   userClubId?: string;
-  userDivision?: 'A' | 'B';
+  userDivision?: PlayableDivision;
   secondaryStandings?: StandingsRow[];
   secondaryFixtures?: RoundFixture[];
   copaDoBrasil?: CopaDoBrasilState;
@@ -211,9 +217,16 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
   }, [superMundial]);
 
   const clubMap = new Map(clubs.map((c) => [c.id, c]));
+  const userIsEuro = isEuropeanPlayableDivision(userDivision);
 
-  const viewedDivision: 'A' | 'B' =
-    viewedTab === 'B' ? 'B' : 'A';
+  const viewedDivision: PlayableDivision =
+    viewedTab === 'A' ||
+    viewedTab === 'B' ||
+    viewedTab === 'PL' ||
+    viewedTab === 'LALIGA'
+      ? viewedTab
+      : userDivision;
+  const viewedIsEuro = isEuropeanPlayableDivision(viewedDivision);
   const isViewingUserDivision = viewedDivision === userDivision;
   const activeStandings = isViewingUserDivision
     ? standings
@@ -230,12 +243,14 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
     (f) => f.roundNumber === selectedRound
   );
 
+  const relegationStartPos = viewedIsEuro ? 18 : 17;
+
   const filteredStandings = activeStandings
     .map((row, idx) => ({ row, pos: idx + 1 }))
     .filter(({ pos }) => {
       if (zoneFilter === 'TOP4') return pos <= 4;
-      if (zoneFilter === 'MID') return pos >= 5 && pos <= 12;
-      if (zoneFilter === 'Z4') return pos >= 17;
+      if (zoneFilter === 'MID') return viewedIsEuro ? pos >= 5 && pos <= 7 : pos >= 5 && pos <= 12;
+      if (zoneFilter === 'Z4') return pos >= relegationStartPos;
       return true;
     });
 
@@ -350,6 +365,8 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
     libertadores?.participantIds.includes(userClubId) ?? false;
   const userParticipatesCdb =
     copaDoBrasil?.participantIds.includes(userClubId) ?? false;
+  const userParticipatesUcl =
+    championsLeague?.participantIds.includes(userClubId) ?? false;
   const userParticipatesMundial =
     mundial?.participantIds.includes(userClubId) ?? false;
   const userParticipatesSuperMundial =
@@ -370,7 +387,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
       ? 'MUNDIAL DE CLUBES'
       : viewedTab === 'SUPER_MUNDIAL'
       ? 'SUPER MUNDIAL FIFA'
-      : `SÉRIE ${viewedDivision}`;
+      : getPlayableLeagueShortLabel(viewedDivision).toUpperCase();
 
   const headerSubtitle =
     viewedTab === 'HALL'
@@ -387,7 +404,59 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
       ? superMundial?.isActiveThisSeason
         ? `Super Mundial de Clubes ${seasonYear} · 16 Clubes (6 UEFA · 6 CONMEBOL · 4 Globais) · Quadrienal`
         : `Super Mundial de Clubes · Próxima Edição em ${superMundial?.nextEditionYear ?? seasonYear + 1} (Quadrienal)`
-      : `Brasileirão ${seasonYear} · 38 Rodadas (Turno & Returno)`;
+      : `${getPlayableLeagueLabel(viewedDivision)} ${seasonYear} · 38 Rodadas (Turno & Returno)`;
+
+  const competitionTabs: Array<{ id: CompTab; label: string }> = userIsEuro
+    ? [
+        { id: 'PL', label: `Premier League ${userDivision === 'PL' ? '★' : ''}` },
+        { id: 'LALIGA', label: `La Liga ${userDivision === 'LALIGA' ? '★' : ''}` },
+        {
+          id: 'CHAMPIONS',
+          label: `Champions ${userParticipatesUcl ? '★' : ''}`,
+        },
+        {
+          id: 'MUNDIAL',
+          label: `Mundial ${userParticipatesMundial ? '★' : ''}`,
+        },
+        {
+          id: 'SUPER_MUNDIAL',
+          label: `Super Mundial ${userParticipatesSuperMundial ? '★' : ''}`,
+        },
+        {
+          id: 'HALL',
+          label:
+            seasonHistory.length > 0 ? `Hall (${seasonHistory.length})` : 'Hall',
+        },
+      ]
+    : [
+        { id: 'A', label: `Série A ${userDivision === 'A' ? '★' : ''}` },
+        { id: 'B', label: `Série B ${userDivision === 'B' ? '★' : ''}` },
+        {
+          id: 'COPA_DO_BRASIL',
+          label: `Copa do Brasil ${userParticipatesCdb ? '★' : ''}`,
+        },
+        {
+          id: 'LIBERTADORES',
+          label: `Libertadores ${userParticipatesLib ? '★' : ''}`,
+        },
+        {
+          id: 'CHAMPIONS',
+          label: 'Champions',
+        },
+        {
+          id: 'MUNDIAL',
+          label: `Mundial ${userParticipatesMundial ? '★' : ''}`,
+        },
+        {
+          id: 'SUPER_MUNDIAL',
+          label: `Super Mundial ${userParticipatesSuperMundial ? '★' : ''}`,
+        },
+        {
+          id: 'HALL',
+          label:
+            seasonHistory.length > 0 ? `Hall (${seasonHistory.length})` : 'Hall',
+        },
+      ];
 
   return (
     <div className="space-y-5">
@@ -405,39 +474,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           {/* Competition Selector */}
           <div className="flex flex-wrap items-center gap-1 bg-[#14171f] p-1 rounded-2xl sm:rounded-full border border-white/[0.08]">
-            {(
-              [
-                { id: 'A', label: `Série A ${userDivision === 'A' ? '★' : ''}` },
-                { id: 'B', label: `Série B ${userDivision === 'B' ? '★' : ''}` },
-                {
-                  id: 'COPA_DO_BRASIL',
-                  label: `Copa do Brasil ${userParticipatesCdb ? '★' : ''}`,
-                },
-                {
-                  id: 'LIBERTADORES',
-                  label: `Libertadores ${userParticipatesLib ? '★' : ''}`,
-                },
-                {
-                  id: 'CHAMPIONS',
-                  label: 'Champions',
-                },
-                {
-                  id: 'MUNDIAL',
-                  label: `Mundial ${userParticipatesMundial ? '★' : ''}`,
-                },
-                {
-                  id: 'SUPER_MUNDIAL',
-                  label: `Super Mundial ${userParticipatesSuperMundial ? '★' : ''}`,
-                },
-                {
-                  id: 'HALL',
-                  label:
-                    seasonHistory.length > 0
-                      ? `Hall (${seasonHistory.length})`
-                      : 'Hall',
-                },
-              ] as Array<{ id: CompTab; label: string }>
-            ).map((tab) => (
+            {competitionTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => {
@@ -457,8 +494,11 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
         </div>
       </div>
 
-      {/* VIEW: SÉRIE A or SÉRIE B */}
-      {(viewedTab === 'A' || viewedTab === 'B') && (
+      {/* VIEW: LEAGUE TABLE (Série A / Série B / Premier League / La Liga) */}
+      {(viewedTab === 'A' ||
+        viewedTab === 'B' ||
+        viewedTab === 'PL' ||
+        viewedTab === 'LALIGA') && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-1.5">
             {(
@@ -466,13 +506,18 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                 { id: 'ALL', label: 'Todos (20)' },
                 {
                   id: 'TOP4',
-                  label:
-                    viewedDivision === 'A' ? 'G-4 Libertadores' : 'G-4 Acesso',
+                  label: viewedIsEuro
+                    ? 'G-4 Champions'
+                    : viewedDivision === 'A'
+                    ? 'G-4 Libertadores'
+                    : 'G-4 Acesso',
                 },
-                ...(viewedDivision === 'A'
+                ...(viewedIsEuro
+                  ? [{ id: 'MID' as const, label: 'Europa League' }]
+                  : viewedDivision === 'A'
                   ? [{ id: 'MID' as const, label: 'Sul-Americana' }]
                   : []),
-                { id: 'Z4', label: 'Zona Z-4' },
+                { id: 'Z4', label: viewedIsEuro ? 'Zona Z-3' : 'Zona Z-4' },
               ] as const
             ).map((pill) => (
               <button
@@ -496,23 +541,31 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                 <div className="flex items-center gap-2.5">
                   <Trophy className="w-4 h-4 text-[#b5ff00]" />
                   <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white">
-                    Classificação — Série {viewedDivision}
+                    Classificação — {getPlayableLeagueShortLabel(viewedDivision)}
                   </h3>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-4 text-[11px] text-zinc-400">
                   <span className="text-[#b5ff00] font-semibold">
-                    {viewedDivision === 'A'
+                    {viewedIsEuro
+                      ? '■ 1º–4º Champions League'
+                      : viewedDivision === 'A'
                       ? '■ 1º–4º Libertadores'
                       : '■ 1º–4º Acesso à Série A'}
                   </span>
-                  {viewedDivision === 'A' && (
+                  {viewedIsEuro ? (
+                    <span className="text-white font-semibold">
+                      ■ 5º–7º Europa / Conference
+                    </span>
+                  ) : viewedDivision === 'A' ? (
                     <span className="text-white font-semibold">
                       ■ 5º–8º Sul-Americana
                     </span>
-                  )}
+                  ) : null}
                   <span className="text-rose-400 font-semibold">
-                    {viewedDivision === 'A'
+                    {viewedIsEuro
+                      ? '■ 18º–20º Rebaixamento'
+                      : viewedDivision === 'A'
                       ? '■ 17º–20º Rebaixamento'
                       : '■ 17º–20º Série C'}
                   </span>
@@ -551,9 +604,10 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                       const posColor =
                         pos <= 4
                           ? 'text-[#b5ff00] font-bold'
-                          : viewedDivision === 'A' && pos <= 8
+                          : (viewedIsEuro && pos <= 7) ||
+                            (viewedDivision === 'A' && pos <= 8)
                           ? 'text-white font-semibold'
-                          : pos >= 17
+                          : pos >= relegationStartPos
                           ? 'text-rose-400 font-semibold'
                           : 'text-zinc-400';
 
@@ -653,7 +707,8 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-[#b5ff00]" />
                   <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white">
-                    {selectedRound}ª Rodada · Série {viewedDivision}
+                    {selectedRound}ª Rodada ·{' '}
+                    {getPlayableLeagueShortLabel(viewedDivision)}
                   </h3>
                 </div>
 
@@ -1826,44 +1881,72 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                       </h3>
                     </div>
                     <span className="text-xs font-mono text-zinc-300">
-                      {entry.userClubName}: {entry.userRank}º na Série{' '}
-                      {entry.userDivision} ({entry.userPoints} pts)
+                      {entry.userClubName}: {entry.userRank}º (
+                      {getPlayableLeagueShortLabel(entry.userDivision)} ·{' '}
+                      {entry.userPoints} pts)
                     </span>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                    <div className="bg-[#0b0c10] border border-[#b5ff00]/30 rounded-2xl p-3.5">
-                      <div className="text-[10px] font-mono uppercase text-[#b5ff00]">
-                        Brasileirão Série A
-                      </div>
-                      <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
-                        {entry.serieAChampionName}
-                      </div>
-                    </div>
-                    <div className="bg-[#0b0c10] border border-white/10 rounded-2xl p-3.5">
-                      <div className="text-[10px] font-mono uppercase text-zinc-400">
-                        Brasileirão Série B
-                      </div>
-                      <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
-                        {entry.serieBChampionName}
-                      </div>
-                    </div>
-                    <div className="bg-[#0b0c10] border border-amber-400/30 rounded-2xl p-3.5">
-                      <div className="text-[10px] font-mono uppercase text-amber-300">
-                        Copa do Brasil
-                      </div>
-                      <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
-                        {entry.cdbChampionName || '—'}
-                      </div>
-                    </div>
-                    <div className="bg-[#0b0c10] border border-sky-400/30 rounded-2xl p-3.5">
-                      <div className="text-[10px] font-mono uppercase text-sky-300">
-                        Copa Libertadores
-                      </div>
-                      <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
-                        {entry.libChampionName || '—'}
-                      </div>
-                    </div>
+                    {entry.premierLeagueChampionName || entry.laLigaChampionName ? (
+                      <>
+                        {entry.premierLeagueChampionName && (
+                          <div className="bg-[#0b0c10] border border-[#b5ff00]/30 rounded-2xl p-3.5">
+                            <div className="text-[10px] font-mono uppercase text-[#b5ff00]">
+                              Premier League
+                            </div>
+                            <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                              {entry.premierLeagueChampionName}
+                            </div>
+                          </div>
+                        )}
+                        {entry.laLigaChampionName && (
+                          <div className="bg-[#0b0c10] border border-amber-400/30 rounded-2xl p-3.5">
+                            <div className="text-[10px] font-mono uppercase text-amber-300">
+                              La Liga
+                            </div>
+                            <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                              {entry.laLigaChampionName}
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div className="bg-[#0b0c10] border border-[#b5ff00]/30 rounded-2xl p-3.5">
+                          <div className="text-[10px] font-mono uppercase text-[#b5ff00]">
+                            Brasileirão Série A
+                          </div>
+                          <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                            {entry.serieAChampionName}
+                          </div>
+                        </div>
+                        <div className="bg-[#0b0c10] border border-white/10 rounded-2xl p-3.5">
+                          <div className="text-[10px] font-mono uppercase text-zinc-400">
+                            Brasileirão Série B
+                          </div>
+                          <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                            {entry.serieBChampionName}
+                          </div>
+                        </div>
+                        <div className="bg-[#0b0c10] border border-amber-400/30 rounded-2xl p-3.5">
+                          <div className="text-[10px] font-mono uppercase text-amber-300">
+                            Copa do Brasil
+                          </div>
+                          <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                            {entry.cdbChampionName || '—'}
+                          </div>
+                        </div>
+                        <div className="bg-[#0b0c10] border border-sky-400/30 rounded-2xl p-3.5">
+                          <div className="text-[10px] font-mono uppercase text-sky-300">
+                            Copa Libertadores
+                          </div>
+                          <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                            {entry.libChampionName || '—'}
+                          </div>
+                        </div>
+                      </>
+                    )}
                     {entry.uclChampionName && (
                       <div className="bg-[#0b0c10] border border-indigo-400/30 rounded-2xl p-3.5">
                         <div className="text-[10px] font-mono uppercase text-indigo-300">

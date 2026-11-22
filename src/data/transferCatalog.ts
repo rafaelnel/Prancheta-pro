@@ -61,30 +61,6 @@ export const INTERNATIONAL_MARKET_CLUBS: MarketClubProfile[] = [
     avgStrength: 80,
   },
   {
-    id: 'intl-brighton',
-    name: 'Brighton & Hove Albion',
-    shortName: 'Brighton',
-    abbr: 'BHA',
-    country: 'Inglaterra',
-    leagueName: 'Premier League',
-    scope: 'INTERNACIONAL',
-    primaryColor: '#0ea5e9',
-    reputation: 81,
-    avgStrength: 79,
-  },
-  {
-    id: 'intl-girona',
-    name: 'Girona FC',
-    shortName: 'Girona',
-    abbr: 'GIR',
-    country: 'Espanha',
-    leagueName: 'La Liga',
-    scope: 'INTERNACIONAL',
-    primaryColor: '#f43f5e',
-    reputation: 79,
-    avgStrength: 77,
-  },
-  {
     id: 'intl-shaktar',
     name: 'Shakhtar Donetsk',
     shortName: 'Shakhtar',
@@ -115,9 +91,9 @@ type IntlSeed = [
 ];
 
 /**
- * Catálogo Internacional complementar (clubes fora da Champions/Mundial):
- * - Os 16 clubes da Champions League e os 4 clubes do Mundial/Super Mundial já estão integrados
- *   com elencos completos de 18 atletas em ALL_WORLD_CLUBS e aiSquads (sem duplicidade).
+ * Catálogo Internacional complementar (clubes fora da Champions, Premier League, La Liga e Mundial):
+ * - Os 16 clubes da Champions League, todos os 20 da Premier League, todos os 20 de La Liga
+ *   e os 4 clubes do Mundial já estão integrados com elencos completos de 18 atletas em ALL_WORLD_CLUBS (sem duplicidade).
  */
 const INTERNATIONAL_PLAYER_SEEDS: IntlSeed[] = [
   // Porto
@@ -125,16 +101,6 @@ const INTERNATIONAL_PLAYER_SEEDS: IntlSeed[] = [
   ['intl-porto', 22, 'Alan Varela', 24, 'Argentina', 'VOL', 16.1, true, 'NONE', 4.0, { desarme: 17, passe: 16 }],
   ['intl-porto', 4, 'Otávio Ataíde', 23, 'Brasil', 'ZAG', 15.3, false, 'LOAN', 3.5],
   ['intl-porto', 19, 'Danny Namaso', 25, 'Inglaterra', 'ATA', 15.1, false, 'TRANSFER', 3.5],
-
-  // Brighton
-  ['intl-brighton', 30, 'Pervis Estupiñán', 28, 'Equador', 'LE', 15.9, true, 'NONE', 4.0],
-  ['intl-brighton', 20, 'Julio Enciso', 22, 'Paraguai', 'MEI', 15.5, false, 'LOAN', 4.0, { drible: 17, finalizacao: 16 }],
-  ['intl-brighton', 2, 'Igor Julio', 28, 'Brasil', 'ZAG', 15.4, false, 'TRANSFER', 3.5],
-
-  // Girona
-  ['intl-girona', 10, 'Yáser Asprilla', 22, 'Colômbia', 'MEI', 15.4, false, 'LOAN', 4.0, { drible: 17 }],
-  ['intl-girona', 18, 'Oriol Romeu', 34, 'Espanha', 'VOL', 15.1, false, 'TRANSFER', 3.0],
-  ['intl-girona', 9, 'Abel Ruiz', 26, 'Espanha', 'ATA', 15.3, false, 'TRANSFER', 3.5],
 
   // Shakhtar
   ['intl-shaktar', 7, 'Eguinaldo', 21, 'Brasil', 'ATA', 14.9, false, 'LOAN', 3.5, { velocidade: 17 }],

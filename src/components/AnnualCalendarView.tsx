@@ -18,6 +18,11 @@ import {
 } from 'lucide-react';
 import { SEASON_CALENDAR } from '../data/cupFactory';
 import {
+  getPlayableDivisionForClub,
+  getPlayableLeagueShortLabel,
+  isEuropeanPlayableDivision,
+} from '../data/initialDatabase';
+import {
   addMonthsToDayOffset,
   dayOffsetToDate,
   dayOffsetToIsoDate,
@@ -177,13 +182,26 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
   const participatesInMundial =
     mundial?.participantIds.includes(userClub.id) ?? false;
 
+  const userPlayableDiv = getPlayableDivisionForClub(userClub);
+  const userIsEuro = isEuropeanPlayableDivision(userPlayableDiv);
+  const userLeagueShort = getPlayableLeagueShortLabel(userPlayableDiv);
+
   const activeCalendarSteps = useMemo(
     () =>
-      SEASON_CALENDAR.filter(
-        (step) =>
-          step.competition !== 'SUPER_MUNDIAL' || isSuperMundialActive
-      ),
-    [isSuperMundialActive]
+      SEASON_CALENDAR.filter((step) => {
+        if (step.competition === 'SUPER_MUNDIAL' && !isSuperMundialActive) {
+          return false;
+        }
+        if (
+          userIsEuro &&
+          (step.competition === 'COPA_DO_BRASIL' ||
+            step.competition === 'LIBERTADORES')
+        ) {
+          return false;
+        }
+        return true;
+      }),
+    [isSuperMundialActive, userIsEuro]
   );
 
   const entries: CalendarEntry[] = useMemo(() => {
@@ -225,6 +243,15 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
                 f.homeClubId === userClub.id || f.awayClubId === userClub.id
             ) || null;
         }
+      } else if (
+        step.competition === 'CHAMPIONS_LEAGUE' &&
+        step.uclStage &&
+        championsLeague
+      ) {
+        fixture =
+          (championsLeague.fixturesByStage[step.uclStage] || []).find(
+            (f) => f.homeClubId === userClub.id || f.awayClubId === userClub.id
+          ) || null;
       } else if (step.competition === 'MUNDIAL' && step.mundialStage && mundial) {
         fixture =
           (mundial.fixturesByStage[step.mundialStage] || []).find(
@@ -286,14 +313,24 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
       let scoreLabel: string | null = null;
       let penaltiesLabel: string | null = null;
 
-      if (step.competition === 'CHAMPIONS_LEAGUE') {
+      if (step.competition === 'CHAMPIONS_LEAGUE' && !fixture) {
         const uclFixtures =
           step.uclStage && championsLeague
             ? championsLeague.fixturesByStage[step.uclStage] || []
             : [];
         const stagePlayed =
           uclFixtures.length > 0 && uclFixtures.every((f) => f.played);
-        status = stagePlayed ? 'PLAYED' : 'NOT_PARTICIPATING';
+        const userInUcl =
+          championsLeague?.participantIds.includes(userClub.id) ?? false;
+        const userElimUcl =
+          championsLeague?.eliminatedIds.includes(userClub.id) ?? false;
+        status = stagePlayed
+          ? 'PLAYED'
+          : userElimUcl
+          ? 'ELIMINATED'
+          : userInUcl
+          ? 'TBD'
+          : 'NOT_PARTICIPATING';
       } else if (
         fixture?.played &&
         fixture.homeGoals !== null &&
@@ -598,8 +635,15 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
       };
     }
     return {
-      label: `Série ${userClub.division === 'B' ? 'B' : 'A'}`,
-      short: userClub.division === 'B' ? 'SÉRIE B' : 'SÉRIE A',
+      label: userLeagueShort,
+      short:
+        userPlayableDiv === 'PL'
+          ? 'PREMIER'
+          : userPlayableDiv === 'LALIGA'
+          ? 'LA LIGA'
+          : userPlayableDiv === 'B'
+          ? 'SÉRIE B'
+          : 'SÉRIE A',
       pillClass: 'bg-[#b5ff00]/15 text-[#b5ff00] border-[#b5ff00]/30',
       dotClass: 'bg-[#b5ff00]',
       Icon: Trophy,
@@ -612,7 +656,13 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-3">
         <div>
           <span className="text-xs text-zinc-400 block mb-0.5">
-            Temporada {seasonYear} · Brasileirão, Copa do Brasil, Libertadores, Champions, Mundial{isSuperMundialActive ? ' e Super Mundial' : ''}
+            {userIsEuro
+              ? `Temporada ${seasonYear} · ${userLeagueShort}, Champions League, Mundial${
+                  isSuperMundialActive ? ' e Super Mundial' : ''
+                }`
+              : `Temporada ${seasonYear} · Brasileirão, Copa do Brasil, Libertadores, Champions, Mundial${
+                  isSuperMundialActive ? ' e Super Mundial' : ''
+                }`}
           </span>
           <h2 className="font-display text-3xl sm:text-4xl font-extrabold uppercase tracking-tight text-white leading-none">
             CALENDÁRIO ANUAL {seasonYear}
@@ -623,9 +673,16 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
           {(
             [
               { id: 'ALL', label: `Todos (${activeCalendarSteps.length})` },
-              { id: 'BRASILEIRAO', label: 'Brasileirão (38)' },
-              { id: 'COPA_DO_BRASIL', label: 'Copa BR (5)' },
-              { id: 'LIBERTADORES', label: 'Libertadores (10)' },
+              {
+                id: 'BRASILEIRAO',
+                label: `${userIsEuro ? userLeagueShort : 'Brasileirão'} (38)`,
+              },
+              ...(!userIsEuro
+                ? [
+                    { id: 'COPA_DO_BRASIL' as const, label: 'Copa BR (5)' },
+                    { id: 'LIBERTADORES' as const, label: 'Libertadores (10)' },
+                  ]
+                : []),
               { id: 'CHAMPIONS_LEAGUE', label: 'Champions (4)' },
               { id: 'MUNDIAL', label: 'Mundial (2)' },
               ...(isSuperMundialActive
@@ -906,16 +963,31 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
           <div className="flex items-center gap-3 text-[11px] text-zinc-400">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-[#b5ff00]" />
-              Brasileirão
+              {userIsEuro ? userLeagueShort : 'Brasileirão'}
             </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-400" />
-              Copa do Brasil
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-sky-400" />
-              Libertadores
-            </span>
+            {userIsEuro ? (
+              <>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-indigo-400" />
+                  Champions
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-yellow-400" />
+                  Mundial
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-amber-400" />
+                  Copa do Brasil
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-sky-400" />
+                  Libertadores
+                </span>
+              </>
+            )}
           </div>
         </div>
 

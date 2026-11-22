@@ -121,6 +121,14 @@ export function buildPlayersFromSeeds(
 
   return seeds.map((seed, idx) => {
     const [number, name, age, nationality, position, overall, overrides] = seed;
+    const isExactOvrSeed = overall >= 60;
+    const targetExactOvr = isExactOvrSeed
+      ? Math.max(60, Math.min(95, Math.round(overall)))
+      : null;
+    const effectiveSeedStrength = isExactOvrSeed
+      ? Math.max(10.5, Math.min(18.8, 12.2 + ((targetExactOvr! - 60) / 35) * 6.5))
+      : overall;
+
     const isStarter = idx < 11;
     const slotDef = isStarter ? formationSlots[idx] : null;
     const sector = slotDef ? slotDef.sector : SECTOR_BY_POSITION[position];
@@ -131,7 +139,20 @@ export function buildPlayersFromSeeds(
     const isFatiguedStarter = idx === 5;
     const isTransitionReserve = idx === 21;
 
-    let attributes = generateAttributesFromSeed(position, overall, rng, overrides);
+    let attributes = generateAttributesFromSeed(
+      position,
+      effectiveSeedStrength,
+      rng,
+      overrides
+    );
+    if (targetExactOvr !== null) {
+      attributes = calibrateAttributesToTargetOvr(
+        attributes,
+        position,
+        targetExactOvr,
+        targetExactOvr
+      );
+    }
     let ovr6099 = calculatePlayerOverall(attributes, position);
     const playerId = `${club.id}-p${idx + 1}`;
     const potentialStars = assignPotentialStars(
@@ -199,7 +220,7 @@ export function buildPlayersFromSeeds(
       sector,
       condition,
       morale:
-        overall >= 16
+        effectiveSeedStrength >= 16
           ? 'Exuberante'
           : isStarter
           ? rng() > 0.45
@@ -227,7 +248,11 @@ export function buildPlayersFromSeeds(
         assists: 0,
         yellowCards: 0,
         avgRating: Number(
-          (6.80 + Math.max(0, overall - 13) * 0.14 + rng() * 0.15).toFixed(2)
+          (
+            6.80 +
+            Math.max(0, effectiveSeedStrength - 13) * 0.14 +
+            rng() * 0.15
+          ).toFixed(2)
         ),
       },
     };

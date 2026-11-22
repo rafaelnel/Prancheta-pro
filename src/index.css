@@ -164,6 +164,36 @@
   animation: market-outcome-enter 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+@keyframes preload-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes preload-exit {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.015);
+  }
+}
+
+.animate-preload-enter {
+  animation: preload-enter 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-preload-exit {
+  animation: preload-exit 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-market-backdrop-in,
   .animate-market-backdrop-out,
@@ -171,7 +201,9 @@
   .animate-market-deal-card-out,
   .animate-market-crest-pop,
   .animate-market-arrow-glide,
-  .animate-market-outcome-enter {
+  .animate-market-outcome-enter,
+  .animate-preload-enter,
+  .animate-preload-exit {
     animation-duration: 0.01ms !important;
     animation-delay: 0ms !important;
     transform: none !important;
@@ -182,4 +214,5 @@
     display: none;
   }
 }
+
 

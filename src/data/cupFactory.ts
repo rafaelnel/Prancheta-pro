@@ -1,4 +1,5 @@
 import {
+  ChampionsLeagueState,
   Club,
   CompetitionType,
   CopaDoBrasilStage,
@@ -736,7 +737,8 @@ export function findUserFixtureForStep(
   copaDoBrasil: CopaDoBrasilState,
   libertadores: LibertadoresState,
   mundial?: MundialState,
-  superMundial?: SuperMundialState
+  superMundial?: SuperMundialState,
+  championsLeague?: ChampionsLeagueState
 ): RoundFixture | null {
   if (step.competition === 'BRASILEIRAO' && step.leagueRound) {
     return (
@@ -777,9 +779,15 @@ export function findUserFixtureForStep(
       );
     }
   }
-  // UEFA Champions League é sempre simulada automaticamente (usuário não joga)
   if (step.competition === 'CHAMPIONS_LEAGUE') {
-    return null;
+    if (!championsLeague || !step.uclStage) return null;
+    const list = championsLeague.fixturesByStage[step.uclStage] || [];
+    return (
+      list.find(
+        (f) =>
+          (f.homeClubId === userClubId || f.awayClubId === userClubId) && !f.played
+      ) || null
+    );
   }
   if (step.competition === 'MUNDIAL' && mundial && step.mundialStage) {
     const list = mundial.fixturesByStage[step.mundialStage] || [];
@@ -925,7 +933,7 @@ export function getCupPrizeMoney(
   isFinalWinner: boolean,
   options?: {
     isUserHome?: boolean;
-    clubDivision?: 'A' | 'B' | 'LIB' | 'UCL' | 'WORLD';
+    clubDivision?: 'A' | 'B' | 'LIB' | 'UCL' | 'PL' | 'LALIGA' | 'WORLD';
   }
 ): number {
   if (competition === 'COPA_DO_BRASIL') {
@@ -982,6 +990,15 @@ export function getCupPrizeMoney(
     return Math.round(
       LIBERTADORES_2026_PRIZE_USD.oitavas * LIBERTADORES_USD_TO_BRL
     );
+  }
+
+  if (competition === 'CHAMPIONS_LEAGUE') {
+    if (stageLabel === 'Final') {
+      return isFinalWinner || userAdvancedOrWon ? 150_000_000 : 111_000_000;
+    }
+    if (stageLabel === 'Semifinal') return userAdvancedOrWon ? 90_000_000 : 48_000_000;
+    if (stageLabel === 'Quartas') return userAdvancedOrWon ? 75_000_000 : 36_000_000;
+    return userAdvancedOrWon ? 66_000_000 : 28_000_000;
   }
 
   if (competition === 'MUNDIAL') {

@@ -14,6 +14,10 @@ import {
   Zap,
 } from 'lucide-react';
 import { Club, SeasonEndReport } from '../types/football';
+import {
+  getPlayableLeagueShortLabel,
+  isEuropeanPlayableDivision,
+} from '../data/initialDatabase';
 import { formatCompactBRL } from '../utils/formatters';
 import { ClubBadge } from './ClubBadge';
 
@@ -46,71 +50,138 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
   const getClub = (id: string | null | undefined) =>
     id ? clubMap.get(id) || null : null;
 
-  const championsCards = [
-    {
-      competition: `Brasileirão Série A ${report.seasonYear}`,
-      club: getClub(report.serieAChampionId),
-      fallbackName: report.serieAChampionName,
-      accent: 'bg-[#b5ff00] text-[#090a0f]',
-      Icon: Trophy,
-    },
-    {
-      competition: `Brasileirão Série B ${report.seasonYear}`,
-      club: getClub(report.serieBChampionId),
-      fallbackName: report.serieBChampionName,
-      accent: 'bg-white text-[#090a0f]',
-      Icon: ArrowUpCircle,
-    },
-    {
-      competition: `Copa do Brasil ${report.seasonYear}`,
-      club: getClub(report.cdbChampionId),
-      fallbackName: report.cdbChampionName || 'Não concluída',
-      accent: 'bg-amber-400 text-[#090a0f]',
-      Icon: Award,
-    },
-    {
-      competition: `Copa Libertadores ${report.seasonYear}`,
-      club: getClub(report.libChampionId),
-      fallbackName: report.libChampionName || 'Não concluída',
-      accent: 'bg-sky-400 text-[#090a0f]',
-      Icon: Globe2,
-    },
-    ...(report.uclChampionName
-      ? [
-          {
-            competition: `UEFA Champions League ${report.seasonYear}`,
-            club: getClub(report.uclChampionId),
-            fallbackName: report.uclChampionName,
-            accent: 'bg-indigo-400 text-[#090a0f]',
-            Icon: Trophy,
-          },
-        ]
-      : []),
-    ...(report.mundialChampionName
-      ? [
-          {
-            competition: `Mundial de Clubes ${report.seasonYear}`,
-            club: getClub(report.mundialChampionId),
-            fallbackName: report.mundialChampionName,
-            accent: 'bg-yellow-400 text-[#090a0f]',
-            Icon: Award,
-          },
-        ]
-      : []),
-    ...(report.superMundialChampionName
-      ? [
-          {
-            competition: `Super Mundial FIFA ${report.seasonYear}`,
-            club: getClub(report.superMundialChampionId),
-            fallbackName: report.superMundialChampionName,
-            accent: 'bg-purple-400 text-[#090a0f]',
-            Icon: Globe2,
-          },
-        ]
-      : []),
-  ];
+  const isEuro = isEuropeanPlayableDivision(report.userFinalDivision);
+  const leagueLabel = getPlayableLeagueShortLabel(report.userFinalDivision);
 
-  const userSummaryStatus = report.userPromoted
+  const championsCards = isEuro
+    ? [
+        ...(report.premierLeagueChampionName
+          ? [
+              {
+                competition: `Premier League ${report.seasonYear}`,
+                club: getClub(report.premierLeagueChampionId),
+                fallbackName: report.premierLeagueChampionName,
+                accent: 'bg-[#b5ff00] text-[#090a0f]',
+                Icon: Trophy,
+              },
+            ]
+          : []),
+        ...(report.laLigaChampionName
+          ? [
+              {
+                competition: `La Liga ${report.seasonYear}`,
+                club: getClub(report.laLigaChampionId),
+                fallbackName: report.laLigaChampionName,
+                accent: 'bg-amber-400 text-[#090a0f]',
+                Icon: Award,
+              },
+            ]
+          : []),
+        ...(report.uclChampionName
+          ? [
+              {
+                competition: `UEFA Champions League ${report.seasonYear}`,
+                club: getClub(report.uclChampionId),
+                fallbackName: report.uclChampionName,
+                accent: 'bg-indigo-400 text-[#090a0f]',
+                Icon: Trophy,
+              },
+            ]
+          : []),
+        ...(report.mundialChampionName
+          ? [
+              {
+                competition: `Mundial de Clubes ${report.seasonYear}`,
+                club: getClub(report.mundialChampionId),
+                fallbackName: report.mundialChampionName,
+                accent: 'bg-yellow-400 text-[#090a0f]',
+                Icon: Award,
+              },
+            ]
+          : []),
+        ...(report.superMundialChampionName
+          ? [
+              {
+                competition: `Super Mundial FIFA ${report.seasonYear}`,
+                club: getClub(report.superMundialChampionId),
+                fallbackName: report.superMundialChampionName,
+                accent: 'bg-purple-400 text-[#090a0f]',
+                Icon: Globe2,
+              },
+            ]
+          : []),
+      ]
+    : [
+        {
+          competition: `Brasileirão Série A ${report.seasonYear}`,
+          club: getClub(report.serieAChampionId),
+          fallbackName: report.serieAChampionName,
+          accent: 'bg-[#b5ff00] text-[#090a0f]',
+          Icon: Trophy,
+        },
+        {
+          competition: `Brasileirão Série B ${report.seasonYear}`,
+          club: getClub(report.serieBChampionId),
+          fallbackName: report.serieBChampionName,
+          accent: 'bg-white text-[#090a0f]',
+          Icon: ArrowUpCircle,
+        },
+        {
+          competition: `Copa do Brasil ${report.seasonYear}`,
+          club: getClub(report.cdbChampionId),
+          fallbackName: report.cdbChampionName || 'Não concluída',
+          accent: 'bg-amber-400 text-[#090a0f]',
+          Icon: Award,
+        },
+        {
+          competition: `Copa Libertadores ${report.seasonYear}`,
+          club: getClub(report.libChampionId),
+          fallbackName: report.libChampionName || 'Não concluída',
+          accent: 'bg-sky-400 text-[#090a0f]',
+          Icon: Globe2,
+        },
+        ...(report.uclChampionName
+          ? [
+              {
+                competition: `UEFA Champions League ${report.seasonYear}`,
+                club: getClub(report.uclChampionId),
+                fallbackName: report.uclChampionName,
+                accent: 'bg-indigo-400 text-[#090a0f]',
+                Icon: Trophy,
+              },
+            ]
+          : []),
+        ...(report.mundialChampionName
+          ? [
+              {
+                competition: `Mundial de Clubes ${report.seasonYear}`,
+                club: getClub(report.mundialChampionId),
+                fallbackName: report.mundialChampionName,
+                accent: 'bg-yellow-400 text-[#090a0f]',
+                Icon: Award,
+              },
+            ]
+          : []),
+        ...(report.superMundialChampionName
+          ? [
+              {
+                competition: `Super Mundial FIFA ${report.seasonYear}`,
+                club: getClub(report.superMundialChampionId),
+                fallbackName: report.superMundialChampionName,
+                accent: 'bg-purple-400 text-[#090a0f]',
+                Icon: Globe2,
+              },
+            ]
+          : []),
+      ];
+
+  const userSummaryStatus = isEuro
+    ? report.userFinalRank === 1
+      ? `Campeão da ${leagueLabel}!`
+      : report.userQualifiedChampionsLeague
+      ? `Classificação garantida para a UEFA Champions League ${nextYear}!`
+      : `Temporada concluída na ${leagueLabel}.`
+    : report.userPromoted
     ? 'Acesso histórico conquistado para a Série A!'
     : report.userRelegated
     ? 'Rebaixamento para a Série B na próxima temporada.'
@@ -118,7 +189,7 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
     ? 'Campeão Brasileiro da Série A!'
     : report.userQualifiedLibertadores
     ? 'Classificação garantida para a Copa Libertadores!'
-    : `Permanência assegurada na Série ${report.userFinalDivision}.`;
+    : `Permanência assegurada na ${leagueLabel}.`;
 
   return (
     <div
@@ -147,9 +218,8 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
                 FIM DE TEMPORADA {report.seasonYear}
               </h2>
               <p className="text-xs sm:text-sm font-bold mt-1 opacity-90 truncate">
-                {userClub.shortName}: {report.userFinalRank}º na Série{' '}
-                {report.userFinalDivision} ({report.userFinalPoints} pts) ·{' '}
-                {userSummaryStatus}
+                {userClub.shortName}: {report.userFinalRank}º ({leagueLabel} ·{' '}
+                {report.userFinalPoints} pts) · {userSummaryStatus}
               </p>
             </div>
           </div>
@@ -176,7 +246,7 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
                 {report.userFinalRank}º Lugar · {report.userFinalPoints} pts
               </div>
               <div className="text-xs text-[#b5ff00] font-semibold mt-1">
-                Série {report.userFinalDivision} {report.seasonYear}
+                {leagueLabel} {report.seasonYear}
               </div>
             </div>
 
@@ -205,12 +275,20 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
                 Vaga Continental {nextYear}
               </div>
               <div className="font-display text-2xl font-extrabold text-white mt-1">
-                {report.userQualifiedLibertadores
+                {isEuro
+                  ? report.userQualifiedChampionsLeague
+                    ? 'Champions League'
+                    : leagueLabel
+                  : report.userQualifiedLibertadores
                   ? 'Copa Libertadores'
                   : 'Copa do Brasil & Liga'}
               </div>
               <div className="text-xs text-zinc-400 mt-1">
-                {report.userQualifiedLibertadores
+                {isEuro
+                  ? report.userQualifiedChampionsLeague
+                    ? 'Top 4 garantido na elite europeia'
+                    : 'Foco no G-4 europeu na próxima temporada'
+                  : report.userQualifiedLibertadores
                   ? 'Classificado entre os 8 representantes brasileiros'
                   : 'Participação nacional assegurada'}
               </div>
@@ -342,7 +420,8 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
             </div>
           </div>
 
-          {/* 4. Promotion / Relegation / Libertadores Qualifiers */}
+          {/* 4. Promotion / Relegation / Libertadores Qualifiers (Brasileirão) */}
+          {!isEuro && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
             <div className="bg-[#14171f] border border-emerald-500/25 rounded-2xl p-4 space-y-2.5">
               <div className="flex items-center gap-2 text-xs font-bold text-[#b5ff00]">
@@ -446,6 +525,7 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
               </div>
             </div>
           </div>
+          )}
 
           {/* 5. Evolution / Regression Preview if available */}
           {report.userEvolutionHighlights.length > 0 && (

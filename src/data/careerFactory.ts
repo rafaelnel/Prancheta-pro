@@ -4,7 +4,12 @@ import {
   LIBERTADORES_BR_CLUB_IDS,
   generateLeagueSchedule,
   getInitialStandingsForDivision,
+  getPlayableDivisionForClub,
+  getPlayableLeagueLabel,
+  getPlayableLeagueShortLabel,
   getRealSquadForClub,
+  getSecondaryPlayableDivision,
+  isEuropeanPlayableDivision,
 } from './initialDatabase';
 import {
   createInitialChampionsLeague,
@@ -26,6 +31,7 @@ import {
   CareerSlotIndex,
   Club,
   InboxMessage,
+  PlayableDivision,
   Player,
   RoundFixture,
   StandingsRow,
@@ -48,7 +54,10 @@ export function createInitialInboxForCareer(
   const isHome = r1Fix ? r1Fix.homeClubId === club.id : true;
   const userRank = standings.findIndex((s) => s.clubId === club.id) + 1;
   const userRow = standings.find((s) => s.clubId === club.id);
-  const divLabel = club.division === 'B' ? 'Série B' : 'Série A';
+  const playableDiv = getPlayableDivisionForClub(club);
+  const divLabel = getPlayableLeagueShortLabel(playableDiv);
+  const fullLeagueLabel = getPlayableLeagueLabel(playableDiv);
+  const isEuro = isEuropeanPlayableDivision(playableDiv);
 
   const fatiguedStarter =
     [...squad]
@@ -69,8 +78,24 @@ export function createInitialInboxForCareer(
   const oppStar = opponentClub.starPlayers[0];
 
   const gateEstimate = isHome
-    ? Math.round((club.capacity * 0.8 * 85) / 100000) * 100000
+    ? Math.round((club.capacity * 0.8 * (isEuro ? 260 : 85)) / 100000) * 100000
+    : isEuro
+    ? 2_400_000
     : 850000;
+
+  const boardGoalBullet = isEuro
+    ? club.reputation >= 87
+      ? `Meta 2026: Disputar o título da ${fullLeagueLabel} e avançar forte na UEFA Champions League.`
+      : club.reputation >= 80
+      ? `Meta 2026: Brigar pelo G-4 da ${fullLeagueLabel} e vaga na UEFA Champions League.`
+      : `Meta 2026: Permanência segura na ${fullLeagueLabel} e valorização do elenco.`
+    : playableDiv === 'B'
+    ? club.reputation >= 74
+      ? 'Meta 2026: Acesso direto no G-4 da Série B e avanço na Copa do Brasil.'
+      : 'Meta 2026: Campanha segura na Série B e Copa do Brasil.'
+    : LIBERTADORES_BR_CLUB_IDS.includes(club.id)
+    ? 'Meta 2026: Título da Série A, Copa do Brasil e Copa Libertadores.'
+    : 'Meta 2026: Permanência, Copa do Brasil e vaga na Libertadores.';
 
   return [
     {
@@ -83,7 +108,7 @@ export function createInitialInboxForCareer(
       priority: 'positive',
       read: false,
       body: [
-        `Bem-vindo ao ${club.name} para a temporada 2026, ${managerName}. A estreia oficial na ${divLabel} 2026 será contra o ${opponentClub.name} (esquema ${opponentClub.formation}).`,
+        `Bem-vindo ao ${club.name} para a temporada 2026, ${managerName}. A estreia oficial na ${fullLeagueLabel} 2026 será contra o ${opponentClub.name} (esquema ${opponentClub.formation}).`,
         oppStar
           ? `Principal atenção no adversário: ${oppStar.name} (${oppStar.position}, ${oppStar.highlightAttribute}).`
           : `Ajuste a prancheta antes do apito inicial.`,
@@ -131,14 +156,10 @@ export function createInitialInboxForCareer(
         `Início da temporada 2026 (${userRank}º na listagem inicial, ${userRow?.points ?? 0} pts). Caixa disponível: ${formatCompactBRL(club.cashBalance)} | Bilheteria prevista na estreia: ${formatCompactBRL(gateEstimate)}.`,
       ],
       bulletPoints: [
-        club.division === 'B'
-          ? club.reputation >= 74
-            ? 'Meta 2026: Acesso direto no G-4 da Série B e avanço na Copa do Brasil.'
-            : 'Meta 2026: Campanha segura na Série B e Copa do Brasil.'
-          : LIBERTADORES_BR_CLUB_IDS.includes(club.id)
-          ? 'Meta 2026: Título da Série A, Copa do Brasil e Copa Libertadores.'
-          : 'Meta 2026: Permanência, Copa do Brasil e vaga na Libertadores.',
-        `Folha mensal: ${formatCompactBRL(club.wageBudget)} · ${CONMEBOL_FOREIGN_CLUBS.length + LIBERTADORES_BR_CLUB_IDS.length} clubes na Libertadores.`,
+        boardGoalBullet,
+        isEuro
+          ? `Folha mensal: ${formatCompactBRL(club.wageBudget)} · 20 clubes na ${fullLeagueLabel} (38 rodadas).`
+          : `Folha mensal: ${formatCompactBRL(club.wageBudget)} · ${CONMEBOL_FOREIGN_CLUBS.length + LIBERTADORES_BR_CLUB_IDS.length} clubes na Libertadores.`,
       ],
       actionLabel: 'Ver Finanças',
       actionTargetTab: 'finances',
@@ -160,17 +181,21 @@ export function createNewCareerSave(
   }));
 
   const userClub = clubs.find((c) => c.id === clubId) || clubs[0];
-  const division: 'A' | 'B' = userClub.division === 'B' ? 'B' : 'A';
-  const otherDivision: 'A' | 'B' = division === 'A' ? 'B' : 'A';
+  const division: PlayableDivision = getPlayableDivisionForClub(userClub);
+  const otherDivision: PlayableDivision = getSecondaryPlayableDivision(division);
 
-  const standings = getInitialStandingsForDivision(division);
-  const fixtures = generateLeagueSchedule(userClub.id, division);
-  const secondaryStandings = getInitialStandingsForDivision(otherDivision);
-  const secondaryFixtures = generateLeagueSchedule('__none__', otherDivision);
+  const standings = getInitialStandingsForDivision(division, clubs);
+  const fixtures = generateLeagueSchedule(userClub.id, division, clubs);
+  const secondaryStandings = getInitialStandingsForDivision(otherDivision, clubs);
+  const secondaryFixtures = generateLeagueSchedule('__none__', otherDivision, clubs);
 
   const copaDoBrasil = createInitialCopaDoBrasil(userClub.id, clubs);
   const libertadores = createInitialLibertadores(userClub.id);
-  const championsLeague = createInitialChampionsLeague(2026, clubs);
+  const championsLeague = createInitialChampionsLeague(
+    2026,
+    clubs,
+    isEuropeanPlayableDivision(division) ? userClub.id : undefined
+  );
   const mundial = createInitialMundial(2026);
   const superMundial = createInitialSuperMundial({
     seasonYear: 2026,

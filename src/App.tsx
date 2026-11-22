@@ -46,6 +46,10 @@ import {
   USER_CLUB_ID,
   generateLeagueSchedule,
   getInitialStandingsForDivision,
+  getPlayableDivisionForClub,
+  getPlayableLeagueLabel,
+  getPlayableLeagueShortLabel,
+  isEuropeanPlayableDivision,
 } from './data/initialDatabase';
 import {
   SEASON_CALENDAR,
@@ -644,6 +648,19 @@ export default function App() {
     [clubs, userClubId]
   );
 
+  const userPlayableDivision = useMemo(
+    () => getPlayableDivisionForClub(userClub),
+    [userClub]
+  );
+  const userLeagueShort = useMemo(
+    () => getPlayableLeagueShortLabel(userPlayableDivision),
+    [userPlayableDivision]
+  );
+  const userLeagueFull = useMemo(
+    () => getPlayableLeagueLabel(userPlayableDivision),
+    [userPlayableDivision]
+  );
+
   const currentCalendarStep = useMemo(
     () =>
       SEASON_CALENDAR[seasonStepIndex] ||
@@ -660,7 +677,8 @@ export default function App() {
         copaDoBrasil,
         libertadores,
         mundial,
-        superMundial
+        superMundial,
+        championsLeague
       ) ||
       fixtures.find(
         (f) => f.roundNumber === currentRound && f.isUserMatch
@@ -674,6 +692,7 @@ export default function App() {
       libertadores,
       mundial,
       superMundial,
+      championsLeague,
       currentRound,
     ]
   );
@@ -847,7 +866,7 @@ export default function App() {
         slotIndex: targetSlot,
         managerName: override?.managerName ?? managerName,
         userClubId: nextUserClubId,
-        division: nextClub.division === 'B' ? 'B' : 'A',
+        division: getPlayableDivisionForClub(nextClub),
         clubName: nextClub.name,
         clubShortName: nextClub.shortName,
         clubAbbr: nextClub.abbr,
@@ -1281,6 +1300,7 @@ export default function App() {
       let newSecondaryStandings = secondaryStandings;
       let updatedCopaDoBrasil = copaDoBrasil;
       let updatedLibertadores = libertadores;
+      let updatedChampionsLeague = championsLeague;
       let updatedMundial = mundial;
       let updatedSuperMundial = superMundial;
       let updatedAiSquads = aiSquads;
@@ -1402,12 +1422,62 @@ export default function App() {
           if (
             currentCalendarStep.libStage === 'Final' &&
             updatedLibertadores.championClubId &&
-            championsLeague.championClubId &&
+            updatedChampionsLeague.championClubId &&
             !updatedMundial.isSeeded
           ) {
             updatedMundial = seedMundialBracket(
               updatedMundial,
-              championsLeague.championClubId,
+              updatedChampionsLeague.championClubId,
+              updatedLibertadores.championClubId,
+              clubs,
+              userClubId
+            );
+          }
+        }
+      } else if (comp === 'CHAMPIONS_LEAGUE' && currentCalendarStep.uclStage) {
+        updatedChampionsLeague = advanceChampionsLeagueStage(
+          championsLeague,
+          currentCalendarStep.uclStage,
+          clubs,
+          Math.random,
+          userMatchPayload,
+          userClubId
+        );
+        const uclFixes =
+          updatedChampionsLeague.fixturesByStage[currentCalendarStep.uclStage] || [];
+        updatedAiSquads = attributeAiRoundPlayerStats(
+          updatedAiSquads,
+          uclFixes,
+          userClubId
+        );
+        for (const fx of uclFixes) {
+          aiHomeMatches.push({
+            clubId: fx.homeClubId,
+            rank: 3,
+            competition: 'CHAMPIONS_LEAGUE',
+            stageLabel: currentCalendarStep.uclStage,
+          });
+        }
+        prizeMoney = getCupPrizeMoney(
+          'CHAMPIONS_LEAGUE',
+          currentCalendarStep.uclStage,
+          userAdvanced,
+          currentCalendarStep.uclStage === 'Final' && userAdvanced
+        );
+        if (
+          currentCalendarStep.uclStage === 'Final' &&
+          updatedChampionsLeague.championClubId
+        ) {
+          updatedSuperMundial = syncSuperMundialWithChampionsResults(
+            updatedSuperMundial,
+            updatedChampionsLeague,
+            clubs,
+            userClubId
+          );
+          if (updatedLibertadores.championClubId && !updatedMundial.isSeeded) {
+            updatedMundial = seedMundialBracket(
+              updatedMundial,
+              updatedChampionsLeague.championClubId,
               updatedLibertadores.championClubId,
               clubs,
               userClubId
@@ -1581,7 +1651,12 @@ export default function App() {
       }
 
       const isCupAdvance =
-        (comp === 'COPA_DO_BRASIL' || comp === 'LIBERTADORES') && userAdvanced;
+        (comp === 'COPA_DO_BRASIL' ||
+          comp === 'LIBERTADORES' ||
+          comp === 'CHAMPIONS_LEAGUE' ||
+          comp === 'MUNDIAL' ||
+          comp === 'SUPER_MUNDIAL') &&
+        userAdvanced;
       const confidenceDelta = isCupAdvance
         ? 8
         : userAdvanced
@@ -1810,7 +1885,7 @@ export default function App() {
         finalYouthAcademy = evolveYouthAcademyRoster({
           academy: finalYouthAcademy,
           clubReputation: evolvedUserClub.reputation,
-          division: evolvedUserClub.division === 'B' ? 'B' : 'A',
+          division: evolvedUserClub.division,
           phase: 'MID_SEASON',
         }).updatedAcademy;
         newMidSeasonProcessedYear = currentYear;
@@ -1837,7 +1912,7 @@ export default function App() {
 
       const compDisplay =
         matchState.competitionLabel ||
-        `${matchState.roundNumber}ª Rodada · Série ${userClub.division === 'B' ? 'B' : 'A'}`;
+        `${matchState.roundNumber}ª Rodada · ${userLeagueShort}`;
 
       const postMatchMsg: InboxMessage = {
         id: `msg-post-${comp}-${Date.now()}`,
@@ -1862,9 +1937,19 @@ export default function App() {
           `Placar: ${homeClub.shortName} ${matchState.homeGoals} x ${matchState.awayGoals} ${awayClub.shortName}${penDetail}`,
           `Finalizações: ${matchState.homeShots} (${matchState.homeShotsOnTarget} no gol) vs ${matchState.awayShots} (${matchState.awayShotsOnTarget} no gol)`,
           isCupAdvance
-            ? `★ DIREITO & RECOMPENSA DE COPA: Classificação na ${comp === 'COPA_DO_BRASIL' ? 'Copa do Brasil' : 'Copa Libertadores'}! Bônus de premiação (${formatCompactBRL(prizeMoney)}), +8% confiança e moral elevado!`
+            ? `★ DIREITO & RECOMPENSA DE COPA: Classificação na ${
+                comp === 'COPA_DO_BRASIL'
+                  ? 'Copa do Brasil'
+                  : comp === 'CHAMPIONS_LEAGUE'
+                  ? 'UEFA Champions League'
+                  : comp === 'MUNDIAL'
+                  ? 'Mundial de Clubes'
+                  : comp === 'SUPER_MUNDIAL'
+                  ? 'Super Mundial FIFA'
+                  : 'Copa Libertadores'
+              }! Bônus de premiação (${formatCompactBRL(prizeMoney)}), +8% confiança e moral elevado!`
             : comp === 'BRASILEIRAO'
-            ? `Posição na Série ${userClub.division}: ${userPos}º lugar`
+            ? `Posição (${userLeagueShort}): ${userPos}º lugar`
             : userAdvanced
             ? `Classificação / resultado positivo garantido em ${compDisplay}`
             : `Fim da linha ou tropeço em ${compDisplay}`,
@@ -1882,7 +1967,7 @@ export default function App() {
         match: processedMatchState,
         seasonYear: currentYear,
         dateLabel: formatCalendarDate(dayOffset, currentYear),
-        fallbackDivision: userClub.division === 'B' ? 'B' : 'A',
+        fallbackDivision: userPlayableDivision,
       });
       const updatedMatchHistory = [
         newMatchRecord,
@@ -1898,6 +1983,7 @@ export default function App() {
       setSecondaryStandings(newSecondaryStandings);
       setCopaDoBrasil(updatedCopaDoBrasil);
       setLibertadores(updatedLibertadores);
+      setChampionsLeague(updatedChampionsLeague);
       setMundial(updatedMundial);
       setSuperMundial(updatedSuperMundial);
       setFinanceLedger(updatedFinanceLedger);
@@ -1918,6 +2004,7 @@ export default function App() {
         secondaryStandings: newSecondaryStandings,
         copaDoBrasil: updatedCopaDoBrasil,
         libertadores: updatedLibertadores,
+        championsLeague: updatedChampionsLeague,
         mundial: updatedMundial,
         superMundial: updatedSuperMundial,
         financeLedger: updatedFinanceLedger,
@@ -3145,7 +3232,8 @@ export default function App() {
         nextCdb,
         nextLib,
         nextMundial,
-        nextSuperMundial
+        nextSuperMundial,
+        nextUcl
       );
       if (candidateUserFix) {
         break;
@@ -3241,7 +3329,10 @@ export default function App() {
         nextUcl = advanceChampionsLeagueStage(
           nextUcl,
           candidateStep.uclStage,
-          clubs
+          clubs,
+          Math.random,
+          null,
+          isEuropeanPlayableDivision(userPlayableDivision) ? userClubId : undefined
         );
         const uclFixes = nextUcl.fixturesByStage[candidateStep.uclStage] || [];
         nextAiSquads = attributeAiRoundPlayerStats(
@@ -3400,7 +3491,8 @@ export default function App() {
         nextCdb,
         nextLib,
         nextMundial,
-        nextSuperMundial
+        nextSuperMundial,
+        nextUcl
       ) ||
       fixtures.find(
         (f) => f.roundNumber === nextLeagueRound && f.isUserMatch
@@ -4954,12 +5046,14 @@ export default function App() {
                   ? `CdB · ${currentCalendarStep.copaStage}`
                   : currentCalendarStep.competition === 'LIBERTADORES'
                   ? `Lib · ${currentCalendarStep.libStage === 'Grupos' ? `G${currentCalendarStep.libGroupRound}` : currentCalendarStep.libStage}`
+                  : currentCalendarStep.competition === 'CHAMPIONS_LEAGUE'
+                  ? `UCL · ${currentCalendarStep.uclStage}`
                   : `${currentRound}ª Rodada`}
               </span>
             </div>
             <div className="font-display text-base font-extrabold uppercase tracking-tight text-white truncate">
               {isSeasonFinished
-                ? `${userRank}º na Série ${userClub.division}`
+                ? `${userRank}º · ${userLeagueShort}`
                 : `${homeClub.shortName} vs ${awayClub.shortName}`}
             </div>
             <div className="text-[11px] text-zinc-400 truncate">
@@ -5047,7 +5141,7 @@ export default function App() {
                   {userClub.name}
                 </h1>
                 <span className="text-xs text-zinc-400 font-mono hidden xl:inline whitespace-nowrap shrink-0">
-                  · {userRank}º Série {userClub.division}
+                  · {userRank}º {userLeagueShort}
                 </span>
               </div>
               {/* Mobile compact status line */}
@@ -5056,7 +5150,7 @@ export default function App() {
                 <span className="text-[#b5ff00] font-bold">
                   {formatCompactBRL(userClub.cashBalance)}
                 </span>{' '}
-                · {userRank}º Série {userClub.division}
+                · {userRank}º {userLeagueShort}
               </div>
               {/* Desktop status line */}
               <div className="hidden md:block text-xs text-zinc-400 truncate">
@@ -5290,8 +5384,8 @@ export default function App() {
                       id: 'competitions' as NavigationTab,
                       label: 'Ligas, Copas & Tabelas',
                       mobileLabel: 'Ligas & Copas',
-                      badge: `${userRank}º na Série ${userClub.division}`,
-                      mobileBadge: `${userRank}º · Série ${userClub.division}`,
+                      badge: `${userRank}º · ${userLeagueShort}`,
+                      mobileBadge: `${userRank}º · ${userLeagueShort}`,
                       icon: Trophy,
                     },
                     {
@@ -5372,7 +5466,11 @@ export default function App() {
               squad={squad}
               currentRound={currentRound}
               activeCompetition={currentCalendarStep.competition}
-              competitionLabel={currentCalendarStep.label}
+              competitionLabel={
+                currentCalendarStep.competition === 'BRASILEIRAO'
+                  ? `${userLeagueFull} · ${currentRound}ª Rodada`
+                  : currentCalendarStep.label
+              }
               isMatchDay={isMatchDay}
               onGoToMatch={handleEnterMatchMoment}
               onQuickSimulateMatch={handleQuickSimulateFromOutside}
@@ -5501,7 +5599,7 @@ export default function App() {
               seasonYear={currentYear}
               seasonHistory={seasonHistory}
               userClubId={userClubId}
-              userDivision={userClub.division === 'B' ? 'B' : 'A'}
+              userDivision={userPlayableDivision}
               secondaryStandings={secondaryStandings}
               secondaryFixtures={secondaryFixtures}
               copaDoBrasil={copaDoBrasil}

@@ -434,21 +434,29 @@ export function calculateBalancedValuationAndWage(params: {
   }
 
   // 6. Club relevance & division market multiplier
-  const isEuropean = division === 'UCL';
+  const isEuropean =
+    division === 'UCL' || division === 'PL' || division === 'LALIGA';
   const isGlobal = division === 'WORLD';
   const divMult =
     division === 'B'
       ? 0.54
       : division === 'LIB'
       ? 0.96
-      : isEuropean
+      : division === 'UCL'
       ? 1.25
+      : division === 'PL'
+      ? 1.18
+      : division === 'LALIGA'
+      ? 1.12
       : isGlobal
       ? 1.10
       : 1.0;
   const repMult = Math.max(
     0.70,
-    Math.min(isEuropean ? 1.40 : 1.22, Math.pow(clubReputation / 85, 1.15))
+    Math.min(
+      division === 'UCL' ? 1.40 : isEuropean ? 1.32 : 1.22,
+      Math.pow(clubReputation / 85, 1.15)
+    )
   );
 
   const rawValue = baseVal * ageMult * potMult * posMult * divMult * repMult;
@@ -485,14 +493,21 @@ export function calculateBalancedValuationAndWage(params: {
       ? 0.62
       : division === 'LIB'
       ? 0.90
-      : isEuropean
+      : division === 'UCL'
       ? 3.15
+      : division === 'PL'
+      ? 2.55
+      : division === 'LALIGA'
+      ? 2.05
       : isGlobal
       ? 1.85
       : 1.05;
   const salaryRepMult = Math.max(
     0.60,
-    Math.min(isEuropean ? 1.85 : 1.32, Math.pow(clubReputation / 85, 1.25))
+    Math.min(
+      division === 'UCL' ? 1.85 : isEuropean ? 1.55 : 1.32,
+      Math.pow(clubReputation / 85, 1.25)
+    )
   );
   const hardSalaryCap = isEuropean
     ? ovr < 76
@@ -867,7 +882,25 @@ export function calculateDynamicSponsorship(
   const sponsorName = tier.sponsors[sponsorIdx];
 
   let annualValue: number;
-  if (club.division === 'B') {
+  if (
+    club.division === 'PL' ||
+    club.division === 'LALIGA' ||
+    club.division === 'UCL'
+  ) {
+    const isEngland = club.division === 'PL' || club.countryCode === 'ING';
+    const repNorm = Math.min(1, Math.max(0, (club.reputation - 73) / 22));
+    const fanNorm = Math.min(1, Math.max(0, (fanbaseScore - 20) / 80));
+    const ovrNorm = Math.min(1, Math.max(0, (squadAvgOvr - 72) / 16));
+    const weighted = Math.pow(repNorm * 0.55 + fanNorm * 0.25 + ovrNorm * 0.2, 1.3);
+    const titleMultiplier = 1 + Math.min(0.22, titlesCount * 0.05);
+    const baseMin = isEngland ? 185_000_000 : 88_000_000;
+    const baseSpan = isEngland ? 540_000_000 : 510_000_000;
+    const rawEuro = (baseMin + weighted * baseSpan) * titleMultiplier;
+    annualValue = Math.min(
+      840_000_000,
+      Math.max(baseMin, Math.round(rawEuro / 1_000_000) * 1_000_000)
+    );
+  } else if (club.division === 'B') {
     // Série B: R$ 12 milhões (menor torcida/reputação) até R$ 30 milhões (maiores torcidas da B)
     const fanNorm = Math.min(1, Math.max(0, (fanbaseScore - 15) / 73));
     const repNorm = Math.min(1, Math.max(0, (club.reputation - 68) / 14));
@@ -940,8 +973,20 @@ export function calculateMatchGateRevenue(params: {
   const standingFactor =
     rank <= 4 ? 1.12 : rank <= Math.ceil(totalTeams / 2) ? 1.0 : 0.86;
 
-  let competitionMult = club.division === 'B' ? 0.72 : 1.0;
-  let ticketBase = club.division === 'B' ? 85 : 135;
+  const isEuropeanClub =
+    club.division === 'PL' ||
+    club.division === 'LALIGA' ||
+    club.division === 'UCL';
+  let competitionMult =
+    club.division === 'B' ? 0.72 : isEuropeanClub ? 1.45 : 1.0;
+  let ticketBase =
+    club.division === 'B'
+      ? 85
+      : club.division === 'PL' || (club.division === 'UCL' && club.countryCode === 'ING')
+      ? 360
+      : isEuropeanClub
+      ? 290
+      : 135;
 
   if (competition === 'COPA_DO_BRASIL') {
     if (stageLabel === 'Final') {
@@ -965,6 +1010,17 @@ export function calculateMatchGateRevenue(params: {
       competitionMult = 1.25;
       ticketBase = 160;
     }
+  } else if (competition === 'CHAMPIONS_LEAGUE') {
+    if (stageLabel === 'Final') {
+      competitionMult = 2.1;
+      ticketBase = 480;
+    } else if (stageLabel === 'Semifinal' || stageLabel === 'Quartas') {
+      competitionMult = 1.75;
+      ticketBase = 420;
+    } else {
+      competitionMult = 1.5;
+      ticketBase = 370;
+    }
   } else if (competition === 'MUNDIAL' || competition === 'SUPER_MUNDIAL') {
     if (stageLabel === 'Final') {
       competitionMult = 2.2;
@@ -981,7 +1037,7 @@ export function calculateMatchGateRevenue(params: {
   const rawRevenue = attendance * ticketBase * Math.max(0.8, competitionMult * 0.92);
   const gateRevenue = Math.max(
     250_000,
-    Math.min(35_000_000, Math.round(rawRevenue / 50_000) * 50_000)
+    Math.min(isEuropeanClub ? 58_000_000 : 35_000_000, Math.round(rawRevenue / 50_000) * 50_000)
   );
 
   return { gateRevenue, attendance };
@@ -1166,7 +1222,10 @@ export function applyAntiInflationSeasonMaintenance(
   squad: Player[],
   isUserClub: boolean = false
 ): { updatedClub: Club; annualMaintenanceCost: number } {
-  const isEuropean = club.division === 'UCL';
+  const isEuropean =
+    club.division === 'UCL' ||
+    club.division === 'PL' ||
+    club.division === 'LALIGA';
   const isGlobal = club.division === 'WORLD';
   const avgSquadOvrForSponsor =
     squad.length > 0
@@ -1177,31 +1236,50 @@ export function applyAntiInflationSeasonMaintenance(
       : 74;
 
   // Hard cash reserve ceiling prevents multi-decade runaway while keeping European giants Transfermarkt-wealthy
-  const maxHealthyCash = isEuropean
-    ? club.reputation >= 93
-      ? 2_600_000_000
-      : 1_750_000_000
-    : isGlobal
-    ? 1_100_000_000
-    : club.division === 'B'
-    ? 220_000_000
-    : club.reputation >= 85
-    ? 680_000_000
-    : 450_000_000;
-  const minFloorCash = isEuropean
-    ? 350_000_000
-    : isGlobal
-    ? 110_000_000
-    : club.division === 'B'
-    ? 8_000_000
-    : 25_000_000;
+  const maxHealthyCash =
+    club.division === 'UCL'
+      ? club.reputation >= 93
+        ? 2_600_000_000
+        : 1_750_000_000
+      : club.division === 'PL'
+      ? club.reputation >= 86
+        ? 1_650_000_000
+        : 1_050_000_000
+      : club.division === 'LALIGA'
+      ? club.reputation >= 84
+        ? 1_150_000_000
+        : 780_000_000
+      : isGlobal
+      ? 1_100_000_000
+      : club.division === 'B'
+      ? 220_000_000
+      : club.reputation >= 85
+      ? 680_000_000
+      : 450_000_000;
+  const minFloorCash =
+    club.division === 'UCL'
+      ? 350_000_000
+      : club.division === 'PL'
+      ? 240_000_000
+      : club.division === 'LALIGA'
+      ? 160_000_000
+      : isGlobal
+      ? 110_000_000
+      : club.division === 'B'
+      ? 8_000_000
+      : 25_000_000;
 
   // European & Global clubs receive annual commercial/sponsorship + matchday refill and also pay 30% operational cost
-  const annualCommercialRefill = isEuropean
-    ? Math.round((club.reputation * 3_100_000) / 500_000) * 500_000
-    : isGlobal
-    ? 95_000_000
-    : 0;
+  const annualCommercialRefill =
+    club.division === 'UCL'
+      ? Math.round((club.reputation * 3_100_000) / 500_000) * 500_000
+      : club.division === 'PL'
+      ? Math.round((club.reputation * 2_450_000) / 500_000) * 500_000
+      : club.division === 'LALIGA'
+      ? Math.round((club.reputation * 1_750_000) / 500_000) * 500_000
+      : isGlobal
+      ? 95_000_000
+      : 0;
 
   const commercialOperationalCost = calculateOperationalCost(annualCommercialRefill);
   const referenceSponsorOpCost =

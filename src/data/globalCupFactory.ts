@@ -112,13 +112,33 @@ function createEmptyStandings(clubIds: string[]): StandingsRow[] {
  */
 export function createInitialChampionsLeague(
   seasonYear: number = 2026,
-  clubsPool?: Club[]
+  clubsPool?: Club[],
+  userClubId?: string,
+  qualifiedClubIds?: string[]
 ): ChampionsLeagueState {
   const sourceClubs = clubsPool && clubsPool.length > 0 ? clubsPool : ALL_WORLD_CLUBS;
-  const uclClubs = sourceClubs.filter((c) => c.division === 'UCL');
-  const pool = uclClubs.length >= 16 ? uclClubs : UCL_CLUBS;
+  const clubMap = new Map(sourceClubs.map((c) => [c.id, c]));
+  const baseUclClubs = sourceClubs.filter((c) => c.division === 'UCL');
+  const fallbackPool = baseUclClubs.length >= 16 ? baseUclClubs : UCL_CLUBS;
 
-  const sortedByRep = [...pool]
+  const participantPool: Club[] = [];
+  const seen = new Set<string>();
+  const addClub = (club: Club | undefined) => {
+    if (!club || seen.has(club.id) || participantPool.length >= 16) return;
+    seen.add(club.id);
+    participantPool.push(club);
+  };
+
+  if (qualifiedClubIds && qualifiedClubIds.length > 0) {
+    for (const id of qualifiedClubIds) {
+      addClub(clubMap.get(id));
+    }
+  }
+  for (const c of [...fallbackPool].sort((a, b) => b.reputation - a.reputation)) {
+    addClub(c);
+  }
+
+  const sortedByRep = [...participantPool]
     .sort((a, b) => b.reputation - a.reputation)
     .slice(0, 16);
 
@@ -145,7 +165,9 @@ export function createInitialChampionsLeague(
       awayPenalties: null,
       winnerClubId: null,
       played: false,
-      isUserMatch: false,
+      isUserMatch: Boolean(
+        userClubId && (homeClubId === userClubId || awayClubId === userClubId)
+      ),
     };
   });
 
@@ -171,7 +193,18 @@ export function advanceChampionsLeagueStage(
   state: ChampionsLeagueState,
   stage: ChampionsKnockoutStage,
   clubs: Club[],
-  rng: () => number = Math.random
+  rng: () => number = Math.random,
+  userMatchResult?: {
+    fixtureId: string;
+    homeGoals: number;
+    awayGoals: number;
+    homeXG: number;
+    awayXG: number;
+    homePenalties?: number | null;
+    awayPenalties?: number | null;
+    winnerClubId?: string | null;
+  } | null,
+  userClubId?: string
 ): ChampionsLeagueState {
   const stageFixtures = state.fixturesByStage[stage] || [];
   if (stageFixtures.length === 0) return state;
@@ -180,7 +213,7 @@ export function advanceChampionsLeagueStage(
   const simulated = simulateRoundFixtures(
     stageFixtures,
     1,
-    {
+    userMatchResult || {
       fixtureId: '__none__',
       homeGoals: 0,
       awayGoals: 0,
@@ -189,7 +222,17 @@ export function advanceChampionsLeagueStage(
     },
     clubs,
     rng
-  );
+  ).map((f) => {
+    if (userMatchResult && f.id === userMatchResult.fixtureId) {
+      return {
+        ...f,
+        homePenalties: userMatchResult.homePenalties ?? f.homePenalties ?? null,
+        awayPenalties: userMatchResult.awayPenalties ?? f.awayPenalties ?? null,
+        winnerClubId: userMatchResult.winnerClubId ?? f.winnerClubId ?? null,
+      };
+    }
+    return f;
+  });
 
   const resolved = resolveKnockoutMatchList(simulated, clubs, rng);
   const winners: string[] = [];
@@ -249,7 +292,9 @@ export function advanceChampionsLeagueStage(
       awayPenalties: null,
       winnerClubId: null,
       played: false,
-      isUserMatch: false,
+      isUserMatch: Boolean(
+        userClubId && (homeClubId === userClubId || awayClubId === userClubId)
+      ),
     });
   }
 

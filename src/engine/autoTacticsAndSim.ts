@@ -1,5 +1,10 @@
 import { FORMATIONS, TACTICAL_ROLES, getRoleById } from '../data/tacticsData';
 import {
+  getPlayableDivisionForClub,
+  getPlayableLeagueShortLabel,
+  isEuropeanPlayableDivision,
+} from '../data/initialDatabase';
+import {
   SEASON_CALENDAR,
   advanceChampionsLeagueStage,
   advanceCopaDoBrasilStage,
@@ -746,7 +751,8 @@ export function simulateNextAutoStep(
         working.copaDoBrasil,
         working.libertadores,
         working.mundial,
-        working.superMundial
+        working.superMundial,
+        working.championsLeague
       ) ||
       working.fixtures.find(
         (f) => f.roundNumber === nextLeagueRound && f.isUserMatch
@@ -836,7 +842,8 @@ export function simulateNextAutoStep(
     working.copaDoBrasil,
     working.libertadores,
     working.mundial,
-    working.superMundial
+    working.superMundial,
+    working.championsLeague
   );
 
   // Case A: CPU-only cup round (Champions League em background, ou copa onde usuário foi eliminado/não participa)
@@ -942,11 +949,18 @@ export function simulateNextAutoStep(
       targetStep.uclStage &&
       nextUcl
     ) {
+      const byeUserClub =
+        working.clubs.find((c) => c.id === working.userClubId) || working.clubs[0];
+      const byeUserIsEuro = isEuropeanPlayableDivision(
+        getPlayableDivisionForClub(byeUserClub)
+      );
       nextUcl = advanceChampionsLeagueStage(
         nextUcl,
         targetStep.uclStage,
         working.clubs,
-        rng
+        rng,
+        null,
+        byeUserIsEuro ? working.userClubId : undefined
       );
       const uclFixes = nextUcl.fixturesByStage[targetStep.uclStage] || [];
       nextAiSquads = attributeAiRoundPlayerStats(
@@ -1299,6 +1313,7 @@ export function simulateNextAutoStep(
 
   const isKnockout =
     targetStep.competition === 'COPA_DO_BRASIL' ||
+    targetStep.competition === 'CHAMPIONS_LEAGUE' ||
     targetStep.competition === 'MUNDIAL' ||
     (targetStep.competition === 'LIBERTADORES' &&
       Boolean(targetStep.libStage && targetStep.libStage !== 'Grupos')) ||
@@ -1430,6 +1445,7 @@ export function simulateNextAutoStep(
   let nextSecondaryStandings = working.secondaryStandings;
   let nextCdb = working.copaDoBrasil;
   let nextLib = working.libertadores;
+  let nextUcl = working.championsLeague;
   let nextMundial = working.mundial;
   let nextSuperMundial = working.superMundial;
   let nextAiSquads = working.aiSquads || {};
@@ -1544,12 +1560,50 @@ export function simulateNextAutoStep(
       if (targetStep.libStage === 'Final' && nextMundial && !nextMundial.isSeeded) {
         nextMundial = seedMundialBracket(
           nextMundial,
-          working.championsLeague?.championClubId ?? null,
+          nextUcl?.championClubId ?? null,
           nextLib.championClubId,
           nextClubs,
           working.userClubId
         );
       }
+    }
+  } else if (comp === 'CHAMPIONS_LEAGUE' && targetStep.uclStage && nextUcl) {
+    nextUcl = advanceChampionsLeagueStage(
+      nextUcl,
+      targetStep.uclStage,
+      nextClubs,
+      rng,
+      userMatchPayload,
+      working.userClubId
+    );
+    const uclFixes = nextUcl.fixturesByStage[targetStep.uclStage] || [];
+    nextAiSquads = attributeAiRoundPlayerStats(
+      nextAiSquads,
+      uclFixes,
+      working.userClubId,
+      rng
+    );
+    for (const fx of uclFixes) {
+      aiHomeMatches.push({
+        clubId: fx.homeClubId,
+        rank: 3,
+        competition: 'CHAMPIONS_LEAGUE',
+        stageLabel: targetStep.uclStage,
+      });
+    }
+    prizeMoney = getCupPrizeMoney(
+      'CHAMPIONS_LEAGUE',
+      targetStep.uclStage,
+      userAdvanced,
+      targetStep.uclStage === 'Final' && userAdvanced
+    );
+    if (targetStep.uclStage === 'Final' && nextSuperMundial?.isActiveThisSeason) {
+      nextSuperMundial = syncSuperMundialWithChampionsResults(
+        nextSuperMundial,
+        nextUcl,
+        nextClubs,
+        working.userClubId
+      );
     }
   } else if (comp === 'MUNDIAL' && targetStep.mundialStage && nextMundial) {
     nextMundial = advanceMundialStage(
@@ -1740,6 +1794,7 @@ export function simulateNextAutoStep(
   const isCupAdvance =
     (comp === 'COPA_DO_BRASIL' ||
       comp === 'LIBERTADORES' ||
+      comp === 'CHAMPIONS_LEAGUE' ||
       comp === 'MUNDIAL' ||
       comp === 'SUPER_MUNDIAL') &&
     userAdvanced;
@@ -2066,7 +2121,8 @@ export function simulateNextAutoStep(
         nextCdb,
         nextLib,
         nextMundial,
-        nextSuperMundial
+        nextSuperMundial,
+        nextUcl
       ) ||
       nextFixtures.find((f) => f.roundNumber === nextRound && f.isUserMatch) ||
       nextFixtures[0];
@@ -2086,11 +2142,17 @@ export function simulateNextAutoStep(
     );
   }
 
+  const userPlayableDiv = getPlayableDivisionForClub(updatedUserClubWithTactics);
+  const resolvedCompLabel =
+    targetStep.competition === 'BRASILEIRAO'
+      ? `${getPlayableLeagueShortLabel(userPlayableDiv)} · ${roundNum}ª Rodada`
+      : targetStep.label;
+
   const logEntry: AutoSimMatchLogEntry = {
     id: `autosim-${idx}-${stepDayOffset}`,
     stepIndex: idx,
     dateLabel,
-    competitionLabel: targetStep.label,
+    competitionLabel: resolvedCompLabel,
     homeClubId: homeClub.id,
     awayClubId: awayClub.id,
     homeClubName: homeClub.shortName,
@@ -2111,7 +2173,7 @@ export function simulateNextAutoStep(
     match: processedMatch,
     seasonYear,
     dateLabel,
-    fallbackDivision: updatedUserClubWithTactics.division === 'B' ? 'B' : 'A',
+    fallbackDivision: userPlayableDiv,
   });
   const nextMatchHistory = [
     newHistoryRecord,
@@ -2131,7 +2193,7 @@ export function simulateNextAutoStep(
       secondaryFixtures: nextSecondaryFixtures,
       copaDoBrasil: nextCdb,
       libertadores: nextLib,
-      championsLeague: working.championsLeague,
+      championsLeague: nextUcl,
       mundial: nextMundial,
       superMundial: nextSuperMundial,
       messages: nextMessages,
@@ -2178,7 +2240,8 @@ export function countStepsUntilDayOffset(
       snapshot.copaDoBrasil,
       snapshot.libertadores,
       snapshot.mundial,
-      snapshot.superMundial
+      snapshot.superMundial,
+      snapshot.championsLeague
     );
     if (fix) {
       userMatchSteps += 1;

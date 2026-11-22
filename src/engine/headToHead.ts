@@ -4,8 +4,10 @@ import {
   LibertadoresState,
   LiveMatchState,
   MatchHistoryRecord,
+  PlayableDivision,
   RoundFixture,
 } from '../types/football';
+import { getPlayableLeagueShortLabel } from '../data/initialDatabase';
 
 export interface HeadToHeadMatchItem {
   id: string;
@@ -43,13 +45,13 @@ export function createMatchHistoryRecordFromLiveMatch(params: {
   match: LiveMatchState;
   seasonYear: number;
   dateLabel: string;
-  fallbackDivision?: 'A' | 'B';
+  fallbackDivision?: PlayableDivision;
 }): MatchHistoryRecord {
   const { match, seasonYear, dateLabel, fallbackDivision = 'A' } = params;
   const comp: CompetitionType = match.competition || 'BRASILEIRAO';
   const compLabel =
     match.competitionLabel ||
-    `Série ${fallbackDivision} · ${match.roundNumber}ª Rodada`;
+    `${getPlayableLeagueShortLabel(fallbackDivision)} · ${match.roundNumber}ª Rodada`;
 
   return {
     id: `mh-${seasonYear}-${match.fixtureId}`,
@@ -96,7 +98,14 @@ function formatFixtureCompetitionLabel(
     }
     return `Super Mundial · ${fix.stageLabel || 'Mata-Mata'}`;
   }
-  const divLabel = fix.division === 'B' ? 'Série B' : 'Série A';
+  const divLabel =
+    fix.division === 'PL'
+      ? 'Premier League'
+      : fix.division === 'LALIGA'
+      ? 'La Liga'
+      : fix.division === 'B'
+      ? 'Série B'
+      : 'Série A';
   return `${divLabel} · ${fix.roundNumber}ª Rodada`;
 }
 

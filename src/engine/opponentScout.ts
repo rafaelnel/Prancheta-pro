@@ -8,6 +8,10 @@ import {
   StandingsRow,
 } from '../types/football';
 import { calculateTeamTacticalRatings } from './matchEngine';
+import {
+  getPlayableDivisionForClub,
+  getPlayableLeagueLabel,
+} from '../data/initialDatabase';
 
 export interface OpponentWeaknessPoint {
   id: string;
@@ -79,23 +83,28 @@ export function resolveOpponentStandingsContext(params: {
     }
   }
 
+  const oppPlayableDiv = getPlayableDivisionForClub(opponentClub);
+  const userPlayableDiv = getPlayableDivisionForClub(userClub);
+
   if (
-    opponentClub.division !== userClub.division &&
+    oppPlayableDiv !== userPlayableDiv &&
     secondaryStandings &&
-    secondaryStandings.length > 0
+    secondaryStandings.length > 0 &&
+    secondaryStandings.some((r) => r.clubId === opponentClub.id)
   ) {
     return {
       table: secondaryStandings,
-      label: `Brasileirão Série ${opponentClub.division}`,
+      label: getPlayableLeagueLabel(oppPlayableDiv),
     };
   }
 
   return {
     table: standings,
-    label:
-      opponentClub.division === 'B'
-        ? 'Brasileirão Série B'
-        : 'Brasileirão Série A',
+    label: getPlayableLeagueLabel(
+      standings.some((r) => r.clubId === opponentClub.id)
+        ? userPlayableDiv
+        : oppPlayableDiv
+    ),
   };
 }
 

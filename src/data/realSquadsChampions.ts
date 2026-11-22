@@ -222,7 +222,7 @@ export const REAL_SQUADS_CHAMPIONS: Record<string, RealPlayerSeed[]> = {
     [3, 'Marc Cucurella', 27, 'Espanha', 'LE', 17.3, { indiceDeTrabalho: 19, desarme: 18, resistencia: 19 }],
     [25, 'Moisés Caicedo', 24, 'Equador', 'VOL', 17.7, { desarme: 19, resistencia: 19, posicionamento: 19 }],
     [8, 'Enzo Fernández', 25, 'Argentina', 'MC', 17.5, { passe: 19, visaoDeJogo: 19, compostura: 18 }],
-    [20, 'Cole Palmer', 23, 'Inglaterra', 'MEI', 18.0, { compostura: 19, finalizacao: 19, visaoDeJogo: 19, drible: 19 }],
+    [10, 'Cole Palmer', 23, 'Inglaterra', 'MEI', 18.0, { compostura: 19, finalizacao: 19, visaoDeJogo: 19, drible: 19 }],
     [41, 'Estêvão', 19, 'Brasil', 'PD', 17.1, { drible: 19, agilidade: 19, aceleracao: 19 }],
     [7, 'Pedro Neto', 26, 'Portugal', 'PE', 17.3, { velocidade: 19, aceleracao: 19, cruzamento: 18 }],
     [20, 'João Pedro', 24, 'Brasil', 'ATA', 17.4, { drible: 18, finalizacao: 18, semBola: 18 }],

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs><clipPath id="clip-espanyol"><circle cx="100" cy="100" r="86"/></clipPath></defs>
+  <circle cx="100" cy="100" r="92" fill="#007fc8" stroke="#facc15" stroke-width="6"/>
+  <g clip-path="url(#clip-espanyol)">
+    <rect x="14" y="14" width="172" height="172" fill="#ffffff"/>
+    <rect x="28" y="14" width="28" height="172" fill="#007fc8"/>
+    <rect x="86" y="14" width="28" height="172" fill="#007fc8"/>
+    <rect x="144" y="14" width="28" height="172" fill="#007fc8"/>
+  </g>
+  <rect x="26" y="72" width="148" height="56" rx="10" fill="#007fc8" stroke="#facc15" stroke-width="4"/>
+  <text x="100" y="112" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="36" fill="#ffffff" letter-spacing="2">ESP</text>
+  <circle cx="100" cy="100" r="88" fill="none" stroke="#facc15" stroke-width="5"/>
+</svg>

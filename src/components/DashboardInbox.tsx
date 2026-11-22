@@ -28,6 +28,11 @@ import {
   generateOpponentScoutingSummary,
   resolveOpponentStandingsContext,
 } from '../engine/opponentScout';
+import {
+  getPlayableDivisionForClub,
+  getPlayableLeagueLabel,
+  getPlayableLeagueShortLabel,
+} from '../data/initialDatabase';
 import { ClubBadge } from './ClubBadge';
 import { PlayerOvrBadge } from './PlayerJersey';
 
@@ -146,9 +151,12 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   const drawProb = 24;
   const oppWinProb = Math.max(10, 100 - userWinProb - drawProb);
 
+  const userPlayableDiv = getPlayableDivisionForClub(userClub);
+  const userLeagueLabel = getPlayableLeagueLabel(userPlayableDiv);
+  const userLeagueShort = getPlayableLeagueShortLabel(userPlayableDiv);
+
   const resolvedCompLabel =
-    competitionLabel ||
-    `Brasileirão Série ${userClub.division} · ${currentRound}ª Rodada`;
+    competitionLabel || `${userLeagueLabel} · ${currentRound}ª Rodada`;
 
   const shortCompLabel =
     activeCompetition === 'COPA_DO_BRASIL'
@@ -161,7 +169,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
       ? `SUPER MUNDIAL · ${nextFixture?.stageLabel || 'GRUPOS'}`
       : activeCompetition === 'CHAMPIONS_LEAGUE'
       ? `CHAMPIONS LEAGUE · ${nextFixture?.stageLabel || 'MATA-MATA'}`
-      : `SÉRIE ${userClub.division} · R${currentRound}`;
+      : `${userLeagueShort.toUpperCase()} · R${currentRound}`;
 
   const activePendingOffers = pendingOffers.filter(
     (o) => o.status === 'PENDING'
@@ -309,11 +317,13 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                       {opponentClub.shortName}
                     </div>
                     <div className="text-[11px] font-mono font-bold text-[#090a0f]/75">
-                      {opponentClub.countryCode
-                        ? `${opponentClub.countryCode} · ${opponentClub.formation}`
-                        : opponentStandingIndex >= 0
+                      {opponentStandingIndex >= 0
                         ? `${opponentStandingIndex + 1}º · ${opponentClub.formation}`
-                        : `Série ${opponentClub.division} · ${opponentClub.formation}`}
+                        : opponentClub.countryCode
+                        ? `${opponentClub.countryCode} · ${opponentClub.formation}`
+                        : `${getPlayableLeagueShortLabel(
+                            getPlayableDivisionForClub(opponentClub)
+                          )} · ${opponentClub.formation}`}
                     </div>
                   </div>
                 </div>

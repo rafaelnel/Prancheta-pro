@@ -1514,6 +1514,268 @@ test('30% operational cost applies to all sponsorship and ticket revenues for us
   );
 });
 
+test('AI proposals strictly require cash-in-hand and financial health (annual income, cash reserve, 6-month solvency, payroll)', async () => {
+  const {
+    evaluateClubTransferFinancialHealth,
+    maybeGenerateIncomingOfferForUser,
+    resolveIncomingOfferAction,
+    simulateAiTransferWindowTick,
+  } = await import('./aiMarketEngine');
+
+  const career = createNewCareerSave(1, 'flamengo', 'Técnico');
+  const flamengoClub = career.clubs.find((c) => c.id === 'flamengo')!;
+  const palmeirasClub = career.clubs.find((c) => c.id === 'palmeiras')!;
+  const ponteClub = career.clubs.find((c) => c.id === 'ponte-preta')!;
+  const realMadridClub = career.clubs.find((c) => c.id === 'real-madrid')!;
+
+  // 1. Club in debt (cashBalance <= 0) is strictly blocked from making any proposal
+  const inDebtHealth = evaluateClubTransferFinancialHealth({
+    club: { ...palmeirasClub, cashBalance: -15_000_000 },
+    clubSquad: career.aiSquads?.['palmeiras'],
+    proposedFee: 1_000_000,
+    addedMonthlySalary: 100_000,
+    dealType: 'BUY',
+    seasonYear: 2026,
+  });
+  assert.equal(inDebtHealth.canAffordAndHealthy, false);
+  assert.equal(inDebtHealth.hasCashInHand, false);
+  assert.equal(inDebtHealth.maxHealthySingleDealFee, 0);
+
+  // 2. Elite club CANNOT submit a financed mega-deal above its actual cashBalance (old loophole closed)
+  const eliteInsufficientCash = evaluateClubTransferFinancialHealth({
+    club: { ...realMadridClub, cashBalance: 90_000_000, reputation: 95 },
+    clubSquad: career.aiSquads?.['real-madrid'],
+    proposedFee: 120_000_000,
+    addedMonthlySalary: 2_000_000,
+    dealType: 'BUY',
+    seasonYear: 2026,
+  });
+  assert.equal(eliteInsufficientCash.hasCashInHand, false);
+  assert.equal(eliteInsufficientCash.canAffordAndHealthy, false);
+
+  // Also verify via maybeGenerateIncomingOfferForUser on a R$ 150M star when all elite clubs only have R$ 100M cash (67% of MV)
+  const megaStar: Player = {
+    ...career.squad[0],
+    id: 'mega-star-150m',
+    name: 'Craque 150M',
+    position: 'ATA',
+    sector: 'ATA',
+    age: 22,
+    marketValue: 150_000_000,
+    salary: 1_500_000,
+    isTransferListed: true,
+    isLoanListed: false,
+  };
+  const clubsUnderfundedForMegaStar = career.clubs.map((c) =>
+    c.id === 'flamengo' ? c : { ...c, cashBalance: 100_000_000 }
+  );
+  const blockedMegaOffer = maybeGenerateIncomingOfferForUser({
+    clubs: clubsUnderfundedForMegaStar,
+    userClub: flamengoClub,
+    userSquad: [megaStar, ...career.squad],
+    pendingOffers: [],
+    dayOffset: 10,
+    seasonYear: 2026,
+    aiSquads: career.aiSquads,
+    specificPlayerId: megaStar.id,
+    rng: () => 0.4,
+  });
+  assert.equal(
+    blockedMegaOffer,
+    null,
+    'No club (even 95-rep elite) may propose a BUY fee it does not hold in cash or that drains its reserve'
+  );
+
+  // 3. Club cannot drain its operating cash reserve (e.g., cash R$ 10M with payroll R$ 4M/m cannot bid R$ 8M)
+  const thinReserveSquad = (career.aiSquads?.['ponte-preta'] || []).map((p, idx) => ({
+    ...p,
+    salary: idx < 10 ? 400_000 : 0, // R$ 4M/month total
+    wageSharePaid: 1,
+  }));
+  const thinReserveHealth = evaluateClubTransferFinancialHealth({
+    club: { ...ponteClub, cashBalance: 10_000_000, wageBudget: 8_000_000 },
+    clubSquad: thinReserveSquad,
+    proposedFee: 8_000_000,
+    addedMonthlySalary: 150_000,
+    dealType: 'BUY',
+    seasonYear: 2026,
+  });
+  assert.equal(thinReserveHealth.hasCashInHand, true);
+  assert.equal(thinReserveHealth.withinHealthyFeeCap, false);
+  assert.equal(thinReserveHealth.canAffordAndHealthy, false);
+
+  // 4. Club running a heavy monthly operating deficit cannot burn cash needed for 6-month solvency
+  const deficitSquad = (career.aiSquads?.['ponte-preta'] || []).map((p, idx) => ({
+    ...p,
+    salary: idx < 10 ? 1_200_000 : 0, // R$ 12M/month payroll vs ~R$ 2.2M/month Série B net income (~R$ 9.8M deficit/month!)
+    wageSharePaid: 1,
+  }));
+  const deficitHealth = evaluateClubTransferFinancialHealth({
+    club: { ...ponteClub, cashBalance: 45_000_000, wageBudget: 20_000_000 },
+    clubSquad: deficitSquad,
+    proposedFee: 5_000_000,
+    addedMonthlySalary: 200_000,
+    dealType: 'BUY',
+    seasonYear: 2026,
+  });
+  assert.equal(deficitHealth.canAffordAndHealthy, false);
+  assert.equal(
+    deficitHealth.maxHealthySingleDealFee,
+    0,
+    'Club burning ~R$ 9.8M/month with R$ 45M cash must have R$ 0 healthy transfer spend cap'
+  );
+
+  // 5. Small club with sudden cash windfall is still capped by its annual earning power (income coherence)
+  const windfallPonte = { ...ponteClub, cashBalance: 300_000_000, wageBudget: 4_000_000 };
+  const windfallHealth = evaluateClubTransferFinancialHealth({
+    club: windfallPonte,
+    clubSquad: career.aiSquads?.['ponte-preta'],
+    proposedFee: 80_000_000,
+    addedMonthlySalary: 100_000,
+    dealType: 'BUY',
+    seasonYear: 2026,
+  });
+  assert.equal(windfallHealth.hasCashInHand, true);
+  assert.equal(windfallHealth.withinHealthyFeeCap, false);
+  assert.ok(
+    windfallHealth.maxHealthySingleDealFee <= windfallHealth.estimatedAnnualNetIncome * 0.85,
+    'Single deal fee must stay coherent with annual net club revenue'
+  );
+
+  // 6. Club cannot absorb a player whose salary breaks its payroll health
+  const unsustainableSalaryHealth = evaluateClubTransferFinancialHealth({
+    club: { ...ponteClub, cashBalance: 33_000_000, wageBudget: 3_700_000 },
+    clubSquad: career.aiSquads?.['ponte-preta'],
+    proposedFee: 2_000_000,
+    addedMonthlySalary: 2_500_000,
+    dealType: 'BUY',
+    seasonYear: 2026,
+  });
+  assert.equal(unsustainableSalaryHealth.payrollHealthy, false);
+  assert.equal(unsustainableSalaryHealth.canAffordAndHealthy, false);
+
+  // 7. Every generated incoming offer across 40 deterministic rolls strictly satisfies cash-in-hand & financial health
+  let offersVerified = 0;
+  for (let i = 0; i < 40; i++) {
+    const r = ((i * 37 + 11) % 97) / 100;
+    const offer = maybeGenerateIncomingOfferForUser({
+      clubs: career.clubs,
+      userClub: flamengoClub,
+      userSquad: career.squad,
+      pendingOffers: [],
+      dayOffset: 10,
+      seasonYear: 2026,
+      aiSquads: career.aiSquads,
+      rng: () => r,
+    });
+    if (!offer) continue;
+    offersVerified++;
+    const buyer = career.clubs.find((c) => c.id === offer.fromClubId)!;
+    const player = career.squad.find((p) => p.id === offer.playerId)!;
+    const addedSalary =
+      offer.dealType === 'LOAN'
+        ? Math.round(player.salary * offer.wageShareCovered)
+        : player.salary;
+    assert.ok(
+      offer.offeredFee <= buyer.cashBalance,
+      `Offer from ${buyer.shortName} (${offer.offeredFee}) must never exceed cashBalance (${buyer.cashBalance})`
+    );
+    const health = evaluateClubTransferFinancialHealth({
+      club: buyer,
+      clubSquad: career.aiSquads?.[buyer.id],
+      proposedFee: offer.offeredFee,
+      addedMonthlySalary: addedSalary,
+      dealType: offer.dealType,
+      seasonYear: 2026,
+    });
+    assert.equal(
+      health.canAffordAndHealthy,
+      true,
+      `Offer from ${buyer.shortName} (${offer.offeredFee}) failed financial health check: ${health.reason}`
+    );
+  }
+  assert.ok(offersVerified >= 10, `Expected at least 10 valid healthy offers, got ${offersVerified}`);
+
+  // 8. Counteroffer is rejected when +30% would breach buyer's healthy reserve, even with rng() => 0.01
+  const targetPlayer = career.squad.find((p) => p.position !== 'GOL' && p.marketValue >= 20_000_000)!;
+  const buyerTightCash = { ...palmeirasClub, cashBalance: Math.round(targetPlayer.marketValue * 1.05) };
+  const tightClubs = career.clubs.map((c) => (c.id === palmeirasClub.id ? buyerTightCash : c));
+  const tightOffer = {
+    id: 'test-tight-offer',
+    createdAtDate: '12/01/2026',
+    fromClubId: palmeirasClub.id,
+    fromClubName: palmeirasClub.shortName,
+    fromClubAbbr: palmeirasClub.abbr,
+    fromClubPrimaryColor: palmeirasClub.primaryColor,
+    fromClubReputation: palmeirasClub.reputation,
+    playerId: targetPlayer.id,
+    playerName: targetPlayer.name,
+    playerPosition: targetPlayer.position,
+    playerOvr: calculatePlayerOverall(targetPlayer.attributes, targetPlayer.position),
+    playerAge: targetPlayer.age,
+    playerPotentialStars: targetPlayer.potentialStars ?? 3.5,
+    playerMarketValue: targetPlayer.marketValue,
+    playerSalary: targetPlayer.salary,
+    dealType: 'BUY' as const,
+    offeredFee: Math.round(targetPlayer.marketValue * 0.95),
+    wageShareCovered: 1.0,
+    expiresDayOffset: 30,
+    negotiationStep: 0 as const,
+    status: 'PENDING' as const,
+    rationale: 'Teste de saúde financeira em contraproposta',
+  };
+  const rejectedTightCounter = resolveIncomingOfferAction({
+    offer: tightOffer,
+    action: 'COUNTER_30',
+    userClub: flamengoClub,
+    userSquad: career.squad,
+    aiSquads: career.aiSquads || {},
+    loanedOutPlayers: [],
+    clubs: tightClubs,
+    dayOffset: 12,
+    seasonYear: 2026,
+    rng: () => 0.01,
+  });
+  assert.equal(
+    rejectedTightCounter.outcome,
+    'COUNTER_REJECTED',
+    'Buyer must reject counteroffer that exceeds cash or healthy financial limits'
+  );
+
+  // 9. Autonomous AI-to-AI transfers never leave any buying club with negative cash or unhealthy reserve
+  let workingClubs = career.clubs;
+  let workingAiSquads = career.aiSquads || {};
+  let seed = 777;
+  const detRng = () => {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
+  for (let tick = 0; tick < 8; tick++) {
+    const res = simulateAiTransferWindowTick({
+      clubs: workingClubs,
+      aiSquads: workingAiSquads,
+      userClubId: 'flamengo',
+      dayOffset: 5 + tick * 2,
+      seasonYear: 2026,
+      maxDeals: 3,
+      rng: detRng,
+    });
+    for (const rec of res.newRecords) {
+      const buyerBefore = workingClubs.find((c) => c.shortName === rec.toClubName);
+      const buyerAfter = res.updatedClubs.find((c) => c.shortName === rec.toClubName);
+      if (buyerBefore && buyerAfter) {
+        assert.ok(
+          buyerAfter.cashBalance > 0,
+          `AI buyer ${buyerAfter.shortName} must stay cash-positive after ${rec.playerName} (${buyerAfter.cashBalance})`
+        );
+      }
+    }
+    workingClubs = res.updatedClubs;
+    workingAiSquads = res.updatedAiSquads;
+  }
+});
+
+
 
 
 

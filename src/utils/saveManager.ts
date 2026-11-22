@@ -3,7 +3,11 @@ import {
   CONMEBOL_FOREIGN_CLUBS,
   GLOBAL_WORLD_CLUBS,
   INITIAL_CLUBS,
+  LALIGA_EXTRA_CLUBS,
+  PREMIER_LEAGUE_EXTRA_CLUBS,
   UCL_CLUBS,
+  getPlayableDivisionForClub,
+  isEuropeanPlayableDivision,
 } from '../data/initialDatabase';
 import {
   createInitialChampionsLeague,
@@ -57,7 +61,10 @@ function isValidCareerSave(candidate: unknown): candidate is CareerSaveData {
     obj.slotIndex >= 1 &&
     obj.slotIndex <= MAX_CAREER_SLOTS &&
     typeof obj.userClubId === 'string' &&
-    (obj.division === 'A' || obj.division === 'B') &&
+    (obj.division === 'A' ||
+      obj.division === 'B' ||
+      obj.division === 'PL' ||
+      obj.division === 'LALIGA') &&
     typeof obj.clubName === 'string' &&
     Array.isArray(obj.clubs) &&
     obj.clubs.length >= 40 &&
@@ -103,6 +110,8 @@ export function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
   const missingClubs = [
     ...CONMEBOL_FOREIGN_CLUBS,
     ...UCL_CLUBS,
+    ...PREMIER_LEAGUE_EXTRA_CLUBS,
+    ...LALIGA_EXTRA_CLUBS,
     ...GLOBAL_WORLD_CLUBS,
   ]
     .filter((c) => !existingIds.has(c.id))
@@ -119,6 +128,8 @@ export function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
       ...INITIAL_CLUBS,
       ...CONMEBOL_FOREIGN_CLUBS,
       ...UCL_CLUBS,
+      ...PREMIER_LEAGUE_EXTRA_CLUBS,
+      ...LALIGA_EXTRA_CLUBS,
       ...GLOBAL_WORLD_CLUBS,
     ].map((c) => [c.id, c])
   );
@@ -131,7 +142,7 @@ export function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
         const ref = baseClubRefMap.get(c.id);
         const targetCash = ref
           ? Math.max(c.cashBalance, ref.cashBalance)
-          : c.division === 'UCL'
+          : c.division === 'UCL' || c.division === 'PL' || c.division === 'LALIGA'
           ? Math.round(c.cashBalance * 2.2)
           : Math.round(c.cashBalance * 2.0);
         const targetWage = ref
@@ -194,7 +205,13 @@ export function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
       save.libertadores ?? createInitialLibertadores(save.userClubId),
     championsLeague:
       save.championsLeague ??
-      createInitialChampionsLeague(seasonYear, hydratedClubs),
+      createInitialChampionsLeague(
+        seasonYear,
+        hydratedClubs,
+        isEuropeanPlayableDivision(getPlayableDivisionForClub(migratedUserClub))
+          ? save.userClubId
+          : undefined
+      ),
     mundial: save.mundial ?? createInitialMundial(seasonYear),
     superMundial:
       save.superMundial ??

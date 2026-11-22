@@ -1,6 +1,10 @@
 import {
   generateLeagueSchedule,
   getInitialStandingsForDivision,
+  getPlayableDivisionForClub,
+  getPlayableLeagueShortLabel,
+  getSecondaryPlayableDivision,
+  isEuropeanPlayableDivision,
 } from '../data/initialDatabase';
 import {
   createInitialChampionsLeague,
@@ -43,6 +47,7 @@ import {
   LiveMatchState,
   MundialState,
   NewSeasonEvolutionReport,
+  PlayableDivision,
   Player,
   PlayerEvolutionReportItem,
   RoundFixture,
@@ -273,6 +278,9 @@ export function buildSeasonAwardsSummary(params: {
   const entries: Array<{ player: Player; club: Club; ovr: number }> = [];
 
   const userClub = clubMap.get(userClubId);
+  const userPlayableDiv = userClub ? getPlayableDivisionForClub(userClub) : 'A';
+  const userIsEuro = isEuropeanPlayableDivision(userPlayableDiv);
+
   if (userClub) {
     for (const p of userSquad) {
       entries.push({
@@ -285,7 +293,18 @@ export function buildSeasonAwardsSummary(params: {
 
   for (const [cid, list] of Object.entries(aiSquads)) {
     const c = clubMap.get(cid);
-    if (!c || c.division === 'LIB' || c.division === 'UCL' || c.division === 'WORLD') continue;
+    if (!c) continue;
+    if (userIsEuro) {
+      if (getPlayableDivisionForClub(c) !== userPlayableDiv) continue;
+    } else if (
+      c.division === 'LIB' ||
+      c.division === 'UCL' ||
+      c.division === 'PL' ||
+      c.division === 'LALIGA' ||
+      c.division === 'WORLD'
+    ) {
+      continue;
+    }
     for (const p of list) {
       entries.push({
         player: p,
@@ -375,20 +394,32 @@ export const SERIE_A_END_PRIZES: ReadonlyArray<number> = [
 ];
 
 /**
- * Premiação oficial por colocação final do Brasileirão Série B (em Reais):
- * 1º (Campeão): R$ 3,5M · 2º ao 4º (G-4): R$ 1,35M cada · 5º ao 20º: R$ 1M cada.
+ * Premiação por colocação final nas ligas jogáveis (em Reais):
+ * - Série A: R$ 48,1M (1º) até R$ 16,3M (16º); 17º–20º = R$ 0.
+ * - Série B: R$ 3,5M (1º), R$ 1,35M (2º–4º), R$ 1M (5º–20º).
+ * - Premier League: R$ 320M (1º) descendo progressivamente até R$ 95M (20º).
+ * - La Liga: R$ 240M (1º) descendo progressivamente até R$ 55M (20º).
  */
 export function getLeagueEndPrizeMoney(
-  division: 'A' | 'B',
+  division: PlayableDivision,
   rank: number
 ): number {
   const safeRank = Math.max(1, Math.min(20, Math.round(rank)));
   if (division === 'A') {
     return SERIE_A_END_PRIZES[safeRank - 1] ?? 0;
   }
-  if (safeRank === 1) return 3_500_000;
-  if (safeRank <= 4) return 1_350_000;
-  return 1_000_000;
+  if (division === 'B') {
+    if (safeRank === 1) return 3_500_000;
+    if (safeRank <= 4) return 1_350_000;
+    return 1_000_000;
+  }
+  if (division === 'PL') {
+    const raw = 320_000_000 - (safeRank - 1) * 11_800_000;
+    return Math.max(95_000_000, Math.round(raw / 100_000) * 100_000);
+  }
+  // LALIGA
+  const raw = 240_000_000 - (safeRank - 1) * 9_700_000;
+  return Math.max(55_000_000, Math.round(raw / 100_000) * 100_000);
 }
 
 export function buildSeasonEndSummary(params: {
@@ -424,13 +455,34 @@ export function buildSeasonEndSummary(params: {
 
   const clubMap = new Map(clubs.map((c) => [c.id, c]));
   const userClub = clubMap.get(userClubId) || clubs[0];
-  const userDiv: 'A' | 'B' = userClub.division === 'B' ? 'B' : 'A';
+  const userDiv: PlayableDivision = getPlayableDivisionForClub(userClub);
+  const userIsEuro = isEuropeanPlayableDivision(userDiv);
 
-  const serieAStandings = userDiv === 'A' ? standings : secondaryStandings;
-  const serieBStandings = userDiv === 'B' ? standings : secondaryStandings;
+  const serieAStandings = !userIsEuro
+    ? userDiv === 'A'
+      ? standings
+      : secondaryStandings
+    : [];
+  const serieBStandings = !userIsEuro
+    ? userDiv === 'B'
+      ? standings
+      : secondaryStandings
+    : [];
+  const plStandings = userIsEuro
+    ? userDiv === 'PL'
+      ? standings
+      : secondaryStandings
+    : [];
+  const laLigaStandings = userIsEuro
+    ? userDiv === 'LALIGA'
+      ? standings
+      : secondaryStandings
+    : [];
 
   const serieAChampionId = serieAStandings[0]?.clubId || '';
   const serieBChampionId = serieBStandings[0]?.clubId || '';
+  const premierLeagueChampionId = plStandings[0]?.clubId || null;
+  const laLigaChampionId = laLigaStandings[0]?.clubId || null;
   const cdbChampionId = copaDoBrasil.championClubId;
   const libChampionId = libertadores.championClubId;
   const uclChampionId = championsLeague?.championClubId ?? null;
@@ -439,8 +491,12 @@ export function buildSeasonEndSummary(params: {
     ? superMundial.championClubId ?? null
     : null;
 
-  const relegatedClubIds = serieAStandings.slice(-4).map((r) => r.clubId);
-  const promotedClubIds = serieBStandings.slice(0, 4).map((r) => r.clubId);
+  const relegatedClubIds = userIsEuro
+    ? []
+    : serieAStandings.slice(-4).map((r) => r.clubId);
+  const promotedClubIds = userIsEuro
+    ? []
+    : serieBStandings.slice(0, 4).map((r) => r.clubId);
 
   // Libertadores qualification (Top 4 Série A + CdB champion if BR + Lib champion if BR + next Série A up to 8 BR clubs)
   const libQualifiedSet = new Set<string>();
@@ -462,7 +518,7 @@ export function buildSeasonEndSummary(params: {
   }
   const libertadoresQualifiedBrIds = Array.from(libQualifiedSet).slice(0, 8);
 
-  const userTable = userDiv === 'A' ? serieAStandings : serieBStandings;
+  const userTable = standings;
   const userRank = Math.max(
     1,
     userTable.findIndex((r) => r.clubId === userClubId) + 1
@@ -470,6 +526,9 @@ export function buildSeasonEndSummary(params: {
   const userFinalPoints = userTable[userRank - 1]?.points ?? 0;
 
   const userSeasonPrize = getLeagueEndPrizeMoney(userDiv, userRank);
+  const userQualifiedChampionsLeague = userIsEuro
+    ? userRank <= 4 || uclChampionId === userClubId
+    : false;
 
   const awards = buildSeasonAwardsSummary({
     clubs,
@@ -484,6 +543,14 @@ export function buildSeasonEndSummary(params: {
     serieAChampionName: clubMap.get(serieAChampionId)?.shortName || serieAChampionId,
     serieBChampionId,
     serieBChampionName: clubMap.get(serieBChampionId)?.shortName || serieBChampionId,
+    premierLeagueChampionId,
+    premierLeagueChampionName: premierLeagueChampionId
+      ? clubMap.get(premierLeagueChampionId)?.shortName || premierLeagueChampionId
+      : null,
+    laLigaChampionId,
+    laLigaChampionName: laLigaChampionId
+      ? clubMap.get(laLigaChampionId)?.shortName || laLigaChampionId
+      : null,
     cdbChampionId,
     cdbChampionName: cdbChampionId
       ? clubMap.get(cdbChampionId)?.shortName || cdbChampionId
@@ -508,9 +575,10 @@ export function buildSeasonEndSummary(params: {
     userFinalRank: userRank,
     userFinalPoints,
     userSeasonPrize,
-    userPromoted: userDiv === 'B' && promotedClubIds.includes(userClubId),
-    userRelegated: userDiv === 'A' && relegatedClubIds.includes(userClubId),
-    userQualifiedLibertadores: libertadoresQualifiedBrIds.includes(userClubId),
+    userPromoted: !userIsEuro && userDiv === 'B' && promotedClubIds.includes(userClubId),
+    userRelegated: !userIsEuro && userDiv === 'A' && relegatedClubIds.includes(userClubId),
+    userQualifiedLibertadores: !userIsEuro && libertadoresQualifiedBrIds.includes(userClubId),
+    userQualifiedChampionsLeague,
     relegatedClubIds,
     promotedClubIds,
     libertadoresQualifiedBrIds,
@@ -574,7 +642,7 @@ export function executeNewSeasonRollover(params: {
   nextFinanceLedger: ClubFinanceLedger;
   nextMatchState: LiveMatchState;
   nextMessages: InboxMessage[];
-  nextDivision: 'A' | 'B';
+  nextDivision: PlayableDivision;
   nextYouthAcademy: import('../types/football').YouthAcademyState;
   newSeasonEvolutionReport: NewSeasonEvolutionReport;
 } {
@@ -649,6 +717,14 @@ export function executeNewSeasonRollover(params: {
       titles.push(`Série B ${currentYear}`);
       repDelta += 1;
     }
+    if (c.id === baseReport.premierLeagueChampionId) {
+      titles.push(`Premier League ${currentYear}`);
+      repDelta += 2;
+    }
+    if (c.id === baseReport.laLigaChampionId) {
+      titles.push(`La Liga ${currentYear}`);
+      repDelta += 2;
+    }
     if (c.id === baseReport.cdbChampionId) {
       titles.push(`Copa do Brasil ${currentYear}`);
       repDelta += 2;
@@ -719,10 +795,11 @@ export function executeNewSeasonRollover(params: {
 
   const updatedUserClub =
     maintainedClubs.find((c) => c.id === userClubId) || maintainedClubs[0];
-  const nextDivision: 'A' | 'B' = updatedUserClub.division === 'B' ? 'B' : 'A';
-  const otherDivision: 'A' | 'B' = nextDivision === 'A' ? 'B' : 'A';
+  const nextDivision: PlayableDivision = getPlayableDivisionForClub(updatedUserClub);
+  const otherDivision: PlayableDivision = getSecondaryPlayableDivision(nextDivision);
+  const nextIsEuro = isEuropeanPlayableDivision(nextDivision);
 
-  // 5. Dynamic Sponsorship for new season (with 30% operational cost applied to all Brazilian clubs)
+  // 5. Dynamic Sponsorship for new season (with 30% operational cost applied to all playable clubs)
   const avgUserOvr =
     contractRollover.updatedUserSquad.reduce(
       (s, p) => s + calculatePlayerOverall(p.attributes, p.position),
@@ -739,12 +816,19 @@ export function executeNewSeasonRollover(params: {
   const openingSponsorNet =
     newSponsorship.monthlyInstallment - openingSponsorOpCost;
 
-  // Credit opening sponsorship installment net of 30% operational cost for user and all Série A/B AI clubs
+  // Credit opening sponsorship installment net of 30% operational cost for user and all active league AI clubs
   const clubsAfterSponsor = maintainedClubs.map((c) => {
     if (c.id === userClubId) {
       return { ...c, cashBalance: c.cashBalance + openingSponsorNet };
     }
-    if (c.division === 'A' || c.division === 'B') {
+    const cPlayableDiv = getPlayableDivisionForClub(c);
+    const shouldCreditSponsor = nextIsEuro
+      ? isEuropeanPlayableDivision(cPlayableDiv) &&
+        (c.division === 'PL' ||
+          c.division === 'LALIGA' ||
+          (c.division === 'UCL' && (c.countryCode === 'ING' || c.countryCode === 'ESP')))
+      : c.division === 'A' || c.division === 'B';
+    if (shouldCreditSponsor) {
       const sq = contractRollover.updatedAiSquads[c.id] || [];
       const avgOvr =
         sq.length > 0
@@ -821,9 +905,34 @@ export function executeNewSeasonRollover(params: {
     ? Array.from(new Set([baseReport.libChampionId, ...baseAccLib])).slice(0, 6)
     : [...baseAccLib];
 
+  // Para carreiras europeias, classifica Top 4 da Premier League + Top 4 da La Liga + Campeão da UCL
+  const nextUclQualifiedIds = nextIsEuro
+    ? Array.from(
+        new Set([
+          ...(baseReport.uclChampionId ? [baseReport.uclChampionId] : []),
+          ...(nextDivision === 'PL' ? standings : secondaryStandings)
+            .slice(0, 4)
+            .map((r) => r.clubId),
+          ...(nextDivision === 'LALIGA' ? standings : secondaryStandings)
+            .slice(0, 4)
+            .map((r) => r.clubId),
+          ...clubsAfterSponsor
+            .filter(
+              (c) =>
+                c.division === 'UCL' &&
+                c.countryCode !== 'ING' &&
+                c.countryCode !== 'ESP'
+            )
+            .map((c) => c.id),
+        ])
+      ).slice(0, 16)
+    : undefined;
+
   const nextChampionsLeague = createInitialChampionsLeague(
     nextYear,
-    clubsAfterSponsor
+    clubsAfterSponsor,
+    nextIsEuro ? userClubId : undefined,
+    nextUclQualifiedIds
   );
   const nextMundial = createInitialMundial(nextYear);
   const nextSuperMundial = createInitialSuperMundial({
@@ -945,6 +1054,10 @@ export function executeNewSeasonRollover(params: {
     serieAChampionName: baseReport.serieAChampionName,
     serieBChampionId: baseReport.serieBChampionId,
     serieBChampionName: baseReport.serieBChampionName,
+    premierLeagueChampionId: baseReport.premierLeagueChampionId ?? null,
+    premierLeagueChampionName: baseReport.premierLeagueChampionName ?? null,
+    laLigaChampionId: baseReport.laLigaChampionId ?? null,
+    laLigaChampionName: baseReport.laLigaChampionName ?? null,
     cdbChampionId: baseReport.cdbChampionId,
     cdbChampionName: baseReport.cdbChampionName,
     libChampionId: baseReport.libChampionId,
@@ -1071,7 +1184,7 @@ export function executeNewSeasonRollover(params: {
       date: `28 Jan ${nextYear} · 09:00`,
       sender: 'Diretoria',
       senderRole: finalUserClub.shortName,
-      subject: `Abertura da Temporada ${nextYear} · Série ${nextDivision}`,
+      subject: `Abertura da Temporada ${nextYear} · ${getPlayableLeagueShortLabel(nextDivision)}`,
       category: 'Diretoria',
       priority: 'positive',
       read: false,
@@ -1079,17 +1192,27 @@ export function executeNewSeasonRollover(params: {
         `Iniciamos a temporada ${nextYear}, ${managerName}! Novo contrato de patrocínio fechado com ${newSponsorship.sponsorName} (${newSponsorship.tierLabel}) no valor de ${formatCompactBRL(
           newSponsorship.annualValue
         )}/ano.`,
-        `Estreia na 1ª Rodada da Série ${nextDivision}: contra ${oppName}.`,
+        `Estreia na 1ª Rodada (${getPlayableLeagueShortLabel(nextDivision)}): contra ${oppName}.`,
       ],
-      bulletPoints: [
-        `Campeão Série A ${currentYear}: ${baseReport.serieAChampionName} · Campeão Série B ${currentYear}: ${baseReport.serieBChampionName}`,
-        baseReport.userQualifiedLibertadores
-          ? `${finalUserClub.shortName} classificado para a Copa Libertadores ${nextYear}!`
-          : `Foco na Série ${nextDivision} e Copa do Brasil ${nextYear}.`,
-        `Saldo em caixa ajustado pós-manutenção: ${formatCompactBRL(
-          finalUserClub.cashBalance
-        )}.`,
-      ],
+      bulletPoints: nextIsEuro
+        ? [
+            `Campeão Premier League ${currentYear}: ${baseReport.premierLeagueChampionName || '—'} · Campeão La Liga ${currentYear}: ${baseReport.laLigaChampionName || '—'}`,
+            baseReport.userQualifiedChampionsLeague
+              ? `${finalUserClub.shortName} classificado para a UEFA Champions League ${nextYear}!`
+              : `Foco total no G-4 da ${getPlayableLeagueShortLabel(nextDivision)} ${nextYear}.`,
+            `Saldo em caixa ajustado pós-manutenção: ${formatCompactBRL(
+              finalUserClub.cashBalance
+            )}.`,
+          ]
+        : [
+            `Campeão Série A ${currentYear}: ${baseReport.serieAChampionName} · Campeão Série B ${currentYear}: ${baseReport.serieBChampionName}`,
+            baseReport.userQualifiedLibertadores
+              ? `${finalUserClub.shortName} classificado para a Copa Libertadores ${nextYear}!`
+              : `Foco na ${getPlayableLeagueShortLabel(nextDivision)} e Copa do Brasil ${nextYear}.`,
+            `Saldo em caixa ajustado pós-manutenção: ${formatCompactBRL(
+              finalUserClub.cashBalance
+            )}.`,
+          ],
       actionLabel: 'Ver Finanças',
       actionTargetTab: 'finances',
     },

@@ -82,6 +82,10 @@ export function calculateContractRenewalExpectation(
   const maxContractSalary =
     club.division === 'UCL'
       ? 16_000_000
+      : club.division === 'PL'
+      ? 12_000_000
+      : club.division === 'LALIGA'
+      ? 10_000_000
       : club.division === 'WORLD'
       ? 8_000_000
       : club.division === 'B'

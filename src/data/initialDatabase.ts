@@ -1,6 +1,7 @@
 import {
   Club,
   InboxMessage,
+  PlayableDivision,
   Player,
   RoundFixture,
   StandingsRow,
@@ -16,11 +17,124 @@ import {
   UCL_CLUB_IDS,
   GLOBAL_WORLD_CLUB_IDS,
 } from './championsClubs';
+import {
+  PREMIER_LEAGUE_EXTRA_CLUBS,
+  PREMIER_LEAGUE_EXTRA_CLUB_IDS,
+} from './premierLeagueClubs';
+import {
+  LALIGA_EXTRA_CLUBS,
+  LALIGA_EXTRA_CLUB_IDS,
+} from './laLigaClubs';
 import { REAL_SQUADS_SERIE_A } from './realSquadsA';
 import { REAL_SQUADS_SERIE_B } from './realSquadsB';
 import { REAL_SQUADS_LIBERTADORES } from './realSquadsLibertadores';
 import { REAL_SQUADS_CHAMPIONS } from './realSquadsChampions';
+import { REAL_SQUADS_PREMIER_LEAGUE } from './realSquadsPremierLeague';
+import { REAL_SQUADS_LALIGA } from './realSquadsLaLiga';
 import { buildPlayersFromSeeds, RealPlayerSeed } from './squadBuilder';
+
+export const PREMIER_LEAGUE_CLUBS: Club[] = [
+  ...UCL_CLUBS.filter((c) => c.countryCode === 'ING'),
+  ...PREMIER_LEAGUE_EXTRA_CLUBS,
+];
+
+export const LALIGA_CLUBS: Club[] = [
+  ...UCL_CLUBS.filter((c) => c.countryCode === 'ESP'),
+  ...LALIGA_EXTRA_CLUBS,
+];
+
+export const PREMIER_LEAGUE_CLUB_IDS: string[] = PREMIER_LEAGUE_CLUBS.map(
+  (c) => c.id
+);
+
+export const LALIGA_CLUB_IDS: string[] = LALIGA_CLUBS.map((c) => c.id);
+
+export const ALL_PLAYABLE_CLUBS: Club[] = [
+  ...SERIE_A_CLUBS,
+  ...SERIE_B_CLUBS,
+  ...PREMIER_LEAGUE_CLUBS,
+  ...LALIGA_CLUBS,
+];
+
+export function getPlayableDivisionForClub(
+  club: Pick<Club, 'id' | 'division' | 'countryCode'> | null | undefined
+): PlayableDivision {
+  if (!club) return 'A';
+  if (club.division === 'B') return 'B';
+  if (club.division === 'PL' || (club.division === 'UCL' && club.countryCode === 'ING')) {
+    return 'PL';
+  }
+  if (club.division === 'LALIGA' || (club.division === 'UCL' && club.countryCode === 'ESP')) {
+    return 'LALIGA';
+  }
+  return 'A';
+}
+
+export function isEuropeanPlayableDivision(
+  division: PlayableDivision
+): boolean {
+  return division === 'PL' || division === 'LALIGA';
+}
+
+export function getSecondaryPlayableDivision(
+  division: PlayableDivision
+): PlayableDivision {
+  if (division === 'A') return 'B';
+  if (division === 'B') return 'A';
+  if (division === 'PL') return 'LALIGA';
+  return 'PL';
+}
+
+export function getPlayableLeagueLabel(division: PlayableDivision): string {
+  switch (division) {
+    case 'A':
+      return 'Brasileirão Série A';
+    case 'B':
+      return 'Brasileirão Série B';
+    case 'PL':
+      return 'Premier League';
+    case 'LALIGA':
+      return 'La Liga';
+  }
+}
+
+export function getPlayableLeagueShortLabel(division: PlayableDivision): string {
+  switch (division) {
+    case 'A':
+      return 'Série A';
+    case 'B':
+      return 'Série B';
+    case 'PL':
+      return 'Premier League';
+    case 'LALIGA':
+      return 'La Liga';
+  }
+}
+
+export function getClubsForPlayableDivision(
+  division: PlayableDivision,
+  clubsPool?: Club[]
+): Club[] {
+  const source = clubsPool && clubsPool.length > 0 ? clubsPool : ALL_WORLD_CLUBS;
+  if (division === 'A') {
+    const found = source.filter((c) => c.division === 'A');
+    return found.length >= 20 ? found : SERIE_A_CLUBS;
+  }
+  if (division === 'B') {
+    const found = source.filter((c) => c.division === 'B');
+    return found.length >= 20 ? found : SERIE_B_CLUBS;
+  }
+  if (division === 'PL') {
+    const found = source.filter(
+      (c) => c.division === 'PL' || (c.division === 'UCL' && c.countryCode === 'ING')
+    );
+    return found.length >= 20 ? found : PREMIER_LEAGUE_CLUBS;
+  }
+  const found = source.filter(
+    (c) => c.division === 'LALIGA' || (c.division === 'UCL' && c.countryCode === 'ESP')
+  );
+  return found.length >= 20 ? found : LALIGA_CLUBS;
+}
 
 export {
   SERIE_A_CLUBS,
@@ -31,6 +145,10 @@ export {
   GLOBAL_WORLD_CLUBS,
   UCL_CLUB_IDS,
   GLOBAL_WORLD_CLUB_IDS,
+  PREMIER_LEAGUE_EXTRA_CLUBS,
+  PREMIER_LEAGUE_EXTRA_CLUB_IDS,
+  LALIGA_EXTRA_CLUBS,
+  LALIGA_EXTRA_CLUB_IDS,
 };
 
 export const USER_CLUB_ID = 'flamengo';
@@ -40,6 +158,8 @@ export const ALL_WORLD_CLUBS: Club[] = [
   ...ALL_REAL_CLUBS,
   ...CONMEBOL_FOREIGN_CLUBS,
   ...UCL_CLUBS,
+  ...PREMIER_LEAGUE_EXTRA_CLUBS,
+  ...LALIGA_EXTRA_CLUBS,
   ...GLOBAL_WORLD_CLUBS,
 ];
 
@@ -48,6 +168,8 @@ export const REAL_SQUAD_SEEDS: Record<string, RealPlayerSeed[]> = {
   ...REAL_SQUADS_SERIE_B,
   ...REAL_SQUADS_LIBERTADORES,
   ...REAL_SQUADS_CHAMPIONS,
+  ...REAL_SQUADS_PREMIER_LEAGUE,
+  ...REAL_SQUADS_LALIGA,
 };
 
 export function getRealSquadForClub(club: Club): Player[] {
@@ -64,58 +186,56 @@ const DEFAULT_CLUB =
 
 export const INITIAL_USER_SQUAD: Player[] = getRealSquadForClub(DEFAULT_CLUB);
 
+const buildEmptyStandings = (clubs: Club[]): StandingsRow[] =>
+  clubs.map((club) => ({
+    clubId: club.id,
+    played: 0,
+    won: 0,
+    drawn: 0,
+    lost: 0,
+    goalsFor: 0,
+    goalsAgainst: 0,
+    goalDifference: 0,
+    points: 0,
+    form: [],
+  }));
+
 // Classificação inicial — Abertura da Temporada 2026 (0 jogos disputados) — Série A (20 clubes reais de 2026)
-export const INITIAL_STANDINGS_A: StandingsRow[] = SERIE_A_CLUBS.map((club) => ({
-  clubId: club.id,
-  played: 0,
-  won: 0,
-  drawn: 0,
-  lost: 0,
-  goalsFor: 0,
-  goalsAgainst: 0,
-  goalDifference: 0,
-  points: 0,
-  form: [],
-}));
+export const INITIAL_STANDINGS_A: StandingsRow[] =
+  buildEmptyStandings(SERIE_A_CLUBS);
 
 // Classificação inicial — Abertura da Temporada 2026 (0 jogos disputados) — Série B (20 clubes reais de 2026)
-export const INITIAL_STANDINGS_B: StandingsRow[] = SERIE_B_CLUBS.map((club) => ({
-  clubId: club.id,
-  played: 0,
-  won: 0,
-  drawn: 0,
-  lost: 0,
-  goalsFor: 0,
-  goalsAgainst: 0,
-  goalDifference: 0,
-  points: 0,
-  form: [],
-}));
+export const INITIAL_STANDINGS_B: StandingsRow[] =
+  buildEmptyStandings(SERIE_B_CLUBS);
+
+// Classificação inicial — Premier League 2025/26 (20 clubes reais)
+export const INITIAL_STANDINGS_PL: StandingsRow[] =
+  buildEmptyStandings(PREMIER_LEAGUE_CLUBS);
+
+// Classificação inicial — La Liga 2025/26 (20 clubes reais)
+export const INITIAL_STANDINGS_LALIGA: StandingsRow[] =
+  buildEmptyStandings(LALIGA_CLUBS);
 
 export const INITIAL_STANDINGS: StandingsRow[] = INITIAL_STANDINGS_A;
 
 export function getInitialStandingsForDivision(
-  division: 'A' | 'B',
+  division: PlayableDivision,
   clubsPool?: Club[]
 ): StandingsRow[] {
   if (clubsPool && clubsPool.length > 0) {
-    const filtered = clubsPool.filter((c) => c.division === division);
+    const filtered = getClubsForPlayableDivision(division, clubsPool);
     if (filtered.length > 0) {
-      return filtered.map((club) => ({
-        clubId: club.id,
-        played: 0,
-        won: 0,
-        drawn: 0,
-        lost: 0,
-        goalsFor: 0,
-        goalsAgainst: 0,
-        goalDifference: 0,
-        points: 0,
-        form: [],
-      }));
+      return buildEmptyStandings(filtered);
     }
   }
-  const source = division === 'B' ? INITIAL_STANDINGS_B : INITIAL_STANDINGS_A;
+  const source =
+    division === 'B'
+      ? INITIAL_STANDINGS_B
+      : division === 'PL'
+      ? INITIAL_STANDINGS_PL
+      : division === 'LALIGA'
+      ? INITIAL_STANDINGS_LALIGA
+      : INITIAL_STANDINGS_A;
   return source.map((row) => ({ ...row, form: [...row.form] }));
 }
 
@@ -136,22 +256,17 @@ const OFFICIAL_SERIE_A_ROUND_1_PAIRS: Array<[string, string]> = [
 // Generate deterministic 38-round schedule (19 home/away 1º turno + 19 reversed 2º turno)
 export function generateLeagueSchedule(
   userClubId: string = USER_CLUB_ID,
-  division?: 'A' | 'B',
+  division?: PlayableDivision,
   clubsPool?: Club[]
 ): RoundFixture[] {
-  const sourcePool = clubsPool && clubsPool.length > 0 ? clubsPool : INITIAL_CLUBS;
+  const sourcePool =
+    clubsPool && clubsPool.length > 0 ? clubsPool : ALL_WORLD_CLUBS;
   const userClub = sourcePool.find((c) => c.id === userClubId);
-  const resolvedDivision: 'A' | 'B' =
-    division ?? (userClub?.division === 'B' ? 'B' : 'A');
-  const divisionClubs = sourcePool.filter((c) => c.division === resolvedDivision);
+  const resolvedDivision: PlayableDivision =
+    division ?? getPlayableDivisionForClub(userClub);
+  const divisionClubs = getClubsForPlayableDivision(resolvedDivision, sourcePool);
 
-  const clubIds = (
-    divisionClubs.length >= 20
-      ? divisionClubs
-      : resolvedDivision === 'B'
-      ? SERIE_B_CLUBS
-      : SERIE_A_CLUBS
-  ).map((c) => c.id);
+  const clubIds = divisionClubs.slice(0, 20).map((c) => c.id);
 
   const clubIdSet = new Set(clubIds);
   const canUseOfficialRound1 =

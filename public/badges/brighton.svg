@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <circle cx="100" cy="100" r="92" fill="#0057b8" stroke="#ffffff" stroke-width="6"/>
+  <circle cx="100" cy="100" r="82" fill="none" stroke="#facc15" stroke-width="3.5"/>
+  <circle cx="100" cy="100" r="56" fill="#ffffff" stroke="#0057b8" stroke-width="3"/>
+  <text x="100" y="34" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="14" fill="#ffffff" letter-spacing="1.5">BRIGHTON</text>
+  <text x="100" y="114" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="38" fill="#0f172a" letter-spacing="1">BHA</text>
+  <text x="100" y="178" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="14" fill="#ffffff" letter-spacing="2">ALBION</text>
+</svg>

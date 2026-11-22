@@ -510,7 +510,18 @@ export function createInitialMatchState(
 
   const initialCarrier = homeTokens[5] || homeTokens[0];
   const competition = fixture.competition || 'BRASILEIRAO';
-  const leagueDiv = homeClub.division === 'B' ? 'Série B' : 'Série A';
+  const leagueName =
+    fixture.division === 'PL' ||
+    homeClub.division === 'PL' ||
+    (homeClub.division === 'UCL' && homeClub.countryCode === 'ING')
+      ? 'Premier League'
+      : fixture.division === 'LALIGA' ||
+        homeClub.division === 'LALIGA' ||
+        (homeClub.division === 'UCL' && homeClub.countryCode === 'ESP')
+      ? 'La Liga'
+      : fixture.division === 'B' || homeClub.division === 'B'
+      ? 'Brasileirão Série B'
+      : 'Brasileirão Série A';
   const competitionLabel =
     competition === 'COPA_DO_BRASIL'
       ? `Copa do Brasil · ${fixture.stageLabel || 'Mata-Mata'}`
@@ -522,7 +533,7 @@ export function createInitialMatchState(
       ? `Mundial de Clubes · ${fixture.stageLabel || 'Mata-Mata'}`
       : competition === 'SUPER_MUNDIAL'
       ? `Super Mundial de Clubes · ${fixture.stageLabel || 'Fase de Grupos'}`
-      : `Brasileirão ${leagueDiv} · ${roundNumber}ª Rodada`;
+      : `${leagueName} · ${roundNumber}ª Rodada`;
 
   const isKnockout =
     competition === 'COPA_DO_BRASIL' ||

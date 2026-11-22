@@ -343,10 +343,10 @@ test('Copa Libertadores 2026 covers all 10 CONMEBOL countries, 32 clubs, 8 group
     LIBERTADORES_KNOCKOUT_STAGES,
   } = await import('../data/cupFactory');
 
-  // 20 Série A + 20 Série B + 24 CONMEBOL + 16 UCL + 4 Mundial Global = 84 world clubs
+  // 20 Série A + 20 Série B + 24 CONMEBOL + 16 UCL + 4 Mundial Global + 16 Premier League + 17 La Liga = 117 world clubs
   assert.equal(LIBERTADORES_BR_CLUB_IDS.length, 8);
   assert.equal(CONMEBOL_FOREIGN_CLUBS.length, 24);
-  assert.equal(ALL_WORLD_CLUBS.length, 84);
+  assert.equal(ALL_WORLD_CLUBS.length, 117);
 
   const foreignCountries = new Set(CONMEBOL_FOREIGN_CLUBS.map((c) => c.countryCode));
   for (const code of ['ARG', 'URU', 'COL', 'ECU', 'PAR', 'CHI', 'PER', 'BOL', 'VEN']) {
@@ -606,15 +606,19 @@ test('Transfer Catalog & Difficulty Engine evaluate Club x Club and Player x Squ
   } = await import('./transferEngine');
   const { createNewCareerSave } = await import('../data/careerFactory');
 
-  // 1. International & Free Agents catalogs integrity (4 supplementary clubs + 16 UCL + 4 Global clubs)
+  // 1. International & Free Agents catalogs integrity (2 supplementary clubs + 16 UCL + 4 Global + 16 PL + 17 La Liga)
   const intl = getInternationalMarketListings();
   const freeAgents = createInitialFreeAgents();
   const uclAndGlobalClubs = ALL_WORLD_CLUBS.filter(
     (c) => c.division === 'UCL' || c.division === 'WORLD'
   );
-  assert.ok(INTERNATIONAL_MARKET_CLUBS.length >= 4);
+  const plAndLaLigaExtraClubs = ALL_WORLD_CLUBS.filter(
+    (c) => c.division === 'PL' || c.division === 'LALIGA'
+  );
+  assert.ok(INTERNATIONAL_MARKET_CLUBS.length >= 2);
   assert.equal(uclAndGlobalClubs.length, 20);
-  assert.ok(intl.length >= 12);
+  assert.equal(plAndLaLigaExtraClubs.length, 33);
+  assert.ok(intl.length >= 7);
   assert.equal(freeAgents.length, 20);
   for (const item of intl) {
     assert.ok(item.ovr >= 60 && item.ovr <= 95);

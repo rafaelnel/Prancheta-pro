@@ -145,7 +145,12 @@ type WatchlistSortKey =
   | 'VALUE_ASC';
 
 type DomesticScopeFilter = 'ALL' | 'SERIE_A' | 'SERIE_B' | 'LIBERTADORES';
-type IntlScopeFilter = 'ALL' | 'CHAMPIONS' | 'MUNDIAL_OUTROS';
+type IntlScopeFilter =
+  | 'ALL'
+  | 'PREMIER_LEAGUE'
+  | 'LA_LIGA'
+  | 'CHAMPIONS'
+  | 'MUNDIAL_OUTROS';
 type ClubListingFilter = 'ALL' | 'LISTED_ANY' | 'LISTED_BUY' | 'LISTED_LOAN';
 type PriceRangeFilter =
   | 'ALL'
@@ -490,11 +495,24 @@ export const MarketView: React.FC<MarketViewProps> = ({
         if (domesticScope !== 'ALL' && item.scope !== domesticScope) continue;
       } else if (subTab === 'INTERNACIONAL') {
         if (item.scope !== 'INTERNACIONAL') continue;
-        const isChampionsClub = Boolean(
-          item.originClub?.leagueName.startsWith('Champions League')
-        );
+        const league = item.originClub?.leagueName || '';
+        const country = item.originClub?.country || '';
+        const isChampionsClub = league.startsWith('Champions League');
+        const isPremierLeagueClub =
+          league.startsWith('Premier League') ||
+          (isChampionsClub && country === 'Inglaterra');
+        const isLaLigaClub =
+          league.startsWith('La Liga') ||
+          (isChampionsClub && country === 'Espanha');
+        if (intlScope === 'PREMIER_LEAGUE' && !isPremierLeagueClub) continue;
+        if (intlScope === 'LA_LIGA' && !isLaLigaClub) continue;
         if (intlScope === 'CHAMPIONS' && !isChampionsClub) continue;
-        if (intlScope === 'MUNDIAL_OUTROS' && isChampionsClub) continue;
+        if (
+          intlScope === 'MUNDIAL_OUTROS' &&
+          (isChampionsClub || isPremierLeagueClub || isLaLigaClub)
+        ) {
+          continue;
+        }
       } else if (subTab === 'LIVRES') {
         continue;
       } else if (subTab === 'EMPRESTIMOS') {
@@ -734,11 +752,24 @@ export const MarketView: React.FC<MarketViewProps> = ({
           }
         } else if (subTab === 'INTERNACIONAL') {
           if (item.scope !== 'INTERNACIONAL') return false;
-          const isChampionsClub = Boolean(
-            item.originClub?.leagueName.startsWith('Champions League')
-          );
+          const league = item.originClub?.leagueName || '';
+          const country = item.originClub?.country || '';
+          const isChampionsClub = league.startsWith('Champions League');
+          const isPremierLeagueClub =
+            league.startsWith('Premier League') ||
+            (isChampionsClub && country === 'Inglaterra');
+          const isLaLigaClub =
+            league.startsWith('La Liga') ||
+            (isChampionsClub && country === 'Espanha');
+          if (intlScope === 'PREMIER_LEAGUE' && !isPremierLeagueClub) return false;
+          if (intlScope === 'LA_LIGA' && !isLaLigaClub) return false;
           if (intlScope === 'CHAMPIONS' && !isChampionsClub) return false;
-          if (intlScope === 'MUNDIAL_OUTROS' && isChampionsClub) return false;
+          if (
+            intlScope === 'MUNDIAL_OUTROS' &&
+            (isChampionsClub || isPremierLeagueClub || isLaLigaClub)
+          ) {
+            return false;
+          }
         } else if (subTab === 'LIVRES') {
           if (item.scope !== 'LIVRES') return false;
         } else if (subTab === 'EMPRESTIMOS') {
@@ -3654,8 +3685,10 @@ export const MarketView: React.FC<MarketViewProps> = ({
                     className="w-full sm:col-span-3 bg-[#0b0c10] border border-white/[0.08] rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#b5ff00]"
                   >
                     <option value="ALL">Todas Internacionais</option>
-                    <option value="CHAMPIONS">Champions (16)</option>
-                    <option value="MUNDIAL_OUTROS">Mundial & Europa</option>
+                    <option value="PREMIER_LEAGUE">Premier League (20)</option>
+                    <option value="LA_LIGA">La Liga (20)</option>
+                    <option value="CHAMPIONS">Champions League (16)</option>
+                    <option value="MUNDIAL_OUTROS">Mundial & Outros</option>
                   </select>
 
                   <select
@@ -3893,8 +3926,14 @@ export const MarketView: React.FC<MarketViewProps> = ({
                   {Array.from(aiClubProfilesMap.values())
                     .filter(({ club }) => {
                       if (subTab === 'NACIONAL_LIB') {
-                        if (club.division === 'UCL' || club.division === 'WORLD')
+                        if (
+                          club.division === 'UCL' ||
+                          club.division === 'PL' ||
+                          club.division === 'LALIGA' ||
+                          club.division === 'WORLD'
+                        ) {
                           return false;
+                        }
                         if (domesticScope === 'SERIE_A' && club.division !== 'A')
                           return false;
                         if (domesticScope === 'SERIE_B' && club.division !== 'B')
@@ -3905,7 +3944,23 @@ export const MarketView: React.FC<MarketViewProps> = ({
                         )
                           return false;
                       } else if (subTab === 'INTERNACIONAL') {
-                        if (club.division !== 'UCL' && club.division !== 'WORLD')
+                        if (
+                          club.division !== 'UCL' &&
+                          club.division !== 'PL' &&
+                          club.division !== 'LALIGA' &&
+                          club.division !== 'WORLD'
+                        ) {
+                          return false;
+                        }
+                        const isPlClub =
+                          club.division === 'PL' ||
+                          (club.division === 'UCL' && club.countryCode === 'ING');
+                        const isLaLigaClub =
+                          club.division === 'LALIGA' ||
+                          (club.division === 'UCL' && club.countryCode === 'ESP');
+                        if (intlScope === 'PREMIER_LEAGUE' && !isPlClub)
+                          return false;
+                        if (intlScope === 'LA_LIGA' && !isLaLigaClub)
                           return false;
                         if (intlScope === 'CHAMPIONS' && club.division !== 'UCL')
                           return false;

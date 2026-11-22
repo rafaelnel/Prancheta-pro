@@ -122,7 +122,10 @@ export function clubToMarketProfile(club: Club): MarketClubProfile {
       ? 'SERIE_B'
       : club.division === 'LIB'
       ? 'LIBERTADORES'
-      : club.division === 'UCL' || club.division === 'WORLD'
+      : club.division === 'UCL' ||
+        club.division === 'PL' ||
+        club.division === 'LALIGA' ||
+        club.division === 'WORLD'
       ? 'INTERNACIONAL'
       : 'SERIE_A';
 
@@ -133,6 +136,10 @@ export function clubToMarketProfile(club: Club): MarketClubProfile {
       ? `Libertadores · ${club.country || 'CONMEBOL'}`
       : club.division === 'UCL'
       ? `Champions League · ${club.country || 'Europa'}`
+      : club.division === 'PL'
+      ? 'Premier League · Inglaterra'
+      : club.division === 'LALIGA'
+      ? 'La Liga · Espanha'
       : club.division === 'WORLD'
       ? `Mundial · ${club.country || 'Internacional'}`
       : 'Brasileirão Série A';

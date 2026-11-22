@@ -253,7 +253,8 @@ export type SuperMundialKnockoutStage = 'Quartas' | 'Semifinal' | 'Final';
 
 export type SuperMundialStage = 'Grupos' | SuperMundialKnockoutStage;
 
-export type ClubDivision = 'A' | 'B' | 'LIB' | 'UCL' | 'WORLD';
+export type ClubDivision = 'A' | 'B' | 'LIB' | 'UCL' | 'PL' | 'LALIGA' | 'WORLD';
+export type PlayableDivision = 'A' | 'B' | 'PL' | 'LALIGA';
 
 export interface Club {
   id: string;
@@ -866,13 +867,18 @@ export interface SeasonEndReport {
   mundialChampionName?: string | null;
   superMundialChampionId?: string | null;
   superMundialChampionName?: string | null;
-  userFinalDivision: 'A' | 'B';
+  premierLeagueChampionId?: string | null;
+  premierLeagueChampionName?: string | null;
+  laLigaChampionId?: string | null;
+  laLigaChampionName?: string | null;
+  userFinalDivision: PlayableDivision;
   userFinalRank: number;
   userFinalPoints: number;
   userSeasonPrize: number;
   userPromoted: boolean;
   userRelegated: boolean;
   userQualifiedLibertadores: boolean;
+  userQualifiedChampionsLeague?: boolean;
   relegatedClubIds: string[];
   promotedClubIds: string[];
   libertadoresQualifiedBrIds: string[];
@@ -911,8 +917,12 @@ export interface SeasonArchiveEntry {
   bestPlayerName: string;
   bestPlayerClubName: string;
   bestPlayerRating: number;
+  premierLeagueChampionId?: string | null;
+  premierLeagueChampionName?: string | null;
+  laLigaChampionId?: string | null;
+  laLigaChampionName?: string | null;
   userClubName: string;
-  userDivision: 'A' | 'B';
+  userDivision: PlayableDivision;
   userRank: number;
   userPoints: number;
 }
@@ -942,7 +952,7 @@ export interface CareerSaveData {
   slotIndex: CareerSlotIndex;
   managerName: string;
   userClubId: string;
-  division: 'A' | 'B';
+  division: PlayableDivision;
   clubName: string;
   clubShortName: string;
   clubAbbr: string;

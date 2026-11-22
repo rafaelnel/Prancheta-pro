@@ -1,8 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  ALL_PLAYABLE_CLUBS,
   ALL_WORLD_CLUBS,
   GLOBAL_WORLD_CLUBS,
+  LALIGA_CLUBS,
+  LALIGA_CLUB_IDS,
+  LALIGA_EXTRA_CLUBS,
+  PREMIER_LEAGUE_CLUBS,
+  PREMIER_LEAGUE_CLUB_IDS,
+  PREMIER_LEAGUE_EXTRA_CLUBS,
   UCL_CLUBS,
   getRealSquadForClub,
 } from '../data/initialDatabase';
@@ -10,6 +17,7 @@ import { INTERNATIONAL_MARKET_CLUBS } from '../data/transferCatalog';
 import {
   CHAMPIONS_STAGES,
   MUNDIAL_STAGES,
+  SEASON_CALENDAR,
   SUPER_MUNDIAL_KNOCKOUT_STAGES,
   advanceChampionsLeagueStage,
   advanceMundialStage,
@@ -18,6 +26,7 @@ import {
   createInitialChampionsLeague,
   createInitialMundial,
   createInitialSuperMundial,
+  findUserFixtureForStep,
   isSuperMundialYear,
   seedMundialBracket,
   syncSuperMundialWithChampionsResults,
@@ -31,11 +40,21 @@ import {
 import { maybeGenerateIncomingOfferForUser } from './aiMarketEngine';
 import { executeNewSeasonRollover } from './seasonLifecycle';
 import {
+  AutoSimCareerSnapshot,
+  getMaxSeasonDayOffset,
+  simulateNextAutoStep,
+} from './autoTacticsAndSim';
+import {
   GLOBAL_SCALE_VERSION,
   calculateBalancedValuationAndWage,
 } from './economyAndEvolution';
 import { formatCompactBRL } from '../utils/formatters';
-import { hydrateCareerSave } from '../utils/saveManager';
+import {
+  StorageAdapter,
+  hydrateCareerSave,
+  loadCareerSlot,
+  saveCareerToSlot,
+} from '../utils/saveManager';
 
 test('16 Champions League clubs + 4 Global Mundial clubs have complete 18-player rosters with zero duplicates', () => {
   assert.equal(UCL_CLUBS.length, 16);
@@ -74,6 +93,64 @@ test('16 Champions League clubs + 4 Global Mundial clubs have complete 18-player
       );
     }
   }
+});
+
+test('All 20 Premier League and 20 La Liga clubs exist with 18 real players each, calibrated OVRs, zero duplicates, and Mercado Internacional listings', () => {
+  assert.equal(PREMIER_LEAGUE_CLUB_IDS.length, 20, 'Premier League must have all 20 clubs');
+  assert.equal(LALIGA_CLUB_IDS.length, 20, 'La Liga must have all 20 clubs');
+  assert.equal(PREMIER_LEAGUE_EXTRA_CLUBS.length, 16);
+  assert.equal(LALIGA_EXTRA_CLUBS.length, 17);
+
+  const byId = new Map(ALL_WORLD_CLUBS.map((c) => [c.id, c]));
+  const allPlAndLaLigaIds = [...PREMIER_LEAGUE_CLUB_IDS, ...LALIGA_CLUB_IDS];
+  assert.equal(new Set(allPlAndLaLigaIds).size, 40, 'No overlap between PL and La Liga club IDs');
+
+  for (const clubId of allPlAndLaLigaIds) {
+    const club = byId.get(clubId);
+    assert.ok(club, `Missing club ${clubId} in ALL_WORLD_CLUBS`);
+    const squad = getRealSquadForClub(club);
+    assert.equal(squad.length, 18, `Expected 18 real players for ${club.name}`);
+    assert.equal(squad.filter((p) => p.isStarter).length, 11, `Expected 11 starters for ${club.name}`);
+
+    const shirtSet = new Set(squad.map((p) => p.number));
+    assert.equal(shirtSet.size, 18, `Duplicate shirt numbers found in ${club.name}`);
+
+    for (const p of squad) {
+      const ovr = calculatePlayerOverall(p.attributes, p.position);
+      assert.ok(ovr >= 60 && ovr <= 95, `OVR ${ovr} out of bounds for ${p.name} (${club.name})`);
+    }
+  }
+
+  // Spot-check real OVR hierarchy (Dibu Martínez, Bruno Fernandes, Nico Williams, Santi Cazorla)
+  const villaSquad = getRealSquadForClub(byId.get('aston-villa')!);
+  const dibu = villaSquad.find((p) => p.name.includes('Dibu'))!;
+  assert.equal(calculatePlayerOverall(dibu.attributes, dibu.position), 86);
+
+  const munSquad = getRealSquadForClub(byId.get('man-united')!);
+  const brunoF = munSquad.find((p) => p.name === 'Bruno Fernandes')!;
+  assert.equal(calculatePlayerOverall(brunoF.attributes, brunoF.position), 86);
+
+  const athleticSquad = getRealSquadForClub(byId.get('athletic-bilbao')!);
+  const nico = athleticSquad.find((p) => p.name === 'Nico Williams')!;
+  assert.equal(calculatePlayerOverall(nico.attributes, nico.position), 85);
+
+  // Market listings include all 33 additional PL & La Liga clubs under INTERNACIONAL
+  const career = createNewCareerSave(1, 'flamengo', 'Técnico');
+  const listings = buildAllMarketListings({
+    clubs: career.clubs,
+    userClubId: 'flamengo',
+    freeAgents: career.freeAgents || [],
+    transferredOutClubPlayerIds: [],
+    aiSquads: career.aiSquads,
+  });
+  const plExtraListings = listings.filter(
+    (l) => l.scope === 'INTERNACIONAL' && Boolean(l.originClub?.leagueName.startsWith('Premier League'))
+  );
+  const laLigaExtraListings = listings.filter(
+    (l) => l.scope === 'INTERNACIONAL' && Boolean(l.originClub?.leagueName.startsWith('La Liga'))
+  );
+  assert.equal(plExtraListings.length, 16 * 18);
+  assert.equal(laLigaExtraListings.length, 17 * 18);
 });
 
 test('Recalibrated global 60–95 OVR & rare 5★ hierarchy keeps 5★ exclusive to generational outliers', () => {
@@ -446,7 +523,7 @@ test('Neymar Jr. & Messi retain 5★ career expectation, valuation is strictly m
   assert.equal(messi.potentialStars, 5, 'Lionel Messi must have 5★ career expectation');
 
   // Strict monotonicity across all divisions, ages, stars, and OVRs
-  const divisions = ['B', 'A', 'LIB', 'WORLD', 'UCL'] as const;
+  const divisions = ['B', 'A', 'LIB', 'WORLD', 'LALIGA', 'PL', 'UCL'] as const;
   const sampleAges = [17, 20, 24, 28, 34, 38];
   const starsGrid = [1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5] as const;
 
@@ -542,3 +619,229 @@ test('Neymar Jr. & Messi retain 5★ career expectation, valuation is strictly m
   assert.ok(upgradedFla.wageBudget >= 24_000_000);
   assert.ok(hydrated.squad[0].marketValue > 10_000_000);
 });
+
+test('All 40 Premier League & La Liga clubs are 100% playable alongside Brasileirão Série A & B (80 playable clubs total)', () => {
+  assert.equal(PREMIER_LEAGUE_CLUBS.length, 20);
+  assert.equal(LALIGA_CLUBS.length, 20);
+  assert.equal(ALL_PLAYABLE_CLUBS.length, 80);
+  assert.equal(new Set(ALL_PLAYABLE_CLUBS.map((c) => c.id)).size, 80);
+
+  for (const club of PREMIER_LEAGUE_CLUBS) {
+    const save = createNewCareerSave(1, club.id, 'Treinador');
+    assert.equal(save.division, 'PL', `${club.name} must launch in Premier League (PL)`);
+    assert.equal(save.userClubId, club.id);
+    assert.equal(save.standings.length, 20, `${club.name} must have 20-club PL standings`);
+    assert.equal(
+      save.secondaryStandings?.length,
+      20,
+      `${club.name} must have 20-club La Liga secondary standings`
+    );
+    assert.equal(save.fixtures.length, 380, `${club.name} must have 380 PL fixtures`);
+    assert.equal(
+      save.fixtures.filter((f) => f.isUserMatch).length,
+      38,
+      `${club.name} must have 38 user league fixtures`
+    );
+    assert.equal(save.squad.length, 18);
+    assert.equal(save.squad.filter((p) => p.isStarter).length, 11);
+  }
+
+  for (const club of LALIGA_CLUBS) {
+    const save = createNewCareerSave(2, club.id, 'Entrenador');
+    assert.equal(save.division, 'LALIGA', `${club.name} must launch in La Liga (LALIGA)`);
+    assert.equal(save.userClubId, club.id);
+    assert.equal(save.standings.length, 20, `${club.name} must have 20-club La Liga standings`);
+    assert.equal(
+      save.secondaryStandings?.length,
+      20,
+      `${club.name} must have 20-club PL secondary standings`
+    );
+    assert.equal(save.fixtures.length, 380, `${club.name} must have 380 La Liga fixtures`);
+    assert.equal(
+      save.fixtures.filter((f) => f.isUserMatch).length,
+      38,
+      `${club.name} must have 38 user league fixtures`
+    );
+    assert.equal(save.squad.length, 18);
+    assert.equal(save.squad.filter((p) => p.isStarter).length, 11);
+  }
+});
+
+test('European UCL clubs play Champions League knockout matches while non-UCL PL/La Liga clubs stay domestic', () => {
+  const uclR16Step = SEASON_CALENDAR.find(
+    (s) => s.competition === 'CHAMPIONS_LEAGUE' && s.uclStage === 'Oitavas'
+  )!;
+  assert.ok(uclR16Step, 'Season calendar must include UCL Oitavas step');
+
+  const arsenalCareer = createNewCareerSave(1, 'arsenal', 'Arteta');
+  const arsenalUclFix = findUserFixtureForStep(
+    uclR16Step,
+    'arsenal',
+    arsenalCareer.fixtures,
+    arsenalCareer.copaDoBrasil!,
+    arsenalCareer.libertadores!,
+    arsenalCareer.mundial,
+    arsenalCareer.superMundial,
+    arsenalCareer.championsLeague
+  );
+  assert.ok(arsenalUclFix, 'Arsenal must have a playable UCL Oitavas fixture');
+  assert.equal(arsenalUclFix!.isUserMatch, true);
+  assert.ok(
+    arsenalUclFix!.homeClubId === 'arsenal' || arsenalUclFix!.awayClubId === 'arsenal'
+  );
+
+  const realCareer = createNewCareerSave(2, 'real-madrid', 'Ancelotti');
+  const realUclFix = findUserFixtureForStep(
+    uclR16Step,
+    'real-madrid',
+    realCareer.fixtures,
+    realCareer.copaDoBrasil!,
+    realCareer.libertadores!,
+    realCareer.mundial,
+    realCareer.superMundial,
+    realCareer.championsLeague
+  );
+  assert.ok(realUclFix, 'Real Madrid must have a playable UCL Oitavas fixture');
+  assert.equal(realUclFix!.isUserMatch, true);
+
+  const villaCareer = createNewCareerSave(3, 'aston-villa', 'Emery');
+  const villaUclFix = findUserFixtureForStep(
+    uclR16Step,
+    'aston-villa',
+    villaCareer.fixtures,
+    villaCareer.copaDoBrasil!,
+    villaCareer.libertadores!,
+    villaCareer.mundial,
+    villaCareer.superMundial,
+    villaCareer.championsLeague
+  );
+  assert.equal(villaUclFix, null, 'Non-UCL PL club should not be forced into UCL Oitavas');
+});
+
+test('Premier League and La Liga careers complete full-season auto-simulation and rollover to 2027 cleanly', () => {
+  const runFullSeasonAndRollover = (clubId: string, expectedDiv: 'PL' | 'LALIGA') => {
+    const career = createNewCareerSave(1, clubId, 'Manager');
+    assert.equal(career.division, expectedDiv);
+
+    let snapshot: AutoSimCareerSnapshot = {
+      clubs: career.clubs,
+      userClubId: career.userClubId,
+      squad: career.squad,
+      loanedOutPlayers: career.loanedOutPlayers,
+      aiSquads: career.aiSquads,
+      standings: career.standings,
+      fixtures: career.fixtures,
+      secondaryStandings: career.secondaryStandings || [],
+      secondaryFixtures: career.secondaryFixtures || [],
+      copaDoBrasil: career.copaDoBrasil!,
+      libertadores: career.libertadores!,
+      championsLeague: career.championsLeague,
+      mundial: career.mundial,
+      superMundial: career.superMundial,
+      messages: career.messages,
+      matchState: career.matchState,
+      matchHistory: career.matchHistory,
+      seasonYear: career.currentYear,
+      seasonStepIndex: career.seasonStepIndex ?? 0,
+      currentRound: career.currentRound,
+      dayOffset: career.dayOffset,
+      isMatchDay: career.isMatchDay,
+      transferredOutClubPlayerIds: career.transferredOutClubPlayerIds ?? [],
+      pendingOffers: career.pendingOffers,
+      transferHistory: career.transferHistory,
+      financeLedger: career.financeLedger,
+      youthAcademy: career.youthAcademy,
+    };
+
+    const endDay = getMaxSeasonDayOffset(2026);
+    let guard = 0;
+    while (guard < 120) {
+      guard++;
+      const stepRes = simulateNextAutoStep(snapshot, endDay, () => 0.42);
+      snapshot = stepRes.snapshot;
+      if (stepRes.done) break;
+    }
+
+    assert.equal(
+      snapshot.fixtures.filter((f) => f.played).length,
+      380,
+      `All 380 ${expectedDiv} league fixtures must be played`
+    );
+    assert.equal(
+      snapshot.secondaryFixtures.filter((f) => f.played).length,
+      380,
+      `All 380 secondary European league fixtures must be played`
+    );
+    assert.ok(snapshot.championsLeague?.championClubId, 'Champions League must finish with a champion');
+
+    const rollover = executeNewSeasonRollover({
+      currentYear: 2026,
+      clubs: snapshot.clubs,
+      userClubId: clubId,
+      userSquad: snapshot.squad,
+      aiSquads: snapshot.aiSquads || {},
+      freeAgents: career.freeAgents || [],
+      loanedOutPlayers: snapshot.loanedOutPlayers || [],
+      standings: snapshot.standings,
+      secondaryStandings: snapshot.secondaryStandings,
+      copaDoBrasil: snapshot.copaDoBrasil,
+      libertadores: snapshot.libertadores,
+      championsLeague: snapshot.championsLeague,
+      mundial: snapshot.mundial,
+      superMundial: snapshot.superMundial,
+      accumulatedUclChampions: [],
+      accumulatedLibChampions: [],
+      seasonHistory: [],
+      managerName: 'Manager',
+      youthAcademy: snapshot.youthAcademy,
+    });
+
+    assert.equal(rollover.nextYear, 2027);
+    assert.equal(rollover.report.userFinalDivision, expectedDiv);
+    assert.equal(rollover.report.userPromoted, false);
+    assert.equal(rollover.report.userRelegated, false);
+    assert.ok(rollover.report.premierLeagueChampionName);
+    assert.ok(rollover.report.laLigaChampionName);
+    assert.ok(rollover.report.userSeasonPrize > 0, 'European clubs must receive end-of-season league prize');
+    assert.equal(rollover.nextStandings.length, 20);
+    assert.equal(rollover.nextSecondaryStandings.length, 20);
+    assert.equal(rollover.nextFixtures.length, 380);
+    assert.equal(rollover.nextSecondaryFixtures.length, 380);
+    assert.equal(rollover.nextFixtures.filter((f) => f.isUserMatch).length, 38);
+  };
+
+  runFullSeasonAndRollover('arsenal', 'PL');
+  runFullSeasonAndRollover('villarreal', 'LALIGA');
+});
+
+test('saveManager persists and reloads Premier League and La Liga career slots cleanly', () => {
+  const mem = new Map<string, string>();
+  const storage: StorageAdapter = {
+    getItem: (k) => mem.get(k) ?? null,
+    setItem: (k, v) => {
+      mem.set(k, v);
+    },
+    removeItem: (k) => {
+      mem.delete(k);
+    },
+  };
+
+  const plSave = createNewCareerSave(1, 'liverpool', 'Slot');
+  const laLigaSave = createNewCareerSave(2, 'barcelona', 'Flick');
+  saveCareerToSlot(plSave, storage);
+  saveCareerToSlot(laLigaSave, storage);
+
+  const loadedPl = loadCareerSlot(1, storage);
+  const loadedLaLiga = loadCareerSlot(2, storage);
+
+  assert.ok(loadedPl, 'PL career slot must reload cleanly');
+  assert.equal(loadedPl!.division, 'PL');
+  assert.equal(loadedPl!.userClubId, 'liverpool');
+  assert.equal(loadedPl!.standings.length, 20);
+
+  assert.ok(loadedLaLiga, 'La Liga career slot must reload cleanly');
+  assert.equal(loadedLaLiga!.division, 'LALIGA');
+  assert.equal(loadedLaLiga!.userClubId, 'barcelona');
+  assert.equal(loadedLaLiga!.standings.length, 20);
+});
+

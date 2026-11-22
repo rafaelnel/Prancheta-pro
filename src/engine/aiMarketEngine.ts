@@ -1,7 +1,12 @@
 import { getRealSquadForClub } from '../data/initialDatabase';
 import { FORMATIONS } from '../data/tacticsData';
 import { calculatePlayerOverall } from './playerOverall';
-import { assignPotentialStars } from './economyAndEvolution';
+import {
+  assignPotentialStars,
+  calculateDynamicSponsorship,
+  calculateMatchGateRevenue,
+  calculateOperationalCost,
+} from './economyAndEvolution';
 import {
   MIN_GOALKEEPERS,
   MIN_SQUAD_SIZE,
@@ -39,6 +44,194 @@ export interface AiClubMarketProfile {
   wageUsagePct: number;
   targetStarterOvr: number;
   summaryText: string;
+}
+
+export interface ClubTransferFinancialHealth {
+  cashBalance: number;
+  estimatedAnnualNetIncome: number;
+  estimatedMonthlyNetIncome: number;
+  currentMonthlyPayroll: number;
+  projectedMonthlyPayroll: number;
+  monthlyNetCashflow: number;
+  minHealthyCashReserve: number;
+  maxHealthySingleDealFee: number;
+  hasCashInHand: boolean;
+  withinHealthyFeeCap: boolean;
+  payrollHealthy: boolean;
+  canAffordAndHealthy: boolean;
+  reason?: string;
+}
+
+const ESTIMATED_ANNUAL_PRIZE_AND_TV_BY_DIVISION: Record<Club['division'], number> = {
+  B: 2_000_000,
+  A: 32_000_000,
+  LIB: 38_000_000,
+  LALIGA: 135_000_000,
+  PL: 220_000_000,
+  UCL: 380_000_000,
+  WORLD: 180_000_000,
+};
+
+/**
+ * Avalia se uma proposta de compra ou empréstimo é financeiramente coerente e saudável
+ * para o clube proponente, considerando:
+ * 1. Dinheiro real em caixa (nunca pode propor valor acima do cashBalance ou estando em dívida);
+ * 2. Receita anual líquida real (patrocínio + bilheteria menos 30% de custo operacional + premiações/TV);
+ * 3. Reserva operacional mínima em caixa após a operação (mín. 2,5 meses de folha projetada);
+ * 4. Solvência de fluxo de caixa nos próximos 6 meses (evita gastar o caixa necessário para cobrir déficits);
+ * 5. Sustentabilidade salarial da folha projetada frente ao orçamento e à receita mensal.
+ */
+export function evaluateClubTransferFinancialHealth(params: {
+  club: Club;
+  clubSquad?: Player[];
+  proposedFee: number;
+  addedMonthlySalary: number;
+  dealType: 'BUY' | 'LOAN';
+  seasonYear?: number;
+}): ClubTransferFinancialHealth {
+  const {
+    club,
+    clubSquad,
+    proposedFee,
+    addedMonthlySalary,
+    dealType,
+    seasonYear = 2026,
+  } = params;
+
+  const avgOvr =
+    clubSquad && clubSquad.length > 0
+      ? Math.round(
+          clubSquad.reduce(
+            (sum, p) => sum + calculatePlayerOverall(p.attributes, p.position),
+            0
+          ) / clubSquad.length
+        )
+      : Math.max(66, Math.round(club.reputation - 5));
+
+  const annualSponsor = calculateDynamicSponsorship(
+    club,
+    avgOvr,
+    seasonYear
+  ).annualValue;
+  const singleHomeGate = calculateMatchGateRevenue({
+    club,
+    rank: 10,
+    competition: 'BRASILEIRAO',
+    isHome: true,
+  }).gateRevenue;
+  const annualGate = singleHomeGate * 19;
+  const grossOperatingRevenue = annualSponsor + annualGate;
+  const netOperatingRevenue =
+    grossOperatingRevenue - calculateOperationalCost(grossOperatingRevenue);
+  const estimatedPrizeAndTv =
+    ESTIMATED_ANNUAL_PRIZE_AND_TV_BY_DIVISION[club.division] ?? 32_000_000;
+
+  const estimatedAnnualNetIncome =
+    club.division === 'WORLD'
+      ? Math.max(
+          netOperatingRevenue + estimatedPrizeAndTv,
+          Math.round(club.wageBudget * 10)
+        )
+      : netOperatingRevenue + estimatedPrizeAndTv;
+  const estimatedMonthlyNetIncome = Math.round(estimatedAnnualNetIncome / 12);
+
+  const currentMonthlyPayroll =
+    clubSquad && clubSquad.length > 0
+      ? Math.round(
+          clubSquad.reduce(
+            (sum, p) => sum + p.salary * (p.wageSharePaid ?? 1),
+            0
+          )
+        )
+      : Math.round(club.wageBudget * 0.72);
+  const safeAddedSalary = Math.max(0, Math.round(addedMonthlySalary));
+  const projectedMonthlyPayroll = currentMonthlyPayroll + safeAddedSalary;
+  const monthlyNetCashflow = estimatedMonthlyNetIncome - projectedMonthlyPayroll;
+
+  const payrollCushion = Math.round(projectedMonthlyPayroll * 2.5);
+  const proportionalFloor = Math.round(Math.max(0, club.cashBalance) * 0.25);
+  const minHealthyCashReserve = Math.max(
+    payrollCushion,
+    Math.min(proportionalFloor, Math.round(estimatedAnnualNetIncome * 0.25))
+  );
+
+  // Solvência de 6 meses: protege o caixa necessário para atravessar déficits mensais sem endividar o clube
+  const sixMonthDeficitBuffer = Math.max(0, -monthlyNetCashflow) * 6;
+  const solvencyReserve =
+    sixMonthDeficitBuffer + Math.round(projectedMonthlyPayroll * 1.5);
+  const solvencyMaxFee = Math.max(0, club.cashBalance - solvencyReserve);
+
+  const cashShareCap = Math.round(
+    Math.max(0, club.cashBalance) * (dealType === 'LOAN' ? 0.30 : 0.60)
+  );
+  const incomeCoherenceCap = Math.round(
+    estimatedAnnualNetIncome * (dealType === 'LOAN' ? 0.25 : 0.85)
+  );
+  const reserveAdjustedCap = Math.max(
+    0,
+    club.cashBalance - minHealthyCashReserve
+  );
+
+  const maxHealthySingleDealFee =
+    club.cashBalance <= 0
+      ? 0
+      : Math.max(
+          0,
+          Math.min(
+            club.cashBalance,
+            reserveAdjustedCap,
+            cashShareCap,
+            incomeCoherenceCap,
+            solvencyMaxFee
+          )
+        );
+
+  const safeProposedFee = Math.max(0, Math.round(proposedFee));
+  const hasCashInHand =
+    club.cashBalance > 0 && safeProposedFee <= club.cashBalance;
+  const withinHealthyFeeCap =
+    club.cashBalance > 0 && safeProposedFee <= maxHealthySingleDealFee;
+
+  const withinWageBudget =
+    safeAddedSalary === 0 || projectedMonthlyPayroll <= club.wageBudget * 1.05;
+  const singleWageCoherent =
+    safeAddedSalary === 0 ||
+    safeAddedSalary <=
+      Math.max(
+        Math.round(club.wageBudget * 0.28),
+        Math.round(estimatedMonthlyNetIncome * 0.28)
+      );
+  const payrollHealthy = withinWageBudget && singleWageCoherent;
+
+  let reason: string | undefined;
+  if (club.cashBalance <= 0) {
+    reason = 'Clube sem saldo positivo em caixa (em dívida).';
+  } else if (!hasCashInHand) {
+    reason = 'Valor da proposta excede o dinheiro disponível em caixa.';
+  } else if (!withinHealthyFeeCap) {
+    reason =
+      'Operação comprometeria a reserva de caixa, a solvência ou a coerência com as receitas do clube.';
+  } else if (!payrollHealthy) {
+    reason =
+      'Salário do atleta comprometeria a saúde financeira da folha salarial do clube.';
+  }
+
+  return {
+    cashBalance: club.cashBalance,
+    estimatedAnnualNetIncome,
+    estimatedMonthlyNetIncome,
+    currentMonthlyPayroll,
+    projectedMonthlyPayroll,
+    monthlyNetCashflow,
+    minHealthyCashReserve,
+    maxHealthySingleDealFee,
+    hasCashInHand,
+    withinHealthyFeeCap,
+    payrollHealthy,
+    canAffordAndHealthy:
+      hasCashInHand && withinHealthyFeeCap && payrollHealthy,
+    reason,
+  };
 }
 
 /**
@@ -341,20 +534,35 @@ export function analyzeAiClubMarketProfile(
   const transferListedCount = squad.filter((p) => p.isTransferListed).length;
   const loanListedCount = squad.filter((p) => p.isLoanListed).length;
 
+  const financialSnapshot = evaluateClubTransferFinancialHealth({
+    club,
+    clubSquad: squad,
+    proposedFee: 0,
+    addedMonthlySalary: 0,
+    dealType: 'BUY',
+  });
+
   let posture: AiClubMarketProfile['posture'] = 'EQUILIBRADO';
   let postureLabel = 'Equilibrado (Compra & Venda Pontual)';
   let preferredIncomingMode: AiClubMarketProfile['preferredIncomingMode'] =
     'AMBOS';
 
-  if (club.cashBalance >= 16_000_000 && wageUsagePct <= 84) {
-    posture = 'COMPRADOR';
-    postureLabel = 'Comprador Ativo (Busca Titulares)';
-    preferredIncomingMode = 'COMPRA';
-  } else if (club.cashBalance < 5_500_000 || wageUsagePct >= 90) {
+  if (
+    club.cashBalance <= 0 ||
+    financialSnapshot.maxHealthySingleDealFee < 2_500_000 ||
+    wageUsagePct >= 92
+  ) {
     posture = 'VENDEDOR_ALIVIO_FOLHA';
     postureLabel = 'Vendedor & Alívio de Folha';
     preferredIncomingMode = 'EMPRESTIMO';
-  } else if (club.cashBalance < 10_000_000) {
+  } else if (
+    financialSnapshot.maxHealthySingleDealFee >= 12_000_000 &&
+    wageUsagePct <= 84
+  ) {
+    posture = 'COMPRADOR';
+    postureLabel = 'Comprador Ativo (Busca Titulares)';
+    preferredIncomingMode = 'COMPRA';
+  } else if (financialSnapshot.maxHealthySingleDealFee < 7_000_000) {
     posture = 'BUSCA_EMPRESTIMOS';
     postureLabel = 'Foco em Empréstimos & Oportunidades';
     preferredIncomingMode = 'EMPRESTIMO';
@@ -507,20 +715,32 @@ export function simulateAiTransferWindowTick(params: {
   const dateLabel = formatCalendarDate(dayOffset, seasonYear);
 
   for (let d = 0; d < maxDeals; d++) {
-    // Pick a buying/borrowing club with positional needs and budget headroom
+    // Pick a buying/borrowing club with positional needs, positive cash, and healthy financial headroom
     const buyers = aiClubIndices.filter((item) => {
-      if (item.club.cashBalance < 2_500_000) return false;
+      if (item.club.cashBalance <= 0) return false;
       const sq = workingSquads[item.club.id];
       if (sq.length >= 27) return false;
-      const payroll = sq.reduce((s, p) => s + p.salary, 0);
-      return item.club.wageBudget - payroll >= 120_000;
+      const payroll = sq.reduce((s, p) => s + p.salary * (p.wageSharePaid ?? 1), 0);
+      if (item.club.wageBudget - payroll < 120_000) return false;
+      const baselineHealth = evaluateClubTransferFinancialHealth({
+        club: item.club,
+        clubSquad: sq,
+        proposedFee: 500_000,
+        addedMonthlySalary: 80_000,
+        dealType: 'LOAN',
+        seasonYear,
+      });
+      return baselineHealth.canAffordAndHealthy;
     });
     if (buyers.length === 0) break;
 
     const buyerPick = buyers[Math.floor(rng() * buyers.length)];
     const buyer = buyerPick.club;
     const buyerSquad = workingSquads[buyer.id];
-    const buyerPayroll = buyerSquad.reduce((s, p) => s + p.salary, 0);
+    const buyerPayroll = buyerSquad.reduce(
+      (s, p) => s + p.salary * (p.wageSharePaid ?? 1),
+      0
+    );
     const remainingWageRoom = buyer.wageBudget - buyerPayroll;
     if (remainingWageRoom < 120_000) continue;
 
@@ -536,7 +756,9 @@ export function simulateAiTransferWindowTick(params: {
         item.club.id !== buyer.id &&
         workingSquads[item.club.id].length > MIN_SQUAD_SIZE + 1 &&
         (item.club.reputation <= buyer.reputation + 10 ||
-          (item.club.division === 'UCL' &&
+          ((item.club.division === 'UCL' ||
+            item.club.division === 'PL' ||
+            item.club.division === 'LALIGA') &&
             buyer.reputation >= 76 &&
             workingSquads[item.club.id].some(
               (p) => p.isLoanListed || p.isTransferListed
@@ -597,8 +819,15 @@ export function simulateAiTransferWindowTick(params: {
           ? Math.round(p.salary * 0.8)
           : p.salary;
 
-        if (estFee > buyer.cashBalance * 0.65) continue;
-        if (estSalaryForBuyer > remainingWageRoom * 1.05) continue;
+        const targetHealth = evaluateClubTransferFinancialHealth({
+          club: buyer,
+          clubSquad: buyerSquad,
+          proposedFee: estFee,
+          addedMonthlySalary: estSalaryForBuyer,
+          dealType: prefersLoan ? 'LOAN' : 'BUY',
+          seasonYear,
+        });
+        if (!targetHealth.canAffordAndHealthy) continue;
 
         let score = ovr;
         if (matchesExactPos) score += 18;
@@ -627,7 +856,7 @@ export function simulateAiTransferWindowTick(params: {
     const targetPlayer = chosen.player;
     const isLoan = chosen.isLoanDeal;
 
-    const fee = isLoan
+    let fee = isLoan
       ? clampTransferFeeToMarketCorridor({
           rawFee: targetPlayer.marketValue * (0.09 + rng() * 0.05),
           marketValue: targetPlayer.marketValue,
@@ -645,7 +874,51 @@ export function simulateAiTransferWindowTick(params: {
           maxRatio: 1.15,
         });
 
-    if (buyer.cashBalance < fee) continue;
+    const finalAddedSalary = isLoan
+      ? Math.round(targetPlayer.salary * 0.8)
+      : targetPlayer.salary;
+    const finalHealthCheck = evaluateClubTransferFinancialHealth({
+      club: buyer,
+      clubSquad: buyerSquad,
+      proposedFee: fee,
+      addedMonthlySalary: finalAddedSalary,
+      dealType: isLoan ? 'LOAN' : 'BUY',
+      seasonYear,
+    });
+    if (!finalHealthCheck.canAffordAndHealthy) {
+      const minAcceptableFee = clampTransferFeeToMarketCorridor({
+        rawFee: targetPlayer.marketValue * (isLoan ? 0.08 : 0.85),
+        marketValue: targetPlayer.marketValue,
+        dealType: isLoan ? 'LOAN' : 'BUY',
+        minRatio: isLoan ? 0.08 : 0.85,
+        maxRatio: isLoan ? 0.15 : 1.15,
+      });
+      if (
+        !finalHealthCheck.payrollHealthy ||
+        finalHealthCheck.maxHealthySingleDealFee < minAcceptableFee
+      ) {
+        continue;
+      }
+      const step = getDynamicFeeStep(targetPlayer.marketValue, isLoan);
+      const healthyCappedFee = Math.floor(finalHealthCheck.maxHealthySingleDealFee / step) * step;
+      if (healthyCappedFee < minAcceptableFee) continue;
+      fee = clampTransferFeeToMarketCorridor({
+        rawFee: healthyCappedFee,
+        marketValue: targetPlayer.marketValue,
+        dealType: isLoan ? 'LOAN' : 'BUY',
+        minRatio: isLoan ? 0.08 : 0.85,
+        maxRatio: isLoan ? 0.15 : 1.15,
+      });
+      const recheck = evaluateClubTransferFinancialHealth({
+        club: buyer,
+        clubSquad: buyerSquad,
+        proposedFee: fee,
+        addedMonthlySalary: finalAddedSalary,
+        dealType: isLoan ? 'LOAN' : 'BUY',
+        seasonYear,
+      });
+      if (!recheck.canAffordAndHealthy) continue;
+    }
 
     // Move player from sellerSquad to buyerSquad
     workingSquads[seller.id] = sellerSquad.filter(
@@ -731,6 +1004,8 @@ export function simulateAiTransferWindowTick(params: {
       cashBalance: seller.cashBalance + fee,
       ...sellerRatings,
     };
+    buyerPick.club = workingClubs[buyerPick.idx];
+    sellerPick.club = workingClubs[sellerPick.idx];
 
     // Re-evaluate transfer & loan listings for both clubs after squad change
     workingSquads[buyer.id] = evaluateAiClubSquadAndListings(
@@ -885,16 +1160,28 @@ export function maybeGenerateIncomingOfferForUser(params: {
     maxRatio: 0.16,
   });
 
-  const canClubAffordBuy = (c: Club): boolean => {
-    if (c.cashBalance >= minCoherentBuyFee) return true;
-    // Elite mega-clubs can use structured transfer financing on R$ 90M+ stars,
-    // while still paying a strictly realistic fee inside the player's market corridor.
-    return (
-      safeMarketValue >= 90_000_000 &&
-      c.reputation >= 84 &&
-      c.cashBalance >= safeMarketValue * 0.65
-    );
-  };
+  const loanSalaryForBuyer = Math.round(p.salary * 0.9);
+
+  // Avalia rigorosamente caixa disponível, receitas anuais, reserva operacional, solvência e folha salarial
+  const canClubAffordBuy = (c: Club): boolean =>
+    evaluateClubTransferFinancialHealth({
+      club: c,
+      clubSquad: aiSquads?.[c.id],
+      proposedFee: minCoherentBuyFee,
+      addedMonthlySalary: p.salary,
+      dealType: 'BUY',
+      seasonYear,
+    }).canAffordAndHealthy;
+
+  const canClubAffordLoan = (c: Club): boolean =>
+    evaluateClubTransferFinancialHealth({
+      club: c,
+      clubSquad: aiSquads?.[c.id],
+      proposedFee: minLoanFeeRequired,
+      addedMonthlySalary: loanSalaryForBuyer,
+      dealType: 'LOAN',
+      seasonYear,
+    }).canAffordAndHealthy;
 
   const minRepRequired = isListed
     ? Math.max(58, picked.ovr - 16)
@@ -905,33 +1192,39 @@ export function maybeGenerateIncomingOfferForUser(params: {
   // Prevent European superclubs from making bizarre offers for low-OVR / Série B rotation players
   const maxRepAllowed = isEuropeanTarget ? 100 : Math.min(89, picked.ovr + 14);
 
+  const isEuroLeagueDivision = (div: Club['division']) =>
+    div === 'UCL' || div === 'PL' || div === 'LALIGA';
+
   const meetsClubTier = (c: Club): boolean => {
     if (c.id === userClub.id) return false;
+    if (c.cashBalance <= 0) return false;
     if (c.reputation < minRepRequired || c.reputation > maxRepAllowed) return false;
     if (!isEuropeanTarget && c.division === 'UCL') return false;
+    if (!isEuropeanTarget && picked.ovr < 73 && isEuroLeagueDivision(c.division)) return false;
     return true;
   };
 
-  // Pick a plausible interested AI club with real affordability for the deal type
+  // Pick a plausible interested AI club with real cash-in-hand and healthy finances for the deal type
   let interestedClubs = clubs.filter((c) => {
     if (!meetsClubTier(c)) return false;
-    if (forceLoanOnly) return c.cashBalance >= minLoanFeeRequired;
+    if (forceLoanOnly) return canClubAffordLoan(c);
     if (forceBuyOnly) return canClubAffordBuy(c);
     // For unlisted / both-listed players, allow genuine buyers or loan-eligible clubs
     const loanEligiblePlayer = p.isLoanListed || p.age <= 24 || !p.isStarter;
-    return canClubAffordBuy(c) || (loanEligiblePlayer && c.cashBalance >= minLoanFeeRequired);
+    return canClubAffordBuy(c) || (loanEligiblePlayer && canClubAffordLoan(c));
   });
 
-  // Fallback for unlisted players if strict reputation ceiling excluded all clubs with cash
+  // Fallback for unlisted players if strict reputation ceiling excluded all clubs with healthy budget
   if (interestedClubs.length === 0) {
     interestedClubs = clubs.filter((c) => {
       if (c.id === userClub.id) return false;
+      if (c.cashBalance <= 0) return false;
       if (c.reputation < minRepRequired) return false;
-      if (!isEuropeanTarget && picked.ovr < 74 && c.division === 'UCL') return false;
-      if (forceLoanOnly) return c.cashBalance >= minLoanFeeRequired;
+      if (!isEuropeanTarget && picked.ovr < 74 && isEuroLeagueDivision(c.division)) return false;
+      if (forceLoanOnly) return canClubAffordLoan(c);
       if (forceBuyOnly) return canClubAffordBuy(c);
       const loanEligiblePlayer = p.isLoanListed || p.age <= 24 || !p.isStarter;
-      return canClubAffordBuy(c) || (loanEligiblePlayer && c.cashBalance >= minLoanFeeRequired);
+      return canClubAffordBuy(c) || (loanEligiblePlayer && canClubAffordLoan(c));
     });
   }
   if (interestedClubs.length === 0) return null;
@@ -957,22 +1250,36 @@ export function maybeGenerateIncomingOfferForUser(params: {
   const buyerPool =
     clubsWithNeed.length > 0 && rng() < 0.88 ? clubsWithNeed : interestedClubs;
 
-  // Equilibra propostas entre gigantes europeus (Champions League) e mercado sul-americano/global:
+  // Equilibra propostas entre clubes europeus (Champions, Premier League, La Liga) e mercado sul-americano/global:
   // - Destaques/promessas (OVR >= 78 ou Sub-22 4★+ com OVR >= 71): forte interesse europeu + grandes locais
   // - Jogadores de rotação/Série B: estritamente mercado doméstico/CONMEBOL/compatível
-  const uclBuyers = buyerPool.filter((c) => c.division === 'UCL');
-  const nonUclBuyers = buyerPool.filter((c) => c.division !== 'UCL');
+  const euroBuyers = buyerPool.filter((c) => isEuroLeagueDivision(c.division));
+  const nonEuroBuyers = buyerPool.filter((c) => !isEuroLeagueDivision(c.division));
 
   let scopedBuyerPool = buyerPool;
-  if (isEuropeanTarget && uclBuyers.length > 0 && nonUclBuyers.length > 0) {
-    scopedBuyerPool = rng() < 0.56 ? uclBuyers : nonUclBuyers;
-  } else if (!isEuropeanTarget && nonUclBuyers.length > 0) {
-    scopedBuyerPool = nonUclBuyers;
+  if (isEuropeanTarget && euroBuyers.length > 0 && nonEuroBuyers.length > 0) {
+    scopedBuyerPool = rng() < 0.56 ? euroBuyers : nonEuroBuyers;
+  } else if (!isEuropeanTarget && nonEuroBuyers.length > 0) {
+    scopedBuyerPool = nonEuroBuyers;
   }
 
-  // Prefer clubs whose sporting level and budget fit the player without repeating only the richest 1-2 giants
+  // Prefer clubs with strongest healthy spending capacity without repeating only the richest 1-2 giants
+  const buyerHealthyCap = new Map<string, number>();
+  for (const c of scopedBuyerPool) {
+    buyerHealthyCap.set(
+      c.id,
+      evaluateClubTransferFinancialHealth({
+        club: c,
+        clubSquad: aiSquads?.[c.id],
+        proposedFee: forceLoanOnly ? minLoanFeeRequired : minCoherentBuyFee,
+        addedMonthlySalary: forceLoanOnly ? loanSalaryForBuyer : p.salary,
+        dealType: forceLoanOnly ? 'LOAN' : 'BUY',
+        seasonYear,
+      }).maxHealthySingleDealFee
+    );
+  }
   const sortedBuyerPool = [...scopedBuyerPool].sort(
-    (a, b) => b.cashBalance - a.cashBalance
+    (a, b) => (buyerHealthyCap.get(b.id) ?? 0) - (buyerHealthyCap.get(a.id) ?? 0)
   );
   const topBuyers = sortedBuyerPool.slice(
     0,
@@ -995,6 +1302,18 @@ export function maybeGenerateIncomingOfferForUser(params: {
     ? true
     : (!p.isStarter || p.age <= 22 || p.isLoanListed) && rng() < 0.35;
 
+  const dealTypeForHealth: 'BUY' | 'LOAN' = isLoan ? 'LOAN' : 'BUY';
+  const addedSalaryForDeal = isLoan ? loanSalaryForBuyer : p.salary;
+  const buyerHealthBase = evaluateClubTransferFinancialHealth({
+    club: buyer,
+    clubSquad: aiSquads?.[buyer.id],
+    proposedFee: isLoan ? minLoanFeeRequired : minCoherentBuyFee,
+    addedMonthlySalary: addedSalaryForDeal,
+    dealType: dealTypeForHealth,
+    seasonYear,
+  });
+  if (!buyerHealthBase.canAffordAndHealthy) return null;
+
   let rawFee = 0;
   if (isLoan) {
     const loanMultiplier = 0.09 + rng() * 0.06; // 9%..15% of marketValue
@@ -1005,7 +1324,19 @@ export function maybeGenerateIncomingOfferForUser(params: {
       minRatio: 0.08,
       maxRatio: 0.16,
     });
-    if (buyer.cashBalance < rawFee) return null;
+    if (rawFee > buyerHealthBase.maxHealthySingleDealFee) {
+      const step = getDynamicFeeStep(safeMarketValue, true);
+      const maxHealthyLoan =
+        Math.floor(buyerHealthBase.maxHealthySingleDealFee / step) * step;
+      if (maxHealthyLoan < minLoanFeeRequired) return null;
+      rawFee = clampTransferFeeToMarketCorridor({
+        rawFee: maxHealthyLoan,
+        marketValue: safeMarketValue,
+        dealType: 'LOAN',
+        minRatio: 0.08,
+        maxRatio: 0.16,
+      });
+    }
   } else {
     const feeMultiplier =
       minBuyRatio + rng() * (maxBuyRatio - minBuyRatio);
@@ -1017,35 +1348,36 @@ export function maybeGenerateIncomingOfferForUser(params: {
       maxRatio: maxBuyRatio,
     });
 
-    const isFinancedMegaDeal =
-      safeMarketValue >= 90_000_000 &&
-      buyer.reputation >= 84 &&
-      buyer.cashBalance >= safeMarketValue * 0.65;
-
-    if (!isFinancedMegaDeal && buyer.cashBalance < targetBuyFee) {
-      if (buyer.cashBalance < minCoherentBuyFee) {
-        return null;
-      }
+    if (targetBuyFee > buyerHealthBase.maxHealthySingleDealFee) {
       const step = getDynamicFeeStep(safeMarketValue, false);
-      const maxAffordable = Math.floor(buyer.cashBalance / step) * step;
-      if (maxAffordable < minCoherentBuyFee) {
+      const maxHealthyBuy =
+        Math.floor(buyerHealthBase.maxHealthySingleDealFee / step) * step;
+      if (maxHealthyBuy < minCoherentBuyFee) {
         return null;
       }
       targetBuyFee = clampTransferFeeToMarketCorridor({
-        rawFee: maxAffordable,
+        rawFee: maxHealthyBuy,
         marketValue: safeMarketValue,
         dealType: 'BUY',
         minRatio: minBuyRatio,
         maxRatio: maxBuyRatio,
       });
-      if (buyer.cashBalance < targetBuyFee) {
-        return null;
-      }
     }
     rawFee = targetBuyFee;
   }
 
   if (rawFee <= 0) return null;
+
+  // Verificação final absoluta: proposta jamais pode exceder o caixa real nem comprometer a saúde financeira do clube
+  const finalOfferHealth = evaluateClubTransferFinancialHealth({
+    club: buyer,
+    clubSquad: aiSquads?.[buyer.id],
+    proposedFee: rawFee,
+    addedMonthlySalary: addedSalaryForDeal,
+    dealType: dealTypeForHealth,
+    seasonYear,
+  });
+  if (!finalOfferHealth.canAffordAndHealthy) return null;
 
   const reasonParts: string[] = [];
   if (p.isTransferListed && p.isLoanListed) {
@@ -1293,9 +1625,54 @@ export function resolveIncomingOfferAction(params: {
   const buyerClub = clubs.find((c) => c.id === offer.fromClubId);
   const referenceMv = Math.max(50_000, targetPlayer.marketValue);
   const requestedFee = computeIncomingCounterFee(offer, action, referenceMv);
+  const addedSalaryForBuyer =
+    offer.dealType === 'LOAN'
+      ? Math.round(targetPlayer.salary * offer.wageShareCovered)
+      : targetPlayer.salary;
+  const buyerFinancialHealth = buyerClub
+    ? evaluateClubTransferFinancialHealth({
+        club: buyerClub,
+        clubSquad: aiSquads[buyerClub.id],
+        proposedFee: requestedFee,
+        addedMonthlySalary: addedSalaryForBuyer,
+        dealType: offer.dealType,
+        seasonYear,
+      })
+    : null;
+
+  // Mesmo em aceite direto, revalida se o clube comprador ainda possui o dinheiro em caixa
+  if (action === 'ACCEPT' && buyerClub && buyerClub.cashBalance < requestedFee) {
+    const failedRec: TransferRecord = {
+      id: `tr-offer-nocash-${Date.now()}`,
+      date: dateLabel,
+      type: offer.dealType === 'LOAN' ? 'EMPRESTIMO_OUT' : 'VENDA',
+      status: 'RECUSADA',
+      playerName: offer.playerName,
+      position: offer.playerPosition,
+      ovr: offer.playerOvr,
+      counterpartyClubName: offer.fromClubName,
+      feeAmount: requestedFee,
+      monthlySalaryImpact: 0,
+      note: `${offer.fromClubName} recuou na conclusão: não possui mais ${formatCompactBRL(
+        requestedFee
+      )} disponíveis em caixa.`,
+    };
+    return {
+      outcome: 'COUNTER_REJECTED',
+      finalFee: requestedFee,
+      updatedClubs: clubs,
+      updatedUserSquad: userSquad,
+      updatedAiSquads: aiSquads,
+      updatedLoanedOutPlayers: loanedOutPlayers,
+      updatedOffer: { ...offer, status: 'REJECTED' },
+      transferRecord: failedRec,
+    };
+  }
 
   if (action === 'COUNTER_15' || action === 'COUNTER_30') {
-    const canBuyerPay = buyerClub ? buyerClub.cashBalance >= requestedFee : true;
+    const canBuyerPay = buyerFinancialHealth
+      ? buyerFinancialHealth.canAffordAndHealthy
+      : true;
     const ratioVsMarket = requestedFee / referenceMv;
     const exceedsRealisticCeiling =
       offer.dealType === 'LOAN' ? ratioVsMarket > 0.23 : ratioVsMarket > 1.33;
@@ -1319,6 +1696,10 @@ export function resolveIncomingOfferAction(params: {
       !exceedsRealisticCeiling && canBuyerPay && rng() < baseAcceptProb;
 
     if (!isAccepted) {
+      const financialReasonNote =
+        !canBuyerPay && buyerFinancialHealth?.reason
+          ? ` (${buyerFinancialHealth.reason})`
+          : '';
       const rejectedRec: TransferRecord = {
         id: `tr-counter-rej-${Date.now()}`,
         date: dateLabel,
@@ -1332,7 +1713,7 @@ export function resolveIncomingOfferAction(params: {
         monthlySalaryImpact: 0,
         note: `${offer.fromClubName} não aceitou a contraproposta de ${formatCompactBRL(
           requestedFee
-        )}.`,
+        )}${financialReasonNote}.`,
       };
       return {
         outcome: 'COUNTER_REJECTED',
@@ -1410,7 +1791,7 @@ export function resolveIncomingOfferAction(params: {
       return { ...c, cashBalance: c.cashBalance + requestedFee };
     }
     if (c.id === offer.fromClubId) {
-      return { ...c, cashBalance: Math.max(1_000_000, c.cashBalance - requestedFee) };
+      return { ...c, cashBalance: c.cashBalance - requestedFee };
     }
     return c;
   });

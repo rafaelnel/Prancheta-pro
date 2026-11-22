@@ -4,11 +4,15 @@ import { PreloadSnapshot } from '../utils/assetPreloader';
 interface PreloadScreenProps {
   snapshot: PreloadSnapshot;
   isExiting: boolean;
+  errorMessage?: string | null;
+  onRetry?: () => void;
 }
 
 export const PreloadScreen: React.FC<PreloadScreenProps> = ({
   snapshot,
   isExiting,
+  errorMessage = null,
+  onRetry,
 }) => {
   const logoSrc = `${import.meta.env.BASE_URL}favicon.svg`;
   const clampedPercent = Math.min(100, Math.max(0, snapshot.percent));
@@ -71,28 +75,55 @@ export const PreloadScreen: React.FC<PreloadScreenProps> = ({
           <span aria-hidden="true">·</span> La Liga <span aria-hidden="true">·</span> 2026
         </p>
 
-        {/* Progress Bar Track + Real-Time Status */}
-        <div className="mt-9 w-full">
+        {/* Progress Bar Track + Real-Time Status OR Clean Recovery Prompt */}
+        {errorMessage ? (
           <div
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={clampedPercent}
-            className="relative h-1.5 w-full overflow-hidden rounded-full bg-[#1a1d26] border border-white/[0.06]"
+            role="alert"
+            className="mt-8 w-full rounded-xl border border-red-500/30 bg-[#151821] p-4 text-center"
           >
+            <p className="text-xs text-zinc-200 leading-relaxed">{errorMessage}</p>
+            <div className="mt-3.5 flex items-center justify-center gap-2.5">
+              {onRetry && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="px-4 py-2 rounded-lg bg-[#b5ff00] text-[#0b0c10] text-xs font-bold hover:brightness-105 transition cursor-pointer"
+                >
+                  Tentar novamente
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="px-4 py-2 rounded-lg border border-white/15 bg-white/5 text-zinc-200 text-xs font-semibold hover:bg-white/10 transition cursor-pointer"
+              >
+                Recarregar página
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-9 w-full">
             <div
-              className="h-full w-full origin-left rounded-full bg-[#b5ff00] transition-transform duration-200 ease-out"
-              style={{ transform: `scaleX(${scaleX})` }}
-            />
-          </div>
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={clampedPercent}
+              className="relative h-1.5 w-full overflow-hidden rounded-full bg-[#1a1d26] border border-white/[0.06]"
+            >
+              <div
+                className="h-full w-full origin-left rounded-full bg-[#b5ff00] transition-transform duration-200 ease-out"
+                style={{ transform: `scaleX(${scaleX})` }}
+              />
+            </div>
 
-          <div className="mt-3 flex items-center justify-between gap-4 text-xs">
-            <span className="text-zinc-400 truncate">{snapshot.statusText}</span>
-            <span className="font-mono font-semibold text-[#b5ff00] tabular-nums shrink-0">
-              {clampedPercent}%
-            </span>
+            <div className="mt-3 flex items-center justify-between gap-4 text-xs">
+              <span className="text-zinc-400 truncate">{snapshot.statusText}</span>
+              <span className="font-mono font-semibold text-[#b5ff00] tabular-nums shrink-0">
+                {clampedPercent}%
+              </span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Subtle Bottom Attribution Line */}

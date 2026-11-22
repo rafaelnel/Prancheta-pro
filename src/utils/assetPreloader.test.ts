@@ -7,6 +7,7 @@ import {
 } from '../data/clubBadgeAssets';
 import {
   computePreloadProgress,
+  loadModuleWithRetry,
   runAssetPreload,
 } from './assetPreloader';
 
@@ -64,10 +65,11 @@ test('computePreloadProgress advances monotonically from 0% to 100% across brand
   assert.equal(s3.phase, 'READY');
 });
 
-test('runAssetPreload preloads brand, fonts, app module, and all badges with error resilience', async () => {
+test('runAssetPreload loads app module before club badges and handles individual image failures gracefully', async () => {
   const requestedUrls: string[] = [];
   const emittedPercents: number[] = [];
   let appLoaded = false;
+  let badgeLoadedBeforeApp = false;
 
   const result = await runAssetPreload({
     baseUrl: '/',
@@ -75,12 +77,15 @@ test('runAssetPreload preloads brand, fonts, app module, and all badges with err
     maxWaitMs: 2000,
     concurrency: 16,
     loadAppModule: async () => {
+      await new Promise((r) => setTimeout(r, 15));
       appLoaded = true;
     },
     loadFonts: async () => undefined,
     preloadImage: async (url) => {
+      if (url.includes('/badges/') && !appLoaded) {
+        badgeLoadedBeforeApp = true;
+      }
       requestedUrls.push(url);
-      // Simulate an occasional broken image to confirm resilience
       if (url.endsWith('wolves.svg')) {
         throw new Error('simulated network glitch');
       }
@@ -91,6 +96,11 @@ test('runAssetPreload preloads brand, fonts, app module, and all badges with err
   });
 
   assert.equal(appLoaded, true);
+  assert.equal(
+    badgeLoadedBeforeApp,
+    false,
+    'Badge requests must start after loadAppModule finishes so module fetches are never saturated'
+  );
   assert.equal(result.percent, 100);
   assert.equal(result.phase, 'READY');
   assert.ok(requestedUrls.includes('/favicon.svg'), 'Must preload app logomarca');
@@ -102,11 +112,44 @@ test('runAssetPreload preloads brand, fonts, app module, and all badges with err
     2 + REAL_BADGE_CLUB_IDS.size,
     'Must attempt brand icons + all 117 club badges'
   );
-  // Progress updates must never move backwards
   for (let i = 1; i < emittedPercents.length; i++) {
     assert.ok(
       emittedPercents[i] >= emittedPercents[i - 1],
       `Progress regressed from ${emittedPercents[i - 1]} to ${emittedPercents[i]}`
     );
   }
+});
+
+test('loadModuleWithRetry recovers from transient dynamic import failures and surfaces persistent errors', async () => {
+  let attempts = 0;
+  const recovered = await loadModuleWithRetry(
+    async () => {
+      attempts++;
+      if (attempts < 3) {
+        throw new TypeError('Failed to fetch dynamically imported module');
+      }
+      return { ok: true };
+    },
+    { retries: 3, baseDelayMs: 5 }
+  );
+  assert.equal(recovered.ok, true);
+  assert.equal(attempts, 3);
+
+  await assert.rejects(
+    () =>
+      runAssetPreload({
+        baseUrl: '/',
+        minDisplayMs: 0,
+        loadAppModule: () =>
+          loadModuleWithRetry(
+            async () => {
+              throw new TypeError('Persistent network failure');
+            },
+            { retries: 1, baseDelayMs: 5 }
+          ),
+        loadFonts: async () => undefined,
+        preloadImage: async () => undefined,
+      }),
+    /Persistent network failure/
+  );
 });

@@ -131,6 +131,37 @@ function waitMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export async function loadModuleWithRetry<T>(
+  loader: () => Promise<T>,
+  options: {
+    retries?: number;
+    baseDelayMs?: number;
+    signal?: AbortSignal;
+  } = {}
+): Promise<T> {
+  const { retries = 3, baseDelayMs = 350, signal } = options;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (signal?.aborted) {
+      throw new Error('Carregamento cancelado.');
+    }
+    try {
+      return await loader();
+    } catch (err) {
+      lastError = err;
+      if (attempt < retries && !signal?.aborted) {
+        const delay = baseDelayMs * Math.pow(2, attempt);
+        await waitMs(delay);
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Falha ao carregar o módulo principal da aplicação.');
+}
+
 export async function runAssetPreload(
   options: RunAssetPreloadOptions
 ): Promise<PreloadSnapshot> {
@@ -138,7 +169,7 @@ export async function runAssetPreload(
     baseUrl = './',
     minDisplayMs = 1250,
     maxWaitMs = 6000,
-    concurrency = 12,
+    concurrency = 6,
     perImageTimeoutMs = 2200,
     loadAppModule,
     loadFonts = () => defaultLoadFonts(1800),
@@ -197,12 +228,13 @@ export async function runAssetPreload(
       emit(true);
     });
 
-  const moduleTask = loadAppModule()
-    .catch(() => undefined)
-    .then(() => {
-      state.appModuleReady = true;
-      emit(true);
-    });
+  // Load main application module FIRST so 117 badge requests never saturate browser/proxy connections
+  await loadAppModule();
+  if (signal?.aborted) {
+    return computePreloadProgress(state);
+  }
+  state.appModuleReady = true;
+  emit(true);
 
   const badgesTask = (async () => {
     let cursor = 0;
@@ -226,12 +258,11 @@ export async function runAssetPreload(
     emit(true);
   })();
 
-  // Always wait for the main app module; cap total wait for optional assets so slow networks never stall
-  const allAssetsTask = Promise.all([brandTask, fontsTask, badgesTask]);
-  await Promise.all([
-    moduleTask,
-    Promise.race([allAssetsTask, waitMs(maxWaitMs)]),
-  ]);
+  // Cap remaining wait for optional assets so slow networks never stall boot
+  const elapsedSoFar = Date.now() - startedAt;
+  const remainingBudgetMs = Math.max(800, maxWaitMs - elapsedSoFar);
+  const optionalAssetsTask = Promise.all([brandTask, fontsTask, badgesTask]);
+  await Promise.race([optionalAssetsTask, waitMs(remainingBudgetMs)]);
 
   const elapsed = Date.now() - startedAt;
   if (elapsed < minDisplayMs && !signal?.aborted) {

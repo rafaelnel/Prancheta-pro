@@ -241,3 +241,45 @@ test('UI removes Recalcular Evolução button and exposes Melhor Escalação', (
   assert.ok(squadViewSrc.includes('Melhor Escalação'));
   assert.ok(tacticalSrc.includes('Melhor Escalação'));
 });
+
+test('UI removes segregation between Titulares and Reservas and unifies squad presentation with Escalado indicator', () => {
+  const read = (relPath: string) =>
+    fs.readFileSync(path.resolve(process.cwd(), relPath), 'utf8');
+
+  const squadViewSrc = read('src/components/SquadView.tsx');
+  const tacticalSrc = read('src/components/TacticalBoard.tsx');
+  const profileSrc = read('src/components/PlayerProfileModal.tsx');
+  const financesSrc = read('src/components/FinancesView.tsx');
+  const marketSrc = read('src/components/MarketView.tsx');
+  const offerCardSrc = read('src/components/IncomingOfferCard.tsx');
+  const matchSrc = read('src/components/MatchEngineView.tsx');
+
+  // No Reservas filter tab or RES/Reserva badges in SquadView
+  assert.ok(!squadViewSrc.includes("'RESERVES'"));
+  assert.ok(!squadViewSrc.includes("'STARTERS'"));
+  assert.ok(!squadViewSrc.includes("'RES'"));
+  assert.ok(!squadViewSrc.includes("'TIT'"));
+  assert.ok(!squadViewSrc.includes('Reservas ('));
+  assert.ok(!squadViewSrc.includes('Titulares ('));
+  assert.ok(squadViewSrc.includes("'LINEUP'"));
+  assert.ok(squadViewSrc.includes('Escalados ('));
+  assert.ok(squadViewSrc.includes('Escalado'));
+
+  // Other components must not label players as Reserva/Reservas
+  for (const [name, src] of [
+    ['TacticalBoard', tacticalSrc],
+    ['PlayerProfileModal', profileSrc],
+    ['FinancesView', financesSrc],
+    ['MarketView', marketSrc],
+    ['IncomingOfferCard', offerCardSrc],
+    ['MatchEngineView', matchSrc],
+  ] as const) {
+    assert.ok(!/Reserva/i.test(src), `${name} must not label players as Reserva/Reservas`);
+  }
+
+  assert.ok(tacticalSrc.includes('Outros jogadores do elenco'));
+  assert.ok(profileSrc.includes("'Escalado' : 'Elenco'"));
+  assert.ok(financesSrc.includes("'Escalado' : 'Elenco'"));
+  assert.ok(marketSrc.includes("'Escalado' : 'Elenco'"));
+  assert.ok(offerCardSrc.includes("'Escalado' : 'Elenco'"));
+});

@@ -2,6 +2,7 @@ import { MoraleState } from '../types/football';
 
 export type CurrencyCode = 'BRL' | 'EUR';
 export const EUR_TO_BRL_RATE = 6.0;
+export const USD_TO_BRL_RATE = 5.5;
 const CURRENCY_STORAGE_KEY = 'brasileirao_manager_currency_v1';
 
 function loadInitialCurrency(): CurrencyCode {

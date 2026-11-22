@@ -711,8 +711,9 @@ test('Transfer Catalog & Difficulty Engine evaluate Club x Club and Player x Squ
     listing: freeTarget,
     dealMode: 'FREE',
   });
-  assert.equal(tightWageEval.fitsWageBudget, false);
-  assert.equal(tightWageEval.isBlocked, true);
+  // Teto salarial é sem limite: contratação livre não é bloqueada pela folha (clube assume risco de dívida)
+  assert.equal(tightWageEval.fitsWageBudget, true);
+  assert.equal(tightWageEval.isBlocked, false);
 
   // 5. Buying a starter from a Serie A rival (Palmeiras) removes them from rival pitch tokens
   const palmeirasStarterListing = flamengoListings.find(

@@ -14,7 +14,10 @@ import {
   getEffectivePayroll,
   getPlayerPaidSalary,
 } from '../engine/transferEngine';
-import { createInitialFinanceLedger } from '../engine/economyAndEvolution';
+import {
+  calculateOperationalCost,
+  createInitialFinanceLedger,
+} from '../engine/economyAndEvolution';
 import { formatBRL, formatCompactBRL } from '../utils/formatters';
 
 interface FinancesViewProps {
@@ -35,16 +38,19 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
   const ledger =
     financeLedger || createInitialFinanceLedger(club, squad, seasonYear);
   const totalMonthlyPayroll = getEffectivePayroll(squad, loanedOutPlayers);
+  const annualPayrollProjection = totalMonthlyPayroll * 12;
   const totalSquadValuation = squad.reduce((acc, p) => acc + p.marketValue, 0);
-  const wageUsagePct = Math.round(
-    (totalMonthlyPayroll / Math.max(1, club.wageBudget)) * 100
-  );
+  const isInDebt = club.cashBalance < 0;
 
   const sortedBySalary = [...squad].sort(
     (a, b) => getPlayerPaidSalary(b) - getPlayerPaidSalary(a)
   );
 
   const sponsor = ledger.sponsorshipContract;
+  const monthlySponsorOpCost = calculateOperationalCost(sponsor.monthlyInstallment);
+  const netMonthlySponsor = sponsor.monthlyInstallment - monthlySponsorOpCost;
+  const monthlyFixedNet = netMonthlySponsor - totalMonthlyPayroll;
+  const payrollExceedsSponsor = totalMonthlyPayroll > netMonthlySponsor;
 
   const threeRevenuePillars = [
     {
@@ -55,8 +61,8 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
         ledger.lastMatchGateRevenue > 0
           ? `Último jogo em casa (${club.stadium}): ${ledger.lastMatchAttendance.toLocaleString(
               'pt-BR'
-            )} pagantes (${formatCompactBRL(ledger.lastMatchGateRevenue)})`
-          : `Mandos de campo em ${club.stadium} conforme reputação e fase na tabela`,
+            )} pagantes (${formatCompactBRL(ledger.lastMatchGateRevenue)} bruto · 30% custo operacional)`
+          : `Mandos de campo em ${club.stadium} conforme reputação e fase (30% custo operacional)`,
       Icon: Ticket,
     },
     {
@@ -73,13 +79,13 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
     },
     {
       id: 'sponsorship',
-      label: `3. Patrocínios Automáticos (${sponsor.sponsorName})`,
+      label: `3. Patrocínios Anuais (${sponsor.sponsorName})`,
       amount: ledger.seasonSponsorshipRevenue,
       note: `${sponsor.tierLabel} · ${formatCompactBRL(
         sponsor.annualValue
-      )}/ano (${formatCompactBRL(sponsor.monthlyInstallment)}/mês) · ${
-        sponsor.basisNote
-      }`,
+      )}/ano (${formatCompactBRL(sponsor.monthlyInstallment)}/mês bruto · ${formatCompactBRL(
+        netMonthlySponsor
+      )}/mês líq.) · ${sponsor.basisNote}`,
       Icon: Handshake,
     },
   ];
@@ -90,9 +96,13 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
     ledger.seasonSponsorshipRevenue;
   const totalSeasonInflow =
     totalThreePillarsRevenue + ledger.seasonPrizeRevenue;
+  const payrollSpend = ledger.seasonPayrollExpense || 0;
   const youthSpend = ledger.seasonYouthAcademySpend || 0;
   const totalSeasonOutflow =
-    ledger.seasonTransferSpend + ledger.seasonOperationalExpense + youthSpend;
+    payrollSpend +
+    ledger.seasonTransferSpend +
+    ledger.seasonOperationalExpense +
+    youthSpend;
 
   return (
     <div className="space-y-5">
@@ -100,7 +110,7 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 pb-2 border-b border-white/[0.07]">
         <div>
           <span className="block text-xs sm:text-sm font-normal text-zinc-400 tracking-wide">
-            Orçamento, Patrocínio Dinâmico & Trava Anti-Inflação · Temporada{' '}
+            Orçamento, Patrocínio por Torcida & Folha Livre (com Risco de Dívida) · Temporada{' '}
             {ledger.seasonYear}
           </span>
           <h2 className="font-display text-3xl sm:text-5xl font-extrabold uppercase tracking-tight text-white leading-[0.95] mt-0.5">
@@ -114,17 +124,41 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
         </div>
       </div>
 
+      {/* Debt Alert Banner if cashBalance < 0 */}
+      {isInDebt && (
+        <div
+          data-testid="finances-debt-alert"
+          className="rounded-2xl bg-rose-950/50 border border-rose-500/45 px-4 py-3 text-xs text-rose-200 flex flex-wrap items-center justify-between gap-2"
+        >
+          <div>
+            <strong className="text-rose-100 uppercase font-mono">
+              Alerta de Dívida Ativa:
+            </strong>{' '}
+            O clube está com saldo negativo ({formatCompactBRL(club.cashBalance)}). Salários e custos operacionais acima das receitas aumentam a dívida mensalmente e reduzem a confiança da diretoria.
+          </div>
+          <span className="font-mono font-bold text-rose-300 tabular-nums shrink-0">
+            Folha anual: {formatCompactBRL(annualPayrollProjection)}/ano
+          </span>
+        </div>
+      )}
+
       {/* Top KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div className="bg-[#b5ff00] text-[#090a0f] rounded-[24px] p-5 shadow-lg">
-          <div className="flex items-center justify-between text-xs font-bold uppercase font-mono opacity-80">
-            <span>Saldo em Caixa Disponível</span>
+        <div
+          className={`rounded-[24px] p-5 shadow-lg ${
+            isInDebt
+              ? 'bg-rose-600 text-white'
+              : 'bg-[#b5ff00] text-[#090a0f]'
+          }`}
+        >
+          <div className="flex items-center justify-between text-xs font-bold uppercase font-mono opacity-85">
+            <span>{isInDebt ? 'Saldo em Dívida' : 'Saldo em Caixa Disponível'}</span>
             <Wallet className="w-4 h-4" />
           </div>
           <div className="font-display text-4xl font-extrabold tabular-nums mt-1.5 leading-none">
             {formatCompactBRL(club.cashBalance)}
           </div>
-          <div className="text-[11px] opacity-80 mt-1.5 font-mono tabular-nums font-semibold">
+          <div className="text-[11px] opacity-85 mt-1.5 font-mono tabular-nums font-semibold">
             Exato: {formatBRL(club.cashBalance)}
           </div>
         </div>
@@ -135,16 +169,26 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
             <Building2 className="w-4 h-4 text-[#090a0f]" />
           </div>
           <div className="font-display text-4xl font-extrabold tabular-nums mt-1.5 leading-none">
-            {formatCompactBRL(totalMonthlyPayroll)}{' '}
-            <span className="text-sm font-sans font-semibold text-zinc-500">
-              / {formatCompactBRL(club.wageBudget)}
+            {formatCompactBRL(totalMonthlyPayroll)}
+            <span className="text-xs font-mono font-bold text-emerald-700 ml-1.5 uppercase">
+              Sem Limite
             </span>
           </div>
-          <div className="w-full h-2 bg-zinc-200 rounded-full overflow-hidden mt-2.5">
-            <div
-              className="h-full bg-[#090a0f]"
-              style={{ width: `${Math.min(100, wageUsagePct)}%` }}
-            />
+          <div className="text-[11px] mt-2 font-mono tabular-nums text-zinc-600">
+            Projeção anual: <strong>{formatCompactBRL(annualPayrollProjection)}</strong>/ano
+          </div>
+          <div
+            className={`text-[10px] mt-1 font-semibold ${
+              payrollExceedsSponsor ? 'text-rose-600' : 'text-emerald-700'
+            }`}
+          >
+            {payrollExceedsSponsor
+              ? `Folha supera patrocínio líquido (-30% op.) em ${formatCompactBRL(
+                  Math.abs(monthlyFixedNet)
+                )}/mês (depende de bilheteria/vendas)`
+              : `Patrocínio líquido (-30% op.) cobre 100% da folha (+${formatCompactBRL(
+                  monthlyFixedNet
+                )}/mês livres)`}
           </div>
         </div>
 
@@ -177,13 +221,13 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
         </div>
       </div>
 
-      {/* Main Split: 3 Clear Revenue Pillars & Anti-Inflation Guardrails + Squad Payroll Ledger */}
+      {/* Main Split: 3 Clear Revenue Pillars & Expenses + Squad Payroll Ledger */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         {/* 3 Revenue Pillars Breakdown (6 cols) */}
         <div className="xl:col-span-6 bg-[#14171f] border border-white/[0.07] rounded-[28px] p-5 space-y-5">
           <div>
             <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white pb-2.5 border-b border-white/[0.07] flex items-center justify-between">
-              <span>3 Pilares de Receita ({ledger.seasonYear})</span>
+              <span>Receitas da Temporada ({ledger.seasonYear})</span>
               <span className="font-mono text-sm tabular-nums text-[#b5ff00]">
                 +{formatCompactBRL(totalSeasonInflow)}
               </span>
@@ -224,10 +268,10 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
                     </div>
                     <div className="min-w-0">
                       <div className="font-semibold text-white">
-                        Premiações por Fase (Copas & Liga)
+                        Premiações Esportivas (Copas & Liga)
                       </div>
                       <div className="text-[11px] text-zinc-400 mt-0.5">
-                        Bônus acumulados por avanços na temporada
+                        Bônus acumulados de Copa do Brasil, Libertadores e Brasileirão
                       </div>
                     </div>
                   </div>
@@ -241,7 +285,7 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
 
           <div>
             <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white pb-2.5 border-b border-white/[0.07] flex items-center justify-between">
-              <span>Saídas & Controle Anti-Inflação</span>
+              <span>Saídas & Custos Mensais</span>
               <span className="font-mono text-sm tabular-nums text-rose-400">
                 -{formatCompactBRL(totalSeasonOutflow)}
               </span>
@@ -250,18 +294,18 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
               <div className="py-3 flex items-center justify-between gap-2">
                 <div>
                   <div className="font-semibold text-white">
-                    Folha Salarial Mensal Comprometida
+                    Folha Salarial Paga na Temporada
                   </div>
                   <div className="text-[11px] text-zinc-400">
                     {squad.length} atletas ativos
                     {loanedOutPlayers.length > 0
-                      ? ` + ${loanedOutPlayers.length} cedido(s) por empréstimo`
+                      ? ` + ${loanedOutPlayers.length} cedido(s)`
                       : ''}{' '}
-                    ({wageUsagePct}% do teto)
+                    · {formatCompactBRL(totalMonthlyPayroll)}/mês (teto sem limite)
                   </div>
                 </div>
-                <span className="font-mono tabular-nums font-bold text-white">
-                  {formatCompactBRL(totalMonthlyPayroll)}/mês
+                <span className="font-mono tabular-nums font-bold text-rose-400">
+                  -{formatCompactBRL(payrollSpend)}
                 </span>
               </div>
 
@@ -298,11 +342,10 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
               <div className="py-3 flex items-center justify-between gap-2">
                 <div>
                   <div className="font-semibold text-white">
-                    Manutenção Estrutural & Trava Anti-Inflação
+                    Custo Operacional (30% Patrocínio & Ingressos)
                   </div>
                   <div className="text-[11px] text-zinc-400">
-                    Estádio, comissão técnica e ajuste econômico de virada de
-                    ano
+                    30% automático sobre toda receita de patrocínio e bilheteria (aplicado a todos os clubes)
                   </div>
                 </div>
                 <span className="font-mono tabular-nums font-bold text-rose-400">
@@ -330,7 +373,7 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
                 <tr className="border-b border-white/[0.07] bg-[#0b0c10]/60 text-[11px] text-zinc-400">
                   <th className="py-3 px-4 font-medium">Atleta</th>
                   <th className="py-3 px-2 font-medium">Pos</th>
-                  <th className="py-3 px-2 font-medium">Status</th>
+                  <th className="py-3 px-2 font-medium">Escalação</th>
                   <th className="py-3 px-3 font-medium text-right">
                     Valor de Mercado
                   </th>
@@ -351,10 +394,10 @@ export const FinancesView: React.FC<FinancesViewProps> = ({
                         className={
                           p.isStarter
                             ? 'text-[#b5ff00] font-semibold'
-                            : 'text-zinc-500'
+                            : 'text-zinc-300'
                         }
                       >
-                        {p.isStarter ? 'Titular' : 'Reserva'}
+                        {p.isStarter ? 'Escalado' : 'Elenco'}
                       </span>
                     </td>
                     <td className="py-2.5 px-3 text-right text-zinc-300">

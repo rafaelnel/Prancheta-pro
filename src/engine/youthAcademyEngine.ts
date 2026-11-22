@@ -16,6 +16,7 @@ import {
   calibrateAttributesToTargetOvr,
   getMaxRealisticOvrForAgeAndPotential,
   getDynamicPotentialProfile,
+  getPotentialCeilingOvr,
 } from './economyAndEvolution';
 import { generateAttributesFromSeed } from '../data/squadBuilder';
 import { getDefaultFormationRoleForPosition } from '../data/transferCatalog';
@@ -80,16 +81,16 @@ export const YOUTH_TIERS: YouthTierDefinition[] = [
     minOvr: 60,
     maxOvr: 75,
     starProbabilities: {
-      star1_2_5: 72,
-      star3_3_5: 25.5,
-      star4_4_5: 2.5,
+      star1_2_5: 84,
+      star3_3_5: 14.8,
+      star4_4_5: 1.2,
       star5: 0,
-      star1_2: 72,
-      star3: 25.5,
-      star4: 2.5,
+      star1_2: 84,
+      star3: 14.8,
+      star4: 1.2,
     },
     description:
-      'Peneiras locais e escolinhas conveniadas. Foco em formação inicial a baixo custo (1–2,5★: 60–70 OVR · 3–4★: 70–75 OVR).',
+      'Peneiras locais e escolinhas conveniadas. Foco em formação inicial a baixo custo (maioria 1–2,5★ e achados pontuais de 3–4,5★).',
   },
   {
     tier: 'ESTRUTURADO',
@@ -102,22 +103,22 @@ export const YOUTH_TIERS: YouthTierDefinition[] = [
     minOvr: 62,
     maxOvr: 80,
     starProbabilities: {
-      star1_2_5: 48,
-      star3_3_5: 43.5,
-      star4_4_5: 8.3,
+      star1_2_5: 68,
+      star3_3_5: 28.2,
+      star4_4_5: 3.6,
       star5: 0.2,
-      star1_2: 48,
-      star3: 43.5,
-      star4: 8.3,
+      star1_2: 68,
+      star3: 28.2,
+      star4: 3.6,
     },
     progressionNote: {
       fromTierLabel: 'Básico → Estruturado',
-      badgeSummary: '+70% em 3–3,5★ (70–75 OVR) · 3,3x mais 4–4,5★ (até 80 OVR)',
+      badgeSummary: 'Quase 2x mais 3–3,5★ · 3x mais 4–4,5★ (3,6%) · Abre chance de 5★ (0,2%)',
       detail:
-        '+70% de chance na faixa 3–3,5★ (70–75 OVR), 3,3x mais chances de 4–4,5★ (até 80 OVR) e 5x mais chances de 5★ (75–85 OVR).',
+        'Eleva a taxa de atletas 3–3,5★ para 28,2%, triplica as chances de 4–4,5★ (3,6%) e desbloqueia a chance de joias 5★ (0,2%).',
     },
     description:
-      'CT oficial com comissão Sub-17 e Sub-20 dedicada. Grande salto de regularidade na faixa 3–4★ (70–75 OVR) e 8% em 4–4,5★ (até 80 OVR).',
+      'CT oficial com comissão Sub-17 e Sub-20 dedicada. Eleva a consistência em 3–3,5★ (28,2%) com boas chances de 4–4,5★ (3,6%) e raros 5★ (0,2%).',
   },
   {
     tier: 'AVANCADO',
@@ -130,22 +131,22 @@ export const YOUTH_TIERS: YouthTierDefinition[] = [
     minOvr: 65,
     maxOvr: 82,
     starProbabilities: {
-      star1_2_5: 25,
-      star3_3_5: 57.0,
-      star4_4_5: 17.4,
-      star5: 0.6,
-      star1_2: 25,
-      star3: 57.0,
-      star4: 17.4,
+      star1_2_5: 52,
+      star3_3_5: 39.2,
+      star4_4_5: 8.4,
+      star5: 0.4,
+      star1_2: 52,
+      star3: 39.2,
+      star4: 8.4,
     },
     progressionNote: {
       fromTierLabel: 'Estruturado → Avançado',
-      badgeSummary: '+31% em 3–3,5★ (70–75 OVR) · 2,1x mais 4–4,5★ · 2,4x mais 5★',
+      badgeSummary: '39,2% em 3–3,5★ · 2,3x mais 4–4,5★ (8,4%) · 2x mais 5★ (0,4%)',
       detail:
-        '+31% na faixa 3–3,5★, 2,1x mais chances de 4–4,5★ (até 80 OVR) e 2,4x mais chances de 5★ (75–85 OVR).',
+        'Aumenta para 39,2% os jovens de 3–3,5★, mais que dobra a chance de promessas 4–4,5★ (8,4%) e dobra a chance de fenômenos 5★ (0,4%).',
     },
     description:
-      'Rede de olheiros por todo o Brasil e fisiologia de ponta. Mais da metade da safra em 3–4★ (70–75 OVR) e 16,8% de promessas 4–4,5★ (até 80 OVR).',
+      'Rede de olheiros por todo o Brasil e fisiologia de ponta. Forte base de 3–3,5★ (39,2%) com promessas 4–4,5★ (8,4%) e chance de 5★ (0,4%).',
   },
   {
     tier: 'ELITE',
@@ -158,23 +159,23 @@ export const YOUTH_TIERS: YouthTierDefinition[] = [
     minOvr: 68,
     maxOvr: 85,
     starProbabilities: {
-      star1_2_5: 12,
-      star3_3_5: 56.0,
-      star4_4_5: 30.5,
-      star5: 1.5,
-      star1_2: 12,
-      star3: 56.0,
-      star4: 30.5,
+      star1_2_5: 38,
+      star3_3_5: 45.0,
+      star4_4_5: 16.0,
+      star5: 1.0,
+      star1_2: 38,
+      star3: 45.0,
+      star4: 16.0,
     },
     progressionNote: {
       fromTierLabel: 'Avançado → Elite',
       badgeSummary:
-        'Base sólida 3–4★ (70–75 OVR) · +75% em 4–4,5★ (até 80 OVR) · Raras joias 5★ (1,5%)',
+        '45,0% em 3–3,5★ · Quase 2x mais 4–4,5★ (16,0%) · Fenômenos 5★ (1,0%)',
       detail:
-        'Mantém a base sólida de 3–3,5★ (70–75 OVR), aumenta em +75% a geração de 4–4,5★ (até 80 OVR) e oferece a maior chance de fenômenos fora da curva 5★ (1,5%).',
+        'Forte base em 3–3,5★ (45,0%), quase dobra a chance de talentos 4–4,5★ (16,0%) e oferece a maior chance de fenômenos 5★ (1,0%).',
     },
     description:
-      'Estrutura padrão mundial de captação e formação. Quase 1 em cada 3 jovens é 4–4,5★ (até 80 OVR) e chance real (1,5%) de fenômenos 5★ fora da curva.',
+      'Estrutura padrão mundial de captação e formação. Base sólida de 3–3,5★ (45,0%), promessas 4–4,5★ expressivas (16,0%) e fenômenos 5★ (1,0%).',
   },
 ];
 
@@ -222,10 +223,16 @@ function rollRealisticPotentialStars(params: {
   tierConfig: YouthTierDefinition;
   investmentConsistencyRatio: number; // 0..1 based on months/money invested
   alreadyHasFiveStarInBatch: boolean;
+  alreadyHasFourHalfPlusInBatch: boolean;
   rng: () => number;
 }): PotentialStars {
-  const { tierConfig, investmentConsistencyRatio, alreadyHasFiveStarInBatch, rng } =
-    params;
+  const {
+    tierConfig,
+    investmentConsistencyRatio,
+    alreadyHasFiveStarInBatch,
+    alreadyHasFourHalfPlusInBatch,
+    rng,
+  } = params;
 
   const baseProbs = YOUTH_TIERS[0].starProbabilities;
   const targetProbs = tierConfig.starProbabilities;
@@ -244,15 +251,19 @@ function rollRealisticPotentialStars(params: {
   const roll = rng() * 100;
   if (roll < p5) return 5;
   if (roll < p5 + p4) {
-    return rng() < 0.4 ? 4.5 : 4;
+    // 4.5★ is a rare upper-tier roll (~20% of the 4–4.5★ bracket) and capped at 1 per annual intake
+    if (!alreadyHasFourHalfPlusInBatch && rng() < 0.2) {
+      return 4.5;
+    }
+    return 4;
   }
   if (roll < p5 + p4 + p3) {
-    return rng() < 0.45 ? 3.5 : 3;
+    return rng() < 0.35 ? 3.5 : 3;
   }
   const subRoll = rng();
-  if (subRoll < 0.45) return 2.5;
-  if (subRoll < 0.8) return 2;
-  if (subRoll < 0.95) return 1.5;
+  if (subRoll < 0.42) return 2.5;
+  if (subRoll < 0.78) return 2;
+  if (subRoll < 0.94) return 1.5;
   return 1;
 }
 
@@ -475,11 +486,11 @@ export function createInitialYouthAcademy(
   // Include 15-year-olds (Sub-17, waiting to turn 16) and 16-18 year-olds (ready for promotion)
   const initialAges = [17, 16, 16, 15, 15];
   const initialStars: PotentialStars[] = [
-    clubReputation >= 80 ? 4 : 3.5,
-    3.5,
+    clubReputation >= 84 ? 3.5 : 3,
     3,
-    clubReputation >= 76 ? 3.5 : 3,
     2.5,
+    2.5,
+    2,
   ];
 
   const usedNames = new Set<string>();
@@ -560,49 +571,55 @@ const SECTOR_PRIORITY_ATTRS: Record<
 function rollYouthAcademyOvrGain(params: {
   stars: PotentialStars;
   headroom: number;
+  currentOvr: number;
   phase: 'MID_SEASON' | 'SEASON_END';
   rng: () => number;
 }): number {
-  const { stars, headroom, phase, rng } = params;
-  if (headroom <= 0) return 0;
-
+  const { stars, headroom, currentOvr, phase, rng } = params;
   const r = rng();
 
+  if (headroom <= 0) {
+    // At ceiling: mostly stalls, small risk of dipping -1 if above 60
+    return r < 0.14 && currentOvr > 60 ? -1 : 0;
+  }
+
   if (phase === 'MID_SEASON') {
-    // Stochastic mid-season growth weighted by star potential (0 to +2 OVR)
+    // Stochastic mid-season growth weighted by star potential (-1 to +2 OVR)
     let gain = 0;
     if (stars >= 5) {
-      gain = r < 0.15 ? 0 : r < 0.62 ? 1 : 2;
+      gain = r < 0.08 ? -1 : r < 0.24 ? 0 : r < 0.66 ? 1 : 2;
     } else if (stars >= 4.5) {
-      gain = r < 0.22 ? 0 : r < 0.72 ? 1 : 2;
+      gain = r < 0.10 ? -1 : r < 0.28 ? 0 : r < 0.72 ? 1 : 2;
     } else if (stars >= 4) {
-      gain = r < 0.30 ? 0 : r < 0.80 ? 1 : 2;
+      gain = r < 0.13 ? -1 : r < 0.34 ? 0 : r < 0.80 ? 1 : 2;
     } else if (stars >= 3) {
-      gain = r < 0.44 ? 0 : r < 0.90 ? 1 : 2;
+      gain = r < 0.16 ? -1 : r < 0.46 ? 0 : r < 0.90 ? 1 : 2;
     } else if (stars >= 2) {
-      gain = r < 0.62 ? 0 : 1;
+      gain = r < 0.18 ? -1 : r < 0.64 ? 0 : 1;
     } else {
-      gain = r < 0.78 ? 0 : 1;
+      gain = r < 0.20 ? -1 : r < 0.78 ? 0 : 1;
     }
+    if (gain < 0) return currentOvr > 60 ? gain : 0;
     return Math.min(headroom, gain);
   }
 
-  // SEASON_END annual stochastic evolution weighted by star potential (0 to +3 OVR)
+  // SEASON_END annual stochastic evolution weighted by star potential (-1 to +3 OVR)
   let gain = 0;
   if (stars >= 5) {
-    gain = r < 0.08 ? 0 : r < 0.34 ? 1 : r < 0.74 ? 2 : 3;
+    gain = r < 0.07 ? -1 : r < 0.18 ? 0 : r < 0.44 ? 1 : r < 0.77 ? 2 : 3;
   } else if (stars >= 4.5) {
-    gain = r < 0.12 ? 0 : r < 0.42 ? 1 : r < 0.80 ? 2 : 3;
+    gain = r < 0.10 ? -1 : r < 0.22 ? 0 : r < 0.50 ? 1 : r < 0.82 ? 2 : 3;
   } else if (stars >= 4) {
-    gain = r < 0.16 ? 0 : r < 0.54 ? 1 : r < 0.88 ? 2 : 3;
+    gain = r < 0.13 ? -1 : r < 0.28 ? 0 : r < 0.58 ? 1 : r < 0.88 ? 2 : 3;
   } else if (stars >= 3) {
-    gain = r < 0.24 ? 0 : r < 0.72 ? 1 : 2;
+    gain = r < 0.16 ? -1 : r < 0.38 ? 0 : r < 0.74 ? 1 : 2;
   } else if (stars >= 2) {
-    gain = r < 0.42 ? 0 : r < 0.88 ? 1 : 2;
+    gain = r < 0.18 ? -1 : r < 0.54 ? 0 : r < 0.90 ? 1 : 2;
   } else {
-    gain = r < 0.60 ? 0 : 1;
+    gain = r < 0.20 ? -1 : r < 0.68 ? 0 : 1;
   }
 
+  if (gain < 0) return currentOvr > 60 ? gain : 0;
   return Math.min(headroom, gain);
 }
 
@@ -645,14 +662,15 @@ export function evolveYouthAcademyRoster(params: {
       continue;
     }
 
-    const stars = yp.potentialStars ?? 3;
+    let stars: PotentialStars = yp.potentialStars ?? 3;
     const currentOvr = calculatePlayerOverall(yp.attributes, yp.position);
     const starBounds = getYouthInitialOvrRange(stars);
     const dynProfile = getDynamicPotentialProfile(stars, rng, currentOvr, nextAge);
-    const playerBaseCeiling = Math.max(
+    let nextBasePot = Math.max(
       yp.basePotentialOvr ?? dynProfile.basePotentialOvr,
       starBounds.maxOvr
     );
+    let nextDynCeiling = yp.dynamicCeilingOvr ?? dynProfile.dynamicCeilingOvr;
     const agePotentialLimit = getMaxRealisticOvrForAgeAndPotential(
       nextAge,
       stars,
@@ -663,7 +681,7 @@ export function evolveYouthAcademyRoster(params: {
       Math.max(
         currentOvr,
         Math.min(
-          playerBaseCeiling,
+          nextBasePot,
           Math.max(starBounds.maxOvr, agePotentialLimit)
         )
       )
@@ -673,6 +691,7 @@ export function evolveYouthAcademyRoster(params: {
     const ovrGain = rollYouthAcademyOvrGain({
       stars,
       headroom,
+      currentOvr,
       phase,
       rng,
     });
@@ -694,12 +713,52 @@ export function evolveYouthAcademyRoster(params: {
         targetNextOvr,
         academyCeiling
       );
+    } else if (ovrGain < 0 && currentOvr > 60) {
+      const targetNextOvr = Math.max(60, currentOvr + ovrGain);
+      evolvedAttrs = calibrateAttributesToTargetOvr(
+        evolvedAttrs,
+        yp.position,
+        targetNextOvr,
+        targetNextOvr
+      );
     }
 
     const newOvr = calculatePlayerOverall(evolvedAttrs, yp.position);
     const actualDelta = newOvr - currentOvr;
     if (actualDelta > 0) {
       evolvedCount += 1;
+    }
+
+    // Probabilistic potential trajectory on the academy prospect (can flop or break out)
+    const potentialRoll = rng();
+    let devStatus = yp.developmentStatus;
+    let exceeded = Boolean(yp.exceededExpectations);
+    if (actualDelta < 0 || (actualDelta === 0 && potentialRoll < 0.28)) {
+      const shrink = actualDelta < 0 ? (phase === 'SEASON_END' ? 3 : 2) : 1;
+      nextDynCeiling = Math.max(newOvr, nextDynCeiling - shrink);
+      nextBasePot = Math.max(newOvr, Math.min(nextBasePot, nextDynCeiling));
+      while (stars > 1) {
+        const prevStar = Math.max(1, Number((stars - 0.5).toFixed(1))) as PotentialStars;
+        if (nextDynCeiling <= getPotentialCeilingOvr(prevStar) + 1) {
+          stars = prevStar;
+        } else {
+          break;
+        }
+      }
+      devStatus = actualDelta < 0 ? 'DECLINIO_TECNICO' : 'ESTAGNADO';
+    } else if (
+      actualDelta >= 2 &&
+      stars < 5 &&
+      potentialRoll >= (stars >= 4.5 ? 0.985 : stars >= 3.5 ? 0.94 : 0.89)
+    ) {
+      const boostedStars = Math.min(5, Number((stars + 0.5).toFixed(1))) as PotentialStars;
+      stars = boostedStars;
+      nextDynCeiling = Math.min(95, Math.max(nextDynCeiling + 2, getPotentialCeilingOvr(boostedStars)));
+      nextBasePot = Math.max(nextBasePot, Math.min(nextDynCeiling, nextBasePot + 1));
+      exceeded = true;
+      devStatus = 'SUPEROU_EXPECTATIVAS';
+    } else if (actualDelta > 0) {
+      devStatus = 'EVOLUCAO_NORMAL';
     }
 
     const { marketValue, salary } = calculateBalancedValuationAndWage({
@@ -714,6 +773,11 @@ export function evolveYouthAcademyRoster(params: {
     nextRoster.push({
       ...yp,
       age: nextAge,
+      potentialStars: stars,
+      basePotentialOvr: nextBasePot,
+      dynamicCeilingOvr: nextDynCeiling,
+      exceededExpectations: exceeded,
+      developmentStatus: devStatus,
       attributes: evolvedAttrs,
       marketValue,
       salary: Math.max(15_000, Math.round((salary * 0.35) / 5_000) * 5_000),
@@ -794,6 +858,7 @@ export function generateYouthRegens(params: {
   const newPlayers: Player[] = [];
   const reportItems: YouthRegenReportItem[] = [];
   let alreadyHasFiveStarInBatch = false;
+  let alreadyHasFourHalfPlusInBatch = false;
 
   for (let i = 0; i < count; i++) {
     let chosenSector: PositionSector = 'MEI';
@@ -819,6 +884,7 @@ export function generateYouthRegens(params: {
       tierConfig,
       investmentConsistencyRatio,
       alreadyHasFiveStarInBatch,
+      alreadyHasFourHalfPlusInBatch,
       rng,
     });
 
@@ -835,6 +901,9 @@ export function generateYouthRegens(params: {
 
     if (potentialStars === 5) {
       alreadyHasFiveStarInBatch = true;
+      alreadyHasFourHalfPlusInBatch = true;
+    } else if (potentialStars >= 4.5) {
+      alreadyHasFourHalfPlusInBatch = true;
     }
 
     const built = buildSingleYouthProspect({

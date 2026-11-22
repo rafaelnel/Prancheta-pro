@@ -192,7 +192,7 @@ export const YouthAcademyView: React.FC<YouthAcademyViewProps> = ({
 
                   <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 pt-1.5 border-t border-white/[0.06] font-mono text-[10px] tabular-nums">
                     <span className="text-zinc-400">3★+ {Math.round(probs.star3_3_5 + probs.star4_4_5 + probs.star5)}%</span>
-                    <span className="text-amber-300 text-right">4★+ {probs.star4_4_5}%</span>
+                    <span className="text-amber-300 text-right">4–4,5★ {probs.star4_4_5}%</span>
                     <span className="text-zinc-500">1–2,5★ {probs.star1_2_5}%</span>
                     <span className="text-[#b5ff00] text-right font-bold">5★ {probs.star5}%</span>
                   </div>

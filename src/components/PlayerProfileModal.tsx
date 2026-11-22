@@ -24,6 +24,11 @@ import {
   evaluatePlayerRetirementProbability,
   getDynamicPotentialProfile,
 } from '../engine/economyAndEvolution';
+import {
+  evaluatePlayerInjuryRisk,
+  formatInjuryDurationShort,
+  formatInjurySeverityLabel,
+} from '../engine/injuryEngine';
 import { PlayerJersey, PlayerOvrBadge } from './PlayerJersey';
 
 interface PlayerProfileModalProps {
@@ -164,7 +169,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
           <div className="flex items-center gap-3 sm:gap-3.5 min-w-0">
             <PlayerJersey
               number={player.number}
-              variant={player.isStarter ? 'lime' : 'white'}
+              variant="lime"
               size="lg"
             />
             <PlayerOvrBadge
@@ -185,7 +190,7 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
                   {player.age} anos
                 </span>
                 <span className="text-xs text-zinc-400 font-mono">
-                  · {player.nationality} · {player.isStarter ? 'Titular' : 'Reserva'}
+                  · {player.nationality} · {player.isStarter ? 'Escalado' : 'Elenco'}
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] sm:text-xs text-zinc-400">
@@ -384,15 +389,124 @@ export const PlayerProfileModal: React.FC<PlayerProfileModalProps> = ({
             </div>
           )}
 
-          {player.injured && player.injuryNote && (
-            <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-rose-950/40 border border-rose-500/40 text-xs text-rose-200">
-              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-              <span>
-                <strong>Boletim Médico:</strong> {player.injuryNote} — Risco de
-                agravamento se utilizado por 90 minutos.
-              </span>
+          {player.injured && (
+            <div className="p-4 rounded-2xl bg-rose-950/45 border border-rose-500/45 text-xs text-rose-100 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 font-bold text-rose-200">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>
+                    Departamento Médico — {player.injuryType || player.injuryNote || 'Lesão em tratamento'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 font-mono text-[11px]">
+                  {player.injurySeverity && (
+                    <span className="px-2 py-0.5 rounded-full bg-rose-500/25 border border-rose-400/40 text-rose-200 font-bold">
+                      {formatInjurySeverityLabel(player.injurySeverity)}
+                    </span>
+                  )}
+                  <span className="px-2 py-0.5 rounded-full bg-[#0b0c10] border border-rose-500/35 text-white font-bold tabular-nums">
+                    {player.injuryDaysRemaining
+                      ? `${formatInjuryDurationShort(player.injuryDaysRemaining)} restantes`
+                      : 'Em reavaliação'}
+                  </span>
+                </div>
+              </div>
+              {player.injuryTotalDays &&
+                player.injuryTotalDays > 0 &&
+                player.injuryDaysRemaining !== undefined && (
+                  <div className="space-y-1">
+                    <div className="w-full h-1.5 rounded-full bg-[#0b0c10] overflow-hidden">
+                      <div
+                        className="h-full bg-rose-400 transition-all"
+                        style={{
+                          width: `${Math.max(
+                            8,
+                            Math.min(
+                              100,
+                              Math.round(
+                                ((player.injuryTotalDays -
+                                  player.injuryDaysRemaining) /
+                                  player.injuryTotalDays) *
+                                  100
+                              )
+                            )
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[10px] font-mono text-rose-300/80">
+                      <span>Progresso da reabilitação</span>
+                      <span>
+                        {Math.max(
+                          0,
+                          player.injuryTotalDays - player.injuryDaysRemaining
+                        )}
+                        /{player.injuryTotalDays} dias cumpridos
+                      </span>
+                    </div>
+                  </div>
+                )}
             </div>
           )}
+
+          {!player.injured && (() => {
+            const workload = evaluatePlayerInjuryRisk(player);
+            const toneClass =
+              workload.riskLevel === 'CRITICO'
+                ? 'bg-rose-950/35 border-rose-500/45 text-rose-200'
+                : workload.riskLevel === 'ALTO'
+                ? 'bg-amber-950/35 border-amber-400/45 text-amber-100'
+                : workload.riskLevel === 'MODERADO'
+                ? 'bg-[#0b0c10] border-white/10 text-zinc-200'
+                : 'bg-[#0b0c10] border-white/[0.07] text-zinc-300';
+            const badgeClass =
+              workload.riskLevel === 'CRITICO'
+                ? 'bg-rose-500/25 border-rose-400/50 text-rose-200'
+                : workload.riskLevel === 'ALTO'
+                ? 'bg-amber-400/20 border-amber-400/45 text-amber-300'
+                : workload.riskLevel === 'MODERADO'
+                ? 'bg-sky-500/15 border-sky-400/35 text-sky-300'
+                : 'bg-emerald-500/15 border-[#b5ff00]/35 text-[#b5ff00]';
+            return (
+              <div className={`p-3.5 rounded-2xl border text-xs space-y-1.5 ${toneClass}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold text-white">
+                      Fisiologia & Carga Física
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full border font-mono text-[10px] font-bold ${badgeClass}`}>
+                      {workload.label} ({workload.riskPctPerMatch}%/jogo)
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 font-mono text-[11px] tabular-nums">
+                    <span>
+                      Rendimento:{' '}
+                      <strong
+                        className={
+                          workload.performancePenaltyPct >= 10
+                            ? 'text-rose-300'
+                            : workload.performancePenaltyPct > 0
+                            ? 'text-amber-300'
+                            : 'text-[#b5ff00]'
+                        }
+                      >
+                        {100 - workload.performancePenaltyPct}%
+                      </strong>
+                    </span>
+                    <span>
+                      Sequência:{' '}
+                      <strong className="text-white">
+                        {workload.consecutiveMatches}j
+                      </strong>
+                    </span>
+                  </div>
+                </div>
+                <p className="text-[11px] text-zinc-400 leading-snug">
+                  {workload.advice}
+                </p>
+              </div>
+            );
+          })()}
 
           {/* Tactical Role & Duty Configuration Bar */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 rounded-2xl bg-[#0b0c10] border border-white/[0.07]">

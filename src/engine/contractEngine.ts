@@ -262,21 +262,6 @@ export function getRenewalEligiblePlayers(
     });
 }
 
-function getEffectivePayrollWithoutPlayer(
-  squad: Player[],
-  loanedOutPlayers: Player[],
-  playerId: string
-): number {
-  const squadOther = squad
-    .filter((p) => p.id !== playerId)
-    .reduce((acc, p) => acc + Math.round(p.salary * (p.wageSharePaid ?? 1)), 0);
-  const loanedOutResidual = loanedOutPlayers.reduce(
-    (acc, p) => acc + Math.round(p.salary * (p.wageSharePaid ?? 0)),
-    0
-  );
-  return squadOther + loanedOutResidual;
-}
-
 /**
  * Evaluates a user's contract renewal proposal against player's demands & flexibility.
  */
@@ -307,22 +292,10 @@ export function negotiateContractRenewal(params: {
     currentYear
   );
 
-  const otherPayroll = getEffectivePayrollWithoutPlayer(
-    userSquad,
-    loanedOutPlayers,
-    player.id
-  );
-  if (otherPayroll + offeredSalary > club.wageBudget) {
-    return {
-      outcome: 'RECUSADA',
-      headline: `Proposta para ${player.name} acima do teto salarial`,
-      summary: `O salário proposto ultrapassa a folha mensal máxima do ${club.shortName}. Reduza outros salários ou ajuste o valor.`,
-      factors: [expectation.demandReason],
-      offeredSalary,
-      offeredAddYears: addYears,
-      expectation,
-    };
-  }
+  // Teto salarial sem limite: renovações não são bloqueadas pela folha,
+  // mas salários elevados aumentam o custo mensal e podem levar o clube à dívida.
+  void userSquad;
+  void loanedOutPlayers;
 
   const salaryRatio = offeredSalary / Math.max(15_000, expectation.desiredSalary);
 

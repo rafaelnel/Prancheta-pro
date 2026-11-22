@@ -155,7 +155,6 @@ export const ClubBadge: React.FC<ClubBadgeProps> = ({
   name,
   primaryColor = '#27272a',
   size = 'md',
-  surface = 'dark',
   className = '',
 }) => {
   const [failedClubId, setFailedClubId] = useState<string | null>(null);
@@ -166,10 +165,6 @@ export const ClubBadge: React.FC<ClubBadgeProps> = ({
   if (hasRealBadge && clubId) {
     const ext = SVG_BADGE_CLUB_IDS.has(clubId) ? 'svg' : 'png';
     const src = `${import.meta.env.BASE_URL}badges/${clubId}.${ext}`;
-    const shadowClass =
-      surface === 'dark'
-        ? '[filter:drop-shadow(0_0_1px_rgba(255,255,255,0.42))_drop-shadow(0_2px_4px_rgba(0,0,0,0.55))]'
-        : '[filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.28))]';
 
     return (
       <div
@@ -182,7 +177,7 @@ export const ClubBadge: React.FC<ClubBadgeProps> = ({
           loading="lazy"
           draggable={false}
           onError={() => setFailedClubId(clubId)}
-          className={`w-full h-full object-contain ${shadowClass}`}
+          className="w-full h-full object-contain"
         />
       </div>
     );
@@ -190,7 +185,7 @@ export const ClubBadge: React.FC<ClubBadgeProps> = ({
 
   return (
     <div
-      className={`${sizeClass} flex items-center justify-center font-display font-extrabold shrink-0 shadow border border-white/20 select-none ${className}`}
+      className={`${sizeClass} flex items-center justify-center font-display font-extrabold shrink-0 border border-white/20 select-none ${className}`}
       style={{
         backgroundColor: primaryColor,
         color: getContrastTextColor(primaryColor),

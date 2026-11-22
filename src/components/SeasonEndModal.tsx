@@ -184,11 +184,19 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
               <div className="text-[11px] font-mono uppercase text-zinc-400">
                 Premiação Final da Liga
               </div>
-              <div className="font-display text-2xl font-extrabold text-[#b5ff00] mt-1 tabular-nums">
-                +{formatCompactBRL(report.userSeasonPrize)}
+              <div
+                className={`font-display text-2xl font-extrabold mt-1 tabular-nums ${
+                  report.userSeasonPrize > 0 ? 'text-[#b5ff00]' : 'text-zinc-400'
+                }`}
+              >
+                {report.userSeasonPrize > 0
+                  ? `+${formatCompactBRL(report.userSeasonPrize)}`
+                  : formatCompactBRL(0)}
               </div>
               <div className="text-xs text-zinc-400 mt-1">
-                Creditada na virada para {nextYear}
+                {report.userSeasonPrize > 0
+                  ? `Creditada na virada para ${nextYear}`
+                  : 'Rebaixamento na Série A: sem bônus por colocação'}
               </div>
             </div>
 

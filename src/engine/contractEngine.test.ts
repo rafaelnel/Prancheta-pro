@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createNewCareerSave } from '../data/careerFactory';
 import {
+  applyPostMatchProbabilisticEvolution,
   calculateBalancedValuationAndWage,
   calculateDynamicPerformanceGrowth,
+  processSeasonEvolutionAndAging,
 } from './economyAndEvolution';
 import {
   calculateContractRenewalExpectation,
@@ -23,7 +25,10 @@ import {
 } from './youthAcademyEngine';
 import { maybeGenerateIncomingOfferForUser } from './aiMarketEngine';
 import { calculatePlayerOverall } from './playerOverall';
-import { executeNewSeasonRollover } from './seasonLifecycle';
+import {
+  attributeAiRoundPlayerStats,
+  executeNewSeasonRollover,
+} from './seasonLifecycle';
 import {
   evaluateTransferNegotiation,
   executeIncomingTransfer,
@@ -45,8 +50,8 @@ function makeTestPlayer(overrides: Partial<Player> = {}): Player {
     marketValue: overrides.marketValue ?? 20_000_000,
     salary: overrides.salary ?? 260_000,
     potentialStars: overrides.potentialStars ?? 3.5,
-    basePotentialOvr: 82,
-    dynamicCeilingOvr: 85,
+    basePotentialOvr: overrides.basePotentialOvr ?? 82,
+    dynamicCeilingOvr: overrides.dynamicCeilingOvr ?? 85,
     attributes: overrides.attributes ?? {
       passe: baseAttr,
       finalizacao: baseAttr,
@@ -912,5 +917,400 @@ test('Youth academy prospects continue evolving stochastically based on potentia
   assert.equal(youthViewSource.includes('Rompimento de Teto'), false);
   assert.equal(youthViewSource.includes('O Potencial Não Protege'), false);
 });
+
+test('Per-match probabilistic evolution allows players to improve on strong games or flop/erode ceiling on poor games', () => {
+  const prospect = makeTestPlayer({
+    id: 'match-prospect-1',
+    name: 'Promessa Oscilante',
+    age: 19,
+    position: 'MEI',
+    sector: 'MEI',
+    potentialStars: 4.5,
+    basePotentialOvr: 87,
+    dynamicCeilingOvr: 90,
+    attributes: {
+      passe: 13,
+      finalizacao: 13,
+      drible: 13,
+      desarme: 10,
+      primeiroToque: 13,
+      cruzamento: 12,
+      decisoes: 13,
+      visaoDeJogo: 13,
+      compostura: 12,
+      semBola: 13,
+      posicionamento: 11,
+      indiceDeTrabalho: 12,
+      velocidade: 13,
+      aceleracao: 13,
+      resistencia: 13,
+      forca: 11,
+      impulsao: 11,
+      agilidade: 13,
+    },
+  });
+
+  const beforeOvr = calculatePlayerOverall(prospect.attributes, prospect.position);
+
+  // Strong match outcomes across seeds should produce improvements in some rolls and unchanged in others
+  let improvedAttrCount = 0;
+  let ceilingGrewCount = 0;
+  let posSeed = 987654321;
+  const posRng = () => {
+    posSeed = (Math.imul(1664525, posSeed) + 1013904223) >>> 0;
+    return posSeed / 4294967296;
+  };
+  for (let i = 0; i < 60; i++) {
+    const res = applyPostMatchProbabilisticEvolution({
+      player: prospect,
+      matchRating: 8.4,
+      goals: 2,
+      assists: 1,
+      clubReputation: 84,
+      division: 'A',
+      rng: posRng,
+    });
+    const attrSumBefore = Object.values(prospect.attributes).reduce((a, b) => a + b, 0);
+    const attrSumAfter = Object.values(res.attributes).reduce((a, b) => a + b, 0);
+    if (attrSumAfter > attrSumBefore || calculatePlayerOverall(res.attributes, res.position) > beforeOvr) {
+      improvedAttrCount++;
+    }
+    if ((res.dynamicCeilingOvr ?? 90) > 90) {
+      ceilingGrewCount++;
+    }
+  }
+  assert.ok(improvedAttrCount > 0 && improvedAttrCount < 60, `Expected probabilistic match upgrades (got ${improvedAttrCount}/60)`);
+  assert.ok(ceilingGrewCount > 0, `Expected occasional per-match ceiling boost on elite displays (got ${ceilingGrewCount}/60)`);
+
+  // Poor / red-carded matches should occasionally erode attributes AND long-term potential ("não se tornar bom")
+  let regressedAttrCount = 0;
+  let ceilingErodedCount = 0;
+  let starDroppedCount = 0;
+  let negSeed = 246813579;
+  const negRng = () => {
+    negSeed = (Math.imul(1664525, negSeed) + 1013904223) >>> 0;
+    return negSeed / 4294967296;
+  };
+  for (let i = 0; i < 80; i++) {
+    const res = applyPostMatchProbabilisticEvolution({
+      player: prospect,
+      matchRating: 5.5,
+      redCard: i % 2 === 0,
+      clubReputation: 84,
+      division: 'A',
+      rng: negRng,
+    });
+    const attrSumBefore = Object.values(prospect.attributes).reduce((a, b) => a + b, 0);
+    const attrSumAfter = Object.values(res.attributes).reduce((a, b) => a + b, 0);
+    if (attrSumAfter < attrSumBefore) regressedAttrCount++;
+    if ((res.dynamicCeilingOvr ?? 90) < 90) ceilingErodedCount++;
+    if ((res.potentialStars ?? 4.5) < 4.5) starDroppedCount++;
+  }
+  assert.ok(regressedAttrCount > 0 && regressedAttrCount < 80, `Expected probabilistic match regressions (got ${regressedAttrCount}/80)`);
+  assert.ok(ceilingErodedCount > 0, `Expected match flops to erode dynamic ceiling (got ${ceilingErodedCount}/80)`);
+  assert.ok(starDroppedCount > 0, `Expected severe match flops to occasionally drop star rating (got ${starDroppedCount}/80)`);
+});
+
+test('Seasonal probabilistic outcomes give young prospects genuine chances to improve OR fail to become good players', () => {
+  const career = createNewCareerSave(1, 'flamengo', 'Técnico');
+  const template = career.squad.find((p) => p.position === 'ATA')!;
+
+  const mediocreYoungProspect = makeTestPlayer({
+    ...template,
+    id: 'season-flop-candidate',
+    name: 'Garoto da Base',
+    age: 20,
+    potentialStars: 4.5,
+    basePotentialOvr: 86,
+    dynamicCeilingOvr: 90,
+    attributes: {
+      ...template.attributes,
+      finalizacao: 13,
+      drible: 13,
+      velocidade: 13,
+      aceleracao: 13,
+      compostura: 12,
+      semBola: 13,
+    },
+    seasonStats: {
+      matches: 20,
+      goals: 3,
+      assists: 2,
+      yellowCards: 3,
+      avgRating: 6.72,
+    },
+  });
+
+  const beforeOvr = calculatePlayerOverall(mediocreYoungProspect.attributes, mediocreYoungProspect.position);
+
+  let improvedSeeds = 0;
+  let bustOrStagnatedSeeds = 0;
+  let ceilingShrankSeeds = 0;
+  let starLostSeeds = 0;
+
+  for (let i = 0; i < 60; i++) {
+    let s = i * 6133 + 29;
+    const rng = () => {
+      s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+    const evo = processSeasonEvolutionAndAging({
+      clubs: career.clubs,
+      userClubId: career.userClubId,
+      userSquad: [mediocreYoungProspect, ...career.squad.slice(1)],
+      aiSquads: {},
+      freeAgents: [],
+      loanedOutPlayers: [],
+      rng,
+    });
+    const evolved = evo.updatedUserSquad.find((p) => p.id === 'season-flop-candidate')!;
+    const afterOvr = calculatePlayerOverall(evolved.attributes, evolved.position);
+    if (afterOvr > beforeOvr) improvedSeeds++;
+    if (afterOvr <= beforeOvr) bustOrStagnatedSeeds++;
+    if ((evolved.dynamicCeilingOvr ?? 90) < 90) ceilingShrankSeeds++;
+    if ((evolved.potentialStars ?? 4.5) < 4.5) starLostSeeds++;
+  }
+
+  assert.ok(improvedSeeds > 0, `Expected some seeds to improve even with irregular season (${improvedSeeds}/60)`);
+  assert.ok(bustOrStagnatedSeeds > 0, `Expected some seeds to stall or regress (${bustOrStagnatedSeeds}/60)`);
+  assert.ok(ceilingShrankSeeds > 0, `Expected unrealized ceiling to contract on flop rolls (${ceilingShrankSeeds}/60)`);
+  assert.ok(starLostSeeds > 0, `Expected prospect star rating to drop on bust rolls (${starLostSeeds}/60)`);
+
+  // Also verify AI fixtures apply per-match probabilistic evolution across multiple rounds
+  const aiClubId = Object.keys(career.aiSquads || {})[0];
+  let workingAi = { ...(career.aiSquads || {}) };
+  workingAi[aiClubId] = workingAi[aiClubId].map((p, idx) =>
+    idx < 5 ? { ...p, age: 19, potentialStars: 4.5 as PotentialStars, dynamicCeilingOvr: 90 } : p
+  );
+  let s = 123456;
+  const aiRng = () => {
+    s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+  for (let r = 0; r < 18; r++) {
+    workingAi = attributeAiRoundPlayerStats(
+      workingAi,
+      [
+        {
+          id: `sim-fix-${r}`,
+          roundNumber: r + 1,
+          homeClubId: aiClubId,
+          awayClubId: career.userClubId === 'palmeiras' ? 'botafogo' : 'palmeiras',
+          played: true,
+          isUserMatch: false,
+          homeGoals: r % 2 === 0 ? 4 : 0,
+          awayGoals: r % 2 === 0 ? 0 : 4,
+          homeXG: 2.1,
+          awayXG: 1.5,
+        },
+      ],
+      career.userClubId,
+      aiRng
+    );
+  }
+  const anyAiDynamicShift = workingAi[aiClubId].some(
+    (p) => (p.recentOvrDelta ?? 0) !== 0 || (p.dynamicCeilingOvr ?? 90) !== 90
+  );
+  assert.ok(anyAiDynamicShift, 'AI club players should also experience per-match probabilistic evolution/regression');
+});
+
+test('Youth academy prospects also carry probabilistic bust/regression chance alongside positive growth', () => {
+  const academy = createInitialYouthAcademy('flamengo', 84, 'A', 2026);
+  const prospect = makeTestPlayer({
+    id: 'youth-risk-18',
+    name: 'Risco da Base',
+    age: 18,
+    position: 'ATA',
+    sector: 'ATA',
+    potentialStars: 4.5,
+    basePotentialOvr: 86,
+    dynamicCeilingOvr: 90,
+  });
+  const baseAcademy = { ...academy, youthRoster: [prospect] };
+  const beforeOvr = calculatePlayerOverall(prospect.attributes, prospect.position);
+
+  let regressedOrStagnated = 0;
+  let improved = 0;
+  for (let i = 0; i < 60; i++) {
+    let s = i * 9109 + 7;
+    const rng = () => {
+      s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+    const res = evolveYouthAcademyRoster({
+      academy: baseAcademy,
+      clubReputation: 84,
+      division: 'A',
+      phase: 'SEASON_END',
+      rng,
+    });
+    const after = res.updatedYouthRoster[0];
+    const afterOvr = calculatePlayerOverall(after.attributes, after.position);
+    if (afterOvr > beforeOvr) improved++;
+    if (afterOvr <= beforeOvr || (after.dynamicCeilingOvr ?? 90) < 90) regressedOrStagnated++;
+  }
+  assert.ok(improved > 0, 'Expected youth academy prospects to improve across positive seeds');
+  assert.ok(regressedOrStagnated > 0, 'Expected youth academy prospects to occasionally regress/stagnate or lose ceiling');
+});
+
+test('Season rollover generates full NewSeasonEvolutionReport, enriched inbox bullets, and opens NewSeasonEvolutionModal in App', async () => {
+  const career = createNewCareerSave(1, 'flamengo', 'Técnico');
+  const playedSquad = career.squad.map((p, idx) => ({
+    ...p,
+    seasonStats: {
+      matches: idx < 15 ? 30 : 6,
+      goals: p.sector === 'ATA' ? 14 : p.sector === 'MEI' ? 6 : 1,
+      assists: p.sector === 'MEI' ? 10 : 3,
+      yellowCards: 2,
+      avgRating: idx % 3 === 0 ? 7.65 : idx % 3 === 1 ? 6.95 : 6.25,
+    },
+  }));
+
+  const rollover = executeNewSeasonRollover({
+    currentYear: 2026,
+    clubs: career.clubs,
+    userClubId: career.userClubId,
+    userSquad: playedSquad,
+    aiSquads: career.aiSquads || {},
+    freeAgents: career.freeAgents || [],
+    loanedOutPlayers: career.loanedOutPlayers || [],
+    standings: career.standings,
+    secondaryStandings: career.secondaryStandings || [],
+    copaDoBrasil: career.copaDoBrasil!,
+    libertadores: career.libertadores!,
+    seasonHistory: [],
+    managerName: 'Técnico',
+    youthAcademy: career.youthAcademy,
+    rng: () => 0.42,
+  });
+
+  const evoReport = rollover.newSeasonEvolutionReport;
+  assert.equal(evoReport.fromYear, 2026);
+  assert.equal(evoReport.toYear, 2027);
+  assert.ok(evoReport.items.length > 0, 'Expected evolution items for user squad players');
+  assert.ok(evoReport.squadAvgOvrBefore > 50 && evoReport.squadAvgOvrAfter > 50);
+
+  const sampleItem = evoReport.items[0];
+  assert.equal(typeof sampleItem.oldOvr, 'number');
+  assert.equal(typeof sampleItem.newOvr, 'number');
+  assert.equal(sampleItem.deltaOvr, sampleItem.newOvr - sampleItem.oldOvr);
+  assert.ok(sampleItem.oldPotentialStars !== undefined);
+  assert.ok(sampleItem.newMarketValue !== undefined);
+  assert.equal(
+    sampleItem.matchesPlayed,
+    playedSquad.find((p) => p.id === sampleItem.playerId)?.seasonStats.matches
+  );
+
+  const evoInbox = rollover.nextMessages.find((m) => m.id === 'msg-newseason-2027-2');
+  assert.ok(evoInbox, 'Expected new season evolution inbox message');
+  assert.ok(
+    (evoInbox!.bulletPoints?.length ?? 0) > 0,
+    'Expected evolution inbox message to include summary bullet points'
+  );
+
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const appSource = fs.readFileSync(path.resolve('src/App.tsx'), 'utf-8');
+  const modalSource = fs.readFileSync(
+    path.resolve('src/components/NewSeasonEvolutionModal.tsx'),
+    'utf-8'
+  );
+  const inboxSource = fs.readFileSync(
+    path.resolve('src/components/DashboardInbox.tsx'),
+    'utf-8'
+  );
+
+  assert.ok(appSource.includes('setNewSeasonEvolutionReport(rollover.newSeasonEvolutionReport)'));
+  assert.ok(appSource.includes('setIsNewSeasonEvolutionModalOpen(true)'));
+  assert.ok(appSource.includes('<NewSeasonEvolutionModal'));
+  assert.ok(modalSource.includes('data-testid="new-season-evolution-modal"'));
+  assert.ok(inboxSource.includes('Abrir Relatório Completo'));
+});
+
+test('Youth academy makes 4★, 4.5★ and 5★ prospects genuinely rare and ClubBadge renders without drop-shadow', async () => {
+  const { YOUTH_TIERS } = await import('./youthAcademyEngine');
+  for (const tier of YOUTH_TIERS) {
+    const p = tier.starProbabilities;
+    const sum = Number((p.star1_2_5 + p.star3_3_5 + p.star4_4_5 + p.star5).toFixed(2));
+    assert.equal(sum, 100, `Tier ${tier.tier} probabilities must sum to 100% (got ${sum})`);
+  }
+
+  const elite = YOUTH_TIERS.find((t) => t.tier === 'ELITE')!;
+  const avancado = YOUTH_TIERS.find((t) => t.tier === 'AVANCADO')!;
+  const estruturado = YOUTH_TIERS.find((t) => t.tier === 'ESTRUTURADO')!;
+  const basico = YOUTH_TIERS.find((t) => t.tier === 'BASICO')!;
+
+  assert.equal(basico.starProbabilities.star4_4_5, 1.2);
+  assert.equal(basico.starProbabilities.star5, 0);
+  assert.equal(estruturado.starProbabilities.star4_4_5, 3.6);
+  assert.equal(estruturado.starProbabilities.star5, 0.2);
+  assert.equal(avancado.starProbabilities.star4_4_5, 8.4);
+  assert.equal(avancado.starProbabilities.star5, 0.4);
+  assert.equal(elite.starProbabilities.star4_4_5, 16.0);
+  assert.equal(elite.starProbabilities.star5, 1.0);
+  assert.ok(
+    basico.starProbabilities.star4_4_5 < estruturado.starProbabilities.star4_4_5 &&
+      estruturado.starProbabilities.star4_4_5 < avancado.starProbabilities.star4_4_5 &&
+      avancado.starProbabilities.star4_4_5 < elite.starProbabilities.star4_4_5,
+    '4–4.5★ odds must scale strictly across tiers'
+  );
+
+  // Monte Carlo check across 250 Elite intakes with full annual investment
+  let s = 777331;
+  const rng = () => {
+    s = (Math.imul(1664525, s) + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+  let totalGenerated = 0;
+  let count4Plus = 0;
+  let count45Plus = 0;
+  for (let i = 0; i < 250; i++) {
+    const res = generateYouthRegens({
+      academy: {
+        investmentTier: 'ELITE',
+        focusSector: 'EQUILIBRADO',
+        monthlyCost: elite.monthlyCost,
+        accumulatedSeasonInvestment: elite.monthlyCost * 12,
+        monthsInvestedThisSeason: 12,
+        lastGraduatedRegens: [],
+        youthRoster: [],
+      },
+      clubId: 'flamengo',
+      clubReputation: 88,
+      division: 'A',
+      seasonYear: 2027 + i,
+      rng,
+    });
+    for (const item of res.reportItems) {
+      totalGenerated++;
+      if (item.potentialStars >= 4) count4Plus++;
+      if (item.potentialStars >= 4.5) count45Plus++;
+    }
+  }
+
+  const rate4Plus = count4Plus / totalGenerated;
+  const rate45Plus = count45Plus / totalGenerated;
+  assert.ok(
+    rate4Plus >= 0.12 && rate4Plus <= 0.23,
+    `Expected Elite 4★+ rate around 17% (12%–23%), got ${(rate4Plus * 100).toFixed(1)}%`
+  );
+  assert.ok(
+    rate45Plus < 0.08,
+    `Expected Elite 4.5★+ rate < 8%, got ${(rate45Plus * 100).toFixed(1)}%`
+  );
+
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const badgeSource = fs.readFileSync(
+    path.resolve('src/components/ClubBadge.tsx'),
+    'utf-8'
+  );
+  assert.equal(
+    badgeSource.includes('drop-shadow'),
+    false,
+    'ClubBadge must not render drop-shadow behind club logos'
+  );
+});
+
 
 

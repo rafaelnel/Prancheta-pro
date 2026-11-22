@@ -17,6 +17,7 @@ export const REAL_SQUADS_LIBERTADORES: Record<string, RealPlayerSeed[]> = {
     [28, 'Lucas Martínez Quarta', 29, 'Argentina', 'ZAG', 16.2],
     [8, 'Maximiliano Meza', 33, 'Argentina', 'MC', 15.8],
     [7, 'Maximiliano Salas', 28, 'Argentina', 'ATA', 15.9],
+    [30, 'Franco Mastantuono', 18, 'Argentina', 'MEI', 16.0, { drible: 17, visaoDeJogo: 17, passe: 16 }],
   ],
   'boca-juniors': [
     [1, 'Agustín Marchesín', 38, 'Argentina', 'GOL', 15.8],

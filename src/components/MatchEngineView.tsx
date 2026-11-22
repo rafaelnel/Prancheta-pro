@@ -1052,11 +1052,29 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
             </div>
           )}
 
-          {/* Interactive Drag-and-Drop Jersey Substitution Board (Starters in Game + Bench Reserves) */}
+          {/* Urgent banner if any user player on the pitch just got injured */}
+          {(() => {
+            const liveUserTokens = match.isUserHome
+              ? match.homeTokens
+              : match.awayTokens;
+            const injuredTokens = liveUserTokens.filter((t) => t.injuredInMatch);
+            if (injuredTokens.length === 0) return null;
+            return (
+              <div className="bg-rose-950/60 border border-rose-500/60 rounded-2xl px-4 py-3 text-xs text-rose-100 flex flex-wrap items-center justify-between gap-2">
+                <div className="font-bold">
+                  ⚠ LESÃO EM CAMPO:{' '}
+                  {injuredTokens.map((t) => `#${t.number} ${t.name}`).join(', ')}{' '}
+                  sentiu durante o jogo e está com forte queda de rendimento. Substitua imediatamente!
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Interactive Drag-and-Drop Jersey Substitution Board (Starters in Game + Bench) */}
           <div className="bg-[#0b0c10] border border-white/[0.08] rounded-2xl p-3.5 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-bold text-white">
-                Substituição com Camisas (Arraste um Reserva sobre um Titular ou vice-versa):
+                Substituição com Camisas (Arraste um jogador do banco sobre quem está em campo ou vice-versa):
               </span>
               {draggedSubPlayerId && (
                 <span className="text-[11px] font-bold text-[#b5ff00] animate-pulse">
@@ -1068,7 +1086,7 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
             {/* 11 Starters on the Pitch as Jerseys */}
             <div>
               <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1.5">
-                Em Campo (11 Titulares — Clique para selecionar quem sai ou solte um reserva aqui)
+                Em Campo (11 Escalados — Clique para selecionar quem sai ou solte alguém do banco aqui)
               </div>
               <div className="flex items-center gap-2 overflow-x-auto pb-1.5 pt-0.5">
                 {starters.map((st) => {
@@ -1104,10 +1122,12 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
                       onDrop={(e) => handleSubDrop(e, st.id)}
                       onDragEnd={handleSubDragEnd}
                       onClick={() => setSelectedStarterOutId(st.id)}
-                      title={`Titular #${st.number} ${st.name} (${st.position} · OVR ${stOvr} · ${st.age}a · Cond ${liveCond}%) — Arraste um reserva aqui`}
+                      title={`Em campo #${st.number} ${st.name} (${st.position} · OVR ${stOvr} · ${st.age}a · Cond ${liveCond}%) — Arraste alguém do banco aqui`}
                       className={`shrink-0 flex flex-col items-center rounded-2xl px-2.5 py-2 border transition-all select-none ${
                         isDropTarget
                           ? 'bg-sky-400/20 border-sky-400 ring-2 ring-sky-400 scale-105'
+                          : token?.injuredInMatch
+                          ? 'bg-rose-950/60 border-rose-500 ring-2 ring-rose-500/80'
                           : isSelectedOut
                           ? 'bg-rose-500/15 border-rose-400 ring-2 ring-rose-400/70'
                           : 'bg-[#14171f] border-white/[0.07] hover:border-white/25 cursor-grab active:cursor-grabbing'
@@ -1121,40 +1141,48 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
                         highlight={
                           isDropTarget
                             ? 'dropTarget'
-                            : isSelectedOut
+                            : isSelectedOut || token?.injuredInMatch
                             ? 'out'
                             : 'none'
                         }
                       />
                       <div
                         className={`mt-1.5 px-2 py-0.5 rounded-full text-[9px] font-semibold whitespace-nowrap ${
-                          isSelectedOut
+                          token?.injuredInMatch || isSelectedOut
                             ? 'bg-rose-500 text-white font-bold'
                             : 'bg-[#0b0c10] text-zinc-100 border border-white/10'
                         }`}
                       >
                         <span
                           className={`font-mono font-bold mr-1 ${
-                            isSelectedOut ? 'text-white' : 'text-[#b5ff00]'
+                            token?.injuredInMatch || isSelectedOut
+                              ? 'text-white'
+                              : 'text-[#b5ff00]'
                           }`}
                         >
-                          {st.position}
+                          {token?.injuredInMatch ? 'DM' : st.position}
                         </span>
                         <span>{lastName}</span>
                       </div>
                       <span className="mt-0.5 text-[9px] font-mono tabular-nums text-zinc-300">
-                        {st.age}a ·{' '}
-                        <strong
-                          className={
-                            liveCond >= 80
-                              ? 'text-emerald-400'
-                              : liveCond >= 65
-                              ? 'text-amber-400'
-                              : 'text-rose-400'
-                          }
-                        >
-                          {liveCond}%
-                        </strong>
+                        {token?.injuredInMatch ? (
+                          <strong className="text-rose-400">LESIONADO</strong>
+                        ) : (
+                          <>
+                            {st.age}a ·{' '}
+                            <strong
+                              className={
+                                liveCond >= 80
+                                  ? 'text-emerald-400'
+                                  : liveCond >= 65
+                                  ? 'text-amber-400'
+                                  : 'text-rose-400'
+                              }
+                            >
+                              {liveCond}%
+                            </strong>
+                          </>
+                        )}
                       </span>
                     </button>
                   );
@@ -1165,7 +1193,7 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
             {/* Bench Reserves as Jerseys */}
             <div className="pt-2 border-t border-white/[0.06]">
               <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-400 mb-1.5">
-                Banco de Reservas ({reserves.length} Atletas — Arraste sobre um titular acima para substituir)
+                No Banco ({reserves.length} Jogadores — Arraste sobre quem está em campo para substituir)
               </div>
               <div className="flex items-center gap-2 overflow-x-auto pb-1.5 pt-0.5">
                 {reserves.map((res) => {
@@ -1197,7 +1225,7 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
                       onDragEnd={handleSubDragEnd}
                       disabled={res.injured}
                       onClick={() => setSelectedReserveInId(res.id)}
-                      title={`Reserva #${res.number} ${res.name} (${res.position} · OVR ${resOvr} · ${res.age}a) — Arraste sobre um titular`}
+                      title={`No banco #${res.number} ${res.name} (${res.position} · OVR ${resOvr} · ${res.age}a) — Arraste sobre quem está em campo`}
                       className={`shrink-0 flex flex-col items-center rounded-2xl px-2.5 py-2 border transition-all select-none ${
                         res.injured
                           ? 'opacity-40 cursor-not-allowed border-white/[0.04] bg-[#14171f]/50'
@@ -1255,7 +1283,7 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
                 htmlFor="sub-out-select"
                 className="block text-xs text-zinc-400 mb-1"
               >
-                Escolha Manual — Sai (Titular em Jogo)
+                Escolha Manual — Sai (Em Campo)
               </label>
               <select
                 id="sub-out-select"
@@ -1285,7 +1313,7 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
                 htmlFor="sub-in-select"
                 className="block text-xs text-zinc-400 mb-1"
               >
-                Escolha Manual — Entra (Banco de Reservas)
+                Escolha Manual — Entra (Do Banco)
               </label>
               <select
                 id="sub-in-select"
@@ -1614,6 +1642,8 @@ export const MatchEngineView: React.FC<MatchEngineViewProps> = ({
                   className={`p-3 rounded-2xl text-xs border transition-colors ${
                     evt.type === 'GOL'
                       ? 'bg-[#b5ff00] border-[#b5ff00] text-[#090a0f] font-bold'
+                      : evt.type === 'LESAO'
+                      ? 'bg-rose-950/60 border-rose-500/60 text-rose-100 font-bold'
                       : evt.type === 'TRAVE' || evt.type === 'DEFESA'
                       ? 'bg-[#0b0c10] border-white/20 text-white'
                       : evt.type === 'CARTAO_AMARELO'

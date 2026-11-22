@@ -1,6 +1,9 @@
 import React from 'react';
 import { Eye, Lock } from 'lucide-react';
-import { IncomingOfferAction } from '../engine/aiMarketEngine';
+import {
+  IncomingOfferAction,
+  computeIncomingCounterFee,
+} from '../engine/aiMarketEngine';
 import { calculatePlayerOverall } from '../engine/matchEngine';
 import { getPlayerPotentialCeiling } from '../engine/transferEngine';
 import { Club, IncomingTransferOffer, Player } from '../types/football';
@@ -90,11 +93,16 @@ export const IncomingOfferCard: React.FC<IncomingOfferCardProps> = ({
       : 'No valor de mercado';
 
   const wageSavedOnLoan = Math.round(salary * offer.wageShareCovered);
-  const stepUnit = isLoan ? 50_000 : 250_000;
-  const counter15Fee =
-    Math.round((offer.offeredFee * 1.15) / stepUnit) * stepUnit;
-  const counter30Fee =
-    Math.round((offer.offeredFee * 1.3) / stepUnit) * stepUnit;
+  const counter15Fee = computeIncomingCounterFee(offer, 'COUNTER_15', marketValue);
+  const counter30Fee = computeIncomingCounterFee(offer, 'COUNTER_30', marketValue);
+  const counter15Pct =
+    offer.offeredFee > 0
+      ? Math.max(1, Math.round(((counter15Fee - offer.offeredFee) / offer.offeredFee) * 100))
+      : 15;
+  const counter30Pct =
+    offer.offeredFee > 0
+      ? Math.max(counter15Pct + 1, Math.round(((counter30Fee - offer.offeredFee) / offer.offeredFee) * 100))
+      : 30;
 
   const isCompact = variant === 'autosim' || variant === 'inbox';
 
@@ -123,7 +131,7 @@ export const IncomingOfferCard: React.FC<IncomingOfferCardProps> = ({
             ovr={ovr}
             position={offer.playerPosition}
             size="md"
-            tone={isStarter ? 'lime' : 'dark'}
+            tone="lime"
           />
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
@@ -138,7 +146,7 @@ export const IncomingOfferCard: React.FC<IncomingOfferCardProps> = ({
               <span className="text-[11px] font-mono text-zinc-400">
                 {age}a ·{' '}
                 <strong className={isStarter ? 'text-[#b5ff00]' : 'text-zinc-200'}>
-                  {isStarter ? 'Titular' : 'Reserva'}
+                  {isStarter ? 'Escalado' : 'Elenco'}
                 </strong>
               </span>
             </div>
@@ -239,7 +247,7 @@ export const IncomingOfferCard: React.FC<IncomingOfferCardProps> = ({
             Elenco & Reposição
           </div>
           <div className="font-mono text-sm font-extrabold text-white tabular-nums mt-0.5">
-            {isStarter ? 'Titular' : 'Reserva'} · {offer.playerPosition}
+            {isStarter ? 'Escalado' : 'Elenco'} · {offer.playerPosition}
           </div>
           <div
             className={`text-[10px] font-mono mt-0.5 ${
@@ -335,7 +343,7 @@ export const IncomingOfferCard: React.FC<IncomingOfferCardProps> = ({
             onClick={() => onResolve(offer.id, 'COUNTER_15')}
             className="py-2 px-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-bold transition-colors whitespace-nowrap cursor-pointer"
           >
-            +15% ({formatCompactBRL(counter15Fee)})
+            +{counter15Pct}% ({formatCompactBRL(counter15Fee)})
           </button>
           <button
             type="button"
@@ -343,7 +351,7 @@ export const IncomingOfferCard: React.FC<IncomingOfferCardProps> = ({
             onClick={() => onResolve(offer.id, 'COUNTER_30')}
             className="py-2 px-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] disabled:opacity-40 disabled:cursor-not-allowed text-amber-300 text-[11px] font-bold transition-colors whitespace-nowrap cursor-pointer"
           >
-            +30% ({formatCompactBRL(counter30Fee)})
+            +{counter30Pct}% ({formatCompactBRL(counter30Fee)})
           </button>
           <button
             type="button"

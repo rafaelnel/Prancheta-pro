@@ -3,6 +3,7 @@ import { REAL_SQUAD_SEEDS, USER_CLUB_ID } from '../data/initialDatabase';
 import {
   Club,
   FormationType,
+  InMatchInjuryRecord,
   LiveMatchState,
   MatchEvent,
   MatchPhase,
@@ -20,6 +21,12 @@ import {
   calculatePlayerOverall,
   rawScoreToOvr,
 } from './playerOverall';
+import {
+  calculateFatiguePerformanceFactor,
+  calculateMatchMinuteDrain,
+  formatInjuryDurationShort,
+  rollMinuteInjuryCheck,
+} from './injuryEngine';
 
 export { calculatePlayerOverall, rawScoreToOvr };
 
@@ -101,14 +108,25 @@ export function pickBestLineupForFormation(
     return 0;
   };
 
+  const getWorkloadModifier = (p: Player): number => {
+    const condDelta =
+      p.condition < 64
+        ? -10 - (64 - p.condition) * 0.45
+        : p.condition < 72
+        ? -(72 - p.condition) * 0.65
+        : 0;
+    const streakPenalty = (p.consecutiveMatches ?? 0) >= 4 ? -3.0 : 0;
+    return condDelta + streakPenalty + p.condition * 0.005;
+  };
+
   // Step 1: Pick the best goalkeeper for slot 0
   const chosenIds = new Set<string>();
   const slotToPlayer = new Map<number, Player>();
 
   const gkSlot = slotsDef[0];
   const gkCandidates = [...candidatePool].sort((a, b) => {
-    const aScore = getOvr(a) + getFitBonus(a, gkSlot) + a.condition * 0.005;
-    const bScore = getOvr(b) + getFitBonus(b, gkSlot) + b.condition * 0.005;
+    const aScore = getOvr(a) + getFitBonus(a, gkSlot) + getWorkloadModifier(a) * 0.5;
+    const bScore = getOvr(b) + getFitBonus(b, gkSlot) + getWorkloadModifier(b) * 0.5;
     return bScore - aScore;
   });
   if (gkCandidates[0]) {
@@ -116,7 +134,7 @@ export function pickBestLineupForFormation(
     slotToPlayer.set(gkSlot.slotIndex, gkCandidates[0]);
   }
 
-  // Step 2: Pick the best 10 outfield starters considering OVR + remaining slot compatibility
+  // Step 2: Pick the best 10 outfield starters considering OVR + slot compatibility + physical freshness
   const outfieldSlots = slotsDef.slice(1);
   const remainingOutfieldSlots = [...outfieldSlots];
 
@@ -128,10 +146,11 @@ export function pickBestLineupForFormation(
     for (const p of candidatePool) {
       if (chosenIds.has(p.id)) continue;
       const baseOvr = getOvr(p);
+      const workloadMod = getWorkloadModifier(p);
       // Evaluate how well this player fits the best available remaining slot
       for (let i = 0; i < remainingOutfieldSlots.length; i++) {
         const slot = remainingOutfieldSlots[i];
-        const score = baseOvr + getFitBonus(p, slot) + p.condition * 0.005;
+        const score = baseOvr + getFitBonus(p, slot) + workloadMod;
         if (score > bestScore) {
           bestScore = score;
           bestPlayer = p;
@@ -210,7 +229,8 @@ export function pickBestLineupForFormation(
 export function calculateTeamTacticalRatings(
   squad: Player[],
   formation: FormationType,
-  instructions: TeamInstructions
+  instructions: TeamInstructions,
+  liveTokenState?: Map<string, { condition: number; injured?: boolean }>
 ): {
   attack: number;
   midfield: number;
@@ -230,7 +250,13 @@ export function calculateTeamTacticalRatings(
     if (players.length === 0) return 70;
     const total = players.reduce((acc, p) => {
       const base = calculatePlayerOverall(p.attributes, p.position);
-      const condFactor = 0.90 + (p.condition / 100) * 0.10;
+      const liveOverride = liveTokenState?.get(p.id);
+      const effCondition = liveOverride ? liveOverride.condition : p.condition;
+      const effInjured = Boolean(liveOverride?.injured || p.injured);
+      const condFactor = calculateFatiguePerformanceFactor(
+        effCondition,
+        effInjured
+      );
       const dutyBonus =
         p.assignedDuty === 'Atacar' && p.sector === 'ATA'
           ? 1.2
@@ -561,6 +587,7 @@ export function createInitialMatchState(
     substitutionsMade: 0,
     maxSubstitutions: 5,
     roundProcessed: false,
+    inMatchInjuries: [],
   };
 }
 
@@ -604,20 +631,56 @@ export function stepMatchMinute(
     };
   }
 
-  // Compute live tactical ratings for user vs opponent
+  // Compute live tactical ratings for user vs opponent factoring in LIVE token fatigue & injuries
+  const userLiveTokens = state.isUserHome ? state.homeTokens : state.awayTokens;
+  const oppLiveTokens = state.isUserHome ? state.awayTokens : state.homeTokens;
+  const userLiveCondMap = new Map(
+    userLiveTokens.map((t) => [
+      t.id,
+      { condition: t.condition, injured: Boolean(t.injuredInMatch) },
+    ])
+  );
+
   const userTactics = calculateTeamTacticalRatings(
     userSquad,
     state.isUserHome ? homeClub.formation : awayClub.formation,
-    state.isUserHome ? homeClub.instructions : awayClub.instructions
+    state.isUserHome ? homeClub.instructions : awayClub.instructions,
+    userLiveCondMap
   );
 
-  const homeAtt = state.isUserHome ? userTactics.attack : homeClub.overallAttack;
-  const homeMid = state.isUserHome ? userTactics.midfield : homeClub.overallMidfield;
-  const homeDef = state.isUserHome ? userTactics.defense : homeClub.overallDefense;
+  // Opponent live fatigue factor based on its active tokens' condition
+  const oppFatigueFactor =
+    oppLiveTokens.length > 0
+      ? oppLiveTokens.reduce(
+          (sum, t) =>
+            sum +
+            calculateFatiguePerformanceFactor(
+              t.condition,
+              Boolean(t.injuredInMatch)
+            ),
+          0
+        ) / oppLiveTokens.length
+      : 1;
 
-  const awayAtt = !state.isUserHome ? userTactics.attack : awayClub.overallAttack;
-  const awayMid = !state.isUserHome ? userTactics.midfield : awayClub.overallMidfield;
-  const awayDef = !state.isUserHome ? userTactics.defense : awayClub.overallDefense;
+  const homeAtt = state.isUserHome
+    ? userTactics.attack
+    : homeClub.overallAttack * oppFatigueFactor;
+  const homeMid = state.isUserHome
+    ? userTactics.midfield
+    : homeClub.overallMidfield * oppFatigueFactor;
+  const homeDef = state.isUserHome
+    ? userTactics.defense
+    : homeClub.overallDefense * oppFatigueFactor;
+
+  const awayAtt = !state.isUserHome
+    ? userTactics.attack
+    : awayClub.overallAttack * oppFatigueFactor;
+  const awayMid = !state.isUserHome
+    ? userTactics.midfield
+    : awayClub.overallMidfield * oppFatigueFactor;
+  const awayDef = !state.isUserHome
+    ? userTactics.defense
+    : awayClub.overallDefense * oppFatigueFactor;
 
   // Possession check with slight home advantage (+1.5 on 60..99 scale)
   const homeMidStrength = homeMid + 1.5;
@@ -662,11 +725,41 @@ export function stepMatchMinute(
   const awayZoneShiftX =
     activeZone === 'DEF_HOME' ? -24 : activeZone === 'MIDFIELD' ? -8 : 10;
 
+  const userSquadMap = new Map(userSquad.map((p) => [p.id, p]));
+
   const moveTokens = (
     tokens: PitchTokenState[],
     isHome: boolean
   ): PitchTokenState[] => {
+    const clubInstructions = isHome
+      ? homeClub.instructions
+      : awayClub.instructions;
+
     return tokens.map((t, idx) => {
+      const squadPlayer = userSquadMap.get(t.id);
+      const drain = calculateMatchMinuteDrain(
+        squadPlayer,
+        idx === 0 ? 'GOL' : t.sector,
+        clubInstructions?.pressingIntensity
+      );
+      const nextCond = Math.max(
+        idx === 0 ? 45 : 32,
+        Number((t.condition - drain).toFixed(2))
+      );
+
+      // Exhausted or injured players left on the pitch lose match effectiveness & rating
+      const ratingFatigueDrop = t.injuredInMatch
+        ? 0.055
+        : nextCond < 58
+        ? 0.022
+        : nextCond < 68
+        ? 0.008
+        : 0;
+      const nextRating =
+        ratingFatigueDrop > 0
+          ? Math.max(4.8, Number((t.rating - ratingFatigueDrop).toFixed(2)))
+          : t.rating;
+
       if (idx === 0) {
         // Goalkeeper stays near goal line
         const gkX = isHome
@@ -682,7 +775,8 @@ export function stepMatchMinute(
           x: gkX,
           y: gkY,
           hasBall: false,
-          condition: Math.max(45, Number((t.condition - 0.08).toFixed(2))),
+          condition: nextCond,
+          rating: nextRating,
         };
       }
 
@@ -696,15 +790,13 @@ export function stepMatchMinute(
       const clampedX = Math.min(93, Math.max(7, rawX));
       const clampedY = Math.min(92, Math.max(8, t.baseY + jitterY));
 
-      const drain =
-        t.sector === 'MEI' ? 0.24 : t.sector === 'ATA' ? 0.21 : 0.18;
-
       return {
         ...t,
         x: Number(clampedX.toFixed(1)),
         y: Number(clampedY.toFixed(1)),
         hasBall: false,
-        condition: Math.max(40, Number((t.condition - drain).toFixed(2))),
+        condition: nextCond,
+        rating: nextRating,
       };
     });
   };
@@ -962,6 +1054,99 @@ export function stepMatchMinute(
     });
   }
 
+  // Per-minute injury check driven by live fatigue, consecutive matches & pressing intensity
+  const inMatchInjuries: InMatchInjuryRecord[] = [
+    ...(state.inMatchInjuries || []),
+  ];
+
+  if (nextMinute >= 6 && nextMinute <= 89) {
+    const checkTeamInjury = (
+      teamSide: 'HOME' | 'AWAY',
+      tokens: PitchTokenState[],
+      club: Club
+    ): PitchTokenState[] => {
+      const teamInjuriesSoFar = inMatchInjuries.filter(
+        (rec) => rec.team === teamSide
+      ).length;
+      if (teamInjuriesSoFar >= 2) return tokens;
+
+      // Pick one candidate token per minute to evaluate (weighted toward fatigued players)
+      const eligible = tokens.filter((t) => !t.injuredInMatch);
+      if (eligible.length === 0) return tokens;
+
+      // If already 1 injury this match for this team, only critically fatigued (<64%) players risk a 2nd injury
+      const pool =
+        teamInjuriesSoFar === 1
+          ? eligible.filter((t) => t.condition < 64)
+          : eligible;
+      if (pool.length === 0) return tokens;
+
+      for (const tok of pool) {
+        const sp = userSquadMap.get(tok.id);
+        const proxyPlayer = sp || {
+          condition: tok.condition,
+          age: 26,
+          sector: tok.sector,
+          attributes: { resistencia: 13 } as Player['attributes'],
+          injured: false,
+          consecutiveMatches: 0,
+        };
+        const rolled = rollMinuteInjuryCheck({
+          player: proxyPlayer,
+          liveCondition: tok.condition,
+          pressingIntensity: club.instructions?.pressingIntensity,
+          rng,
+        });
+        if (rolled) {
+          const rec: InMatchInjuryRecord = {
+            playerId: tok.id,
+            playerName: tok.name,
+            team: teamSide,
+            minute: nextMinute,
+            injuryType: rolled.injuryType,
+            severity: rolled.severity,
+            days: rolled.days,
+            wasFatigued: rolled.wasFatigued,
+          };
+          inMatchInjuries.push(rec);
+
+          const fatigueSuffix = rolled.wasFatigued
+            ? ' (agravado por desgaste físico)'
+            : '';
+          const injuryText = `${nextMinute}' — LESÃO! ${tok.name} (${club.abbr}) sente e pede atendimento — ${rolled.injuryType} (~${formatInjuryDurationShort(
+            rolled.days
+          )})${fatigueSuffix}.`;
+          lastActionLabel = injuryText;
+          newEvents.push({
+            id: `evt-inj-${nextMinute}-${tok.id}`,
+            minute: nextMinute,
+            type: 'LESAO',
+            team: teamSide,
+            playerId: tok.id,
+            injuryType: rolled.injuryType,
+            injuryDays: rolled.days,
+            injurySeverity: rolled.severity,
+            text: injuryText,
+          });
+
+          return tokens.map((t) =>
+            t.id === tok.id
+              ? {
+                  ...t,
+                  injuredInMatch: true,
+                  condition: Math.min(t.condition, 45),
+                }
+              : t
+          );
+        }
+      }
+      return tokens;
+    };
+
+    homeTokens = checkTeamInjury('HOME', homeTokens, homeClub);
+    awayTokens = checkTeamInjury('AWAY', awayTokens, awayClub);
+  }
+
   // Check Full Time at minute 90
   let phase: MatchPhase =
     state.phase === 'PRE_MATCH' ? 'FIRST_HALF' : state.phase;
@@ -1052,6 +1237,7 @@ export function stepMatchMinute(
     events: [...newEvents, ...state.events].slice(0, 60),
     homeTokens,
     awayTokens,
+    inMatchInjuries,
   };
 }
 

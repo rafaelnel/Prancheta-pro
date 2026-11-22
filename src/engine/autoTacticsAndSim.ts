@@ -25,7 +25,12 @@ import {
 import { generateSubstitutionSuggestions } from './substitutionAdvisor';
 import { formatCalendarDate, formatCompactBRL } from '../utils/formatters';
 import {
+  HomeGateSettlementItem,
+  applyAiHomeGateRevenues,
+  applyAiMonthlyEconomyTick,
+  applyPostMatchProbabilisticEvolution,
   calculateMatchGateRevenue,
+  calculateOperationalCost,
   createInitialFinanceLedger,
   processMidSeasonEvolution,
 } from './economyAndEvolution';
@@ -35,9 +40,15 @@ import {
   maybeGenerateIncomingOfferForUser,
   simulateAiTransferWindowTick,
 } from './aiMarketEngine';
-import { isTransferWindowOpen } from './transferEngine';
+import { getEffectivePayroll, isTransferWindowOpen } from './transferEngine';
 import { attributeAiRoundPlayerStats } from './seasonLifecycle';
 import { createMatchHistoryRecordFromLiveMatch } from './headToHead';
+import {
+  advanceSquadRecoveryByDays,
+  applyInjuryToPlayer,
+  createInjuryInboxMessage,
+  ensureHealthyStartingLineup,
+} from './injuryEngine';
 import {
   ChampionsLeagueState,
   Club,
@@ -278,13 +289,21 @@ export function selectOptimalTacticsForMatch(params: {
             slot.sector
           );
           const injuryPenalty = p.injured ? -55 : 0;
-          // Encourage rotating heavily fatigued starters (<70%) if a fresh backup is available
+          // Strongly encourage rotating fatigued/overloaded players to preserve performance & prevent injuries
           const condModifier =
-            p.condition < 68
-              ? -12 - (68 - p.condition) * 0.4
-              : p.condition < 78
-              ? (p.condition - 78) * 0.25
-              : (p.condition - 78) * 0.14;
+            p.condition < 65
+              ? -16 - (65 - p.condition) * 0.55
+              : p.condition < 74
+              ? -6 - (74 - p.condition) * 0.9
+              : p.condition < 82
+              ? (p.condition - 82) * 0.45
+              : (p.condition - 82) * 0.16;
+          const streakPenalty =
+            (p.consecutiveMatches ?? 0) >= 4
+              ? -4.5
+              : (p.consecutiveMatches ?? 0) === 3
+              ? -2.2
+              : 0;
           const roleChoice = pickBestRoleForPlayerAndSlot(
             p,
             slot.sector,
@@ -295,6 +314,7 @@ export function selectOptimalTacticsForMatch(params: {
             ovr +
             fitBonus +
             condModifier +
+            streakPenalty +
             injuryPenalty +
             (roleChoice.suitability - 70) * 0.12;
           return { p, score, fitBonus, roleChoice };
@@ -430,6 +450,7 @@ export interface AutoSimCareerSnapshot {
   clubs: Club[];
   userClubId: string;
   squad: Player[];
+  loanedOutPlayers?: Player[];
   aiSquads?: Record<string, Player[]>;
   standings: StandingsRow[];
   fixtures: RoundFixture[];
@@ -617,6 +638,7 @@ function applySquadAutoSubstitutionInSim(
             roleCode: role.shortCode,
             condition: reserveIn.condition,
             rating: 6.8,
+            injuredInMatch: false,
           }
         : t
     );
@@ -673,13 +695,14 @@ export function simulateNextAutoStep(
 
   if (idx >= SEASON_CALENDAR.length) {
     const restDays = Math.max(0, targetDayOffset - working.dayOffset);
-    const restedSquad =
+    const endDateLabel = formatCalendarDate(
+      Math.max(working.dayOffset, targetDayOffset),
+      seasonYear
+    );
+    const { updatedSquad: restedSquad, clearanceMessages } =
       restDays > 0
-        ? working.squad.map((p) => ({
-            ...p,
-            condition: Math.min(99, p.condition + restDays * 4),
-          }))
-        : working.squad;
+        ? advanceSquadRecoveryByDays(working.squad, restDays, endDateLabel)
+        : { updatedSquad: working.squad, clearanceMessages: [] };
 
     return {
       done: true,
@@ -689,6 +712,10 @@ export function simulateNextAutoStep(
         dayOffset: Math.max(working.dayOffset, targetDayOffset),
         isMatchDay: false,
         squad: restedSquad,
+        messages:
+          clearanceMessages.length > 0
+            ? [...clearanceMessages, ...working.messages].slice(0, 60)
+            : working.messages,
       },
       logEntry: null,
       newOffer: null,
@@ -701,13 +728,14 @@ export function simulateNextAutoStep(
   // If the next unplayed step is strictly after targetDayOffset, advance calendar to targetDayOffset & finish
   if (stepDayOffset > targetDayOffset) {
     const restDays = Math.max(0, targetDayOffset - working.dayOffset);
-    const restedSquad =
+    const targetDateLabel = formatCalendarDate(
+      Math.max(working.dayOffset, targetDayOffset),
+      seasonYear
+    );
+    const { updatedSquad: restedSquad, clearanceMessages } =
       restDays > 0
-        ? working.squad.map((p) => ({
-            ...p,
-            condition: Math.min(99, p.condition + restDays * 4),
-          }))
-        : working.squad;
+        ? advanceSquadRecoveryByDays(working.squad, restDays, targetDateLabel)
+        : { updatedSquad: working.squad, clearanceMessages: [] };
 
     const nextLeagueRound = targetStep.leagueRound ?? working.currentRound;
     const nextFixture =
@@ -754,6 +782,10 @@ export function simulateNextAutoStep(
         dayOffset: Math.max(working.dayOffset, targetDayOffset),
         isMatchDay: false,
         squad: restedSquad,
+        messages:
+          clearanceMessages.length > 0
+            ? [...clearanceMessages, ...working.messages].slice(0, 60)
+            : working.messages,
         matchState: nextMatch,
       },
       logEntry: null,
@@ -761,15 +793,23 @@ export function simulateNextAutoStep(
     };
   }
 
-  // Recover condition for days elapsed since current dayOffset up to this step
+  // Recover condition AND tick injury rehabilitation for days elapsed up to this step
   const daysToStep = Math.max(0, stepDayOffset - working.dayOffset);
-  let recoveredSquad =
+  const stepDateLabelForRecovery = formatCalendarDate(stepDayOffset, seasonYear);
+  const preStepRecovery =
     daysToStep > 0
-      ? working.squad.map((p) => ({
-          ...p,
-          condition: Math.min(99, p.condition + daysToStep * 4),
-        }))
-      : [...working.squad];
+      ? advanceSquadRecoveryByDays(
+          working.squad,
+          daysToStep,
+          stepDateLabelForRecovery
+        )
+      : {
+          updatedSquad: [...working.squad],
+          recoveredPlayers: [],
+          clearanceMessages: [],
+        };
+  let recoveredSquad = preStepRecovery.updatedSquad;
+  const stepClearanceMessages = preStepRecovery.clearanceMessages;
 
   // Garante que o chaveamento do Mundial esteja populado antes de verificar jogo do usuário
   if (
@@ -810,6 +850,7 @@ export function simulateNextAutoStep(
     let byeExtraMessages: InboxMessage[] = [];
     let byeSummaryNote =
       'Sem compromisso do clube nesta fase (demais chaves simuladas).';
+    const byeAiHomeMatches: HomeGateSettlementItem[] = [];
 
     if (targetStep.competition === 'COPA_DO_BRASIL' && targetStep.copaStage) {
       nextCdb = advanceCopaDoBrasilStage(
@@ -820,12 +861,21 @@ export function simulateNextAutoStep(
         working.userClubId,
         rng
       );
+      const cdbFixes = nextCdb.fixturesByStage[targetStep.copaStage] || [];
       nextAiSquads = attributeAiRoundPlayerStats(
         nextAiSquads,
-        nextCdb.fixturesByStage[targetStep.copaStage] || [],
+        cdbFixes,
         working.userClubId,
         rng
       );
+      for (const fx of cdbFixes) {
+        byeAiHomeMatches.push({
+          clubId: fx.homeClubId,
+          rank: 6,
+          competition: 'COPA_DO_BRASIL',
+          stageLabel: targetStep.copaStage,
+        });
+      }
     } else if (targetStep.competition === 'LIBERTADORES') {
       if (targetStep.libStage === 'Grupos' && targetStep.libGroupRound) {
         nextLib = advanceLibertadoresGroupRound(
@@ -845,6 +895,14 @@ export function simulateNextAutoStep(
           working.userClubId,
           rng
         );
+        for (const fx of grpFixes) {
+          byeAiHomeMatches.push({
+            clubId: fx.homeClubId,
+            rank: 4,
+            competition: 'LIBERTADORES',
+            stageLabel: 'Grupos',
+          });
+        }
       } else if (targetStep.libStage && targetStep.libStage !== 'Grupos') {
         nextLib = advanceLibertadoresKnockoutStage(
           working.libertadores,
@@ -854,12 +912,21 @@ export function simulateNextAutoStep(
           working.userClubId,
           rng
         );
+        const koFixes = nextLib.knockoutFixtures[targetStep.libStage] || [];
         nextAiSquads = attributeAiRoundPlayerStats(
           nextAiSquads,
-          nextLib.knockoutFixtures[targetStep.libStage] || [],
+          koFixes,
           working.userClubId,
           rng
         );
+        for (const fx of koFixes) {
+          byeAiHomeMatches.push({
+            clubId: fx.homeClubId,
+            rank: 4,
+            competition: 'LIBERTADORES',
+            stageLabel: targetStep.libStage,
+          });
+        }
         if (targetStep.libStage === 'Final' && nextMundial && !nextMundial.isSeeded) {
           nextMundial = seedMundialBracket(
             nextMundial,
@@ -881,12 +948,21 @@ export function simulateNextAutoStep(
         working.clubs,
         rng
       );
+      const uclFixes = nextUcl.fixturesByStage[targetStep.uclStage] || [];
       nextAiSquads = attributeAiRoundPlayerStats(
         nextAiSquads,
-        nextUcl.fixturesByStage[targetStep.uclStage] || [],
+        uclFixes,
         working.userClubId,
         rng
       );
+      for (const fx of uclFixes) {
+        byeAiHomeMatches.push({
+          clubId: fx.homeClubId,
+          rank: 3,
+          competition: 'CHAMPIONS_LEAGUE',
+          stageLabel: targetStep.uclStage,
+        });
+      }
       byeSummaryNote = `UEFA Champions League (${targetStep.uclStage}) simulada na Europa.`;
       if (targetStep.uclStage === 'Final' && nextUcl.championClubId) {
         const champClub = working.clubs.find(
@@ -942,12 +1018,21 @@ export function simulateNextAutoStep(
         working.userClubId,
         rng
       );
+      const munFixes = nextMundial.fixturesByStage[targetStep.mundialStage] || [];
       nextAiSquads = attributeAiRoundPlayerStats(
         nextAiSquads,
-        nextMundial.fixturesByStage[targetStep.mundialStage] || [],
+        munFixes,
         working.userClubId,
         rng
       );
+      for (const fx of munFixes) {
+        byeAiHomeMatches.push({
+          clubId: fx.homeClubId,
+          rank: 2,
+          competition: 'MUNDIAL',
+          stageLabel: targetStep.mundialStage,
+        });
+      }
       if (targetStep.mundialStage === 'Final' && nextMundial.championClubId) {
         const munChamp = working.clubs.find(
           (c) => c.id === nextMundial?.championClubId
@@ -983,6 +1068,14 @@ export function simulateNextAutoStep(
           working.userClubId,
           rng
         );
+        for (const fx of smFixes) {
+          byeAiHomeMatches.push({
+            clubId: fx.homeClubId,
+            rank: 3,
+            competition: 'SUPER_MUNDIAL',
+            stageLabel: 'Grupos',
+          });
+        }
       } else if (
         targetStep.superMundialStage &&
         targetStep.superMundialStage !== 'Grupos'
@@ -995,12 +1088,22 @@ export function simulateNextAutoStep(
           working.userClubId,
           rng
         );
+        const smKoFixes =
+          nextSuperMundial.knockoutFixtures[targetStep.superMundialStage] || [];
         nextAiSquads = attributeAiRoundPlayerStats(
           nextAiSquads,
-          nextSuperMundial.knockoutFixtures[targetStep.superMundialStage] || [],
+          smKoFixes,
           working.userClubId,
           rng
         );
+        for (const fx of smKoFixes) {
+          byeAiHomeMatches.push({
+            clubId: fx.homeClubId,
+            rank: 2,
+            competition: 'SUPER_MUNDIAL',
+            stageLabel: targetStep.superMundialStage,
+          });
+        }
       }
     }
 
@@ -1030,7 +1133,77 @@ export function simulateNextAutoStep(
       goalScorers: [],
     };
 
-    let byeClubs = working.clubs;
+    let byeClubs = applyAiHomeGateRevenues({
+      clubs: working.clubs,
+      userClubId: working.userClubId,
+      homeMatches: byeAiHomeMatches,
+    }).updatedClubs;
+    let byeLedger =
+      working.financeLedger ||
+      createInitialFinanceLedger(userClub, recoveredSquad, seasonYear);
+    let byeYouthAcademy = working.youthAcademy;
+
+    // Monthly sponsorship (-30% operational cost) + payroll + youth spend if month boundary crossed on bye step
+    const byePrevMonth = dayOffsetToDate(working.dayOffset, seasonYear).getMonth();
+    const byeNextMonth = dayOffsetToDate(stepDayOffset, seasonYear).getMonth();
+    const byeMonthsCrossed =
+      byeNextMonth > byePrevMonth ? Math.max(1, byeNextMonth - byePrevMonth) : 0;
+    if (byeMonthsCrossed > 0) {
+      const byeSponsor =
+        byeLedger.sponsorshipContract.monthlyInstallment * byeMonthsCrossed;
+      const byeSponsorOpCost = calculateOperationalCost(byeSponsor);
+      const byePayroll =
+        getEffectivePayroll(recoveredSquad, working.loanedOutPlayers || []) *
+        byeMonthsCrossed;
+      const byeYouthSpend = byeYouthAcademy
+        ? byeYouthAcademy.monthlyCost * byeMonthsCrossed
+        : 0;
+      byeClubs = byeClubs.map((c) => {
+        if (c.id !== working.userClubId) return c;
+        const nextCash =
+          c.cashBalance +
+          byeSponsor -
+          byeSponsorOpCost -
+          byePayroll -
+          byeYouthSpend;
+        const debtPenalty = nextCash < 0 ? 2 : 0;
+        return {
+          ...c,
+          cashBalance: nextCash,
+          boardConfidence: Math.max(20, c.boardConfidence - debtPenalty),
+        };
+      });
+      byeClubs = applyAiMonthlyEconomyTick({
+        clubs: byeClubs,
+        aiSquads: nextAiSquads,
+        userClubId: working.userClubId,
+        monthsElapsed: byeMonthsCrossed,
+        seasonYear,
+      }).updatedClubs;
+      byeLedger = {
+        ...byeLedger,
+        seasonSponsorshipRevenue:
+          byeLedger.seasonSponsorshipRevenue + byeSponsor,
+        seasonOperationalExpense:
+          byeLedger.seasonOperationalExpense + byeSponsorOpCost,
+        seasonPayrollExpense:
+          (byeLedger.seasonPayrollExpense || 0) + byePayroll,
+        seasonYouthAcademySpend:
+          (byeLedger.seasonYouthAcademySpend || 0) + byeYouthSpend,
+      };
+      if (byeYouthAcademy) {
+        byeYouthAcademy = {
+          ...byeYouthAcademy,
+          accumulatedSeasonInvestment:
+            byeYouthAcademy.accumulatedSeasonInvestment + byeYouthSpend,
+          monthsInvestedThisSeason: Math.min(
+            12,
+            byeYouthAcademy.monthsInvestedThisSeason + byeMonthsCrossed
+          ),
+        };
+      }
+    }
+
     let byeTransferHistory = working.transferHistory || [];
     let byePendingOffers = working.pendingOffers || [];
     let byeMessages = working.messages;
@@ -1105,6 +1278,8 @@ export function simulateNextAutoStep(
         messages: byeMessages,
         pendingOffers: byePendingOffers,
         transferHistory: byeTransferHistory,
+        financeLedger: byeLedger,
+        youthAcademy: byeYouthAcademy,
         seasonStepIndex: nextIdx,
         dayOffset: Math.max(working.dayOffset, stepDayOffset),
         isMatchDay: false,
@@ -1207,6 +1382,21 @@ export function simulateNextAutoStep(
     }
 
     simMatch = stepMatchMinute(simMatch, homeClub, awayClub, recoveredSquad, rng);
+
+    // Emergency auto-substitution if any user player on the pitch gets injured live
+    const currentUserTokens = isUserHome ? simMatch.homeTokens : simMatch.awayTokens;
+    if (
+      simMatch.substitutionsMade < simMatch.maxSubstitutions &&
+      currentUserTokens.some((t) => t.injuredInMatch)
+    ) {
+      const emerSub = applySquadAutoSubstitutionInSim(
+        simMatch,
+        recoveredSquad,
+        updatedUserClubWithTactics
+      );
+      simMatch = emerSub.match;
+      recoveredSquad = emerSub.squad;
+    }
   }
 
   // Apply match result to competitions, standings, finances, and stats
@@ -1256,6 +1446,8 @@ export function simulateNextAutoStep(
     winnerClubId: simMatch.winnerClubId,
   };
 
+  const aiHomeMatches: HomeGateSettlementItem[] = [];
+
   if (comp === 'COPA_DO_BRASIL' && targetStep.copaStage) {
     nextCdb = advanceCopaDoBrasilStage(
       working.copaDoBrasil,
@@ -1265,17 +1457,27 @@ export function simulateNextAutoStep(
       working.userClubId,
       rng
     );
+    const cdbFixes = nextCdb.fixturesByStage[targetStep.copaStage] || [];
     nextAiSquads = attributeAiRoundPlayerStats(
       nextAiSquads,
-      nextCdb.fixturesByStage[targetStep.copaStage] || [],
+      cdbFixes,
       working.userClubId,
       rng
     );
+    for (const fx of cdbFixes) {
+      aiHomeMatches.push({
+        clubId: fx.homeClubId,
+        rank: 6,
+        competition: 'COPA_DO_BRASIL',
+        stageLabel: targetStep.copaStage,
+      });
+    }
     prizeMoney = getCupPrizeMoney(
       'COPA_DO_BRASIL',
       targetStep.copaStage,
       userAdvanced,
-      targetStep.copaStage === 'Final' && userAdvanced
+      targetStep.copaStage === 'Final' && userAdvanced,
+      { isUserHome, clubDivision: updatedUserClubWithTactics.division }
     );
   } else if (comp === 'LIBERTADORES') {
     if (targetStep.libStage === 'Grupos' && targetStep.libGroupRound) {
@@ -1296,7 +1498,18 @@ export function simulateNextAutoStep(
         working.userClubId,
         rng
       );
-      prizeMoney = getCupPrizeMoney('LIBERTADORES', 'Grupo', userWon90, false);
+      for (const fx of grpFixes) {
+        aiHomeMatches.push({
+          clubId: fx.homeClubId,
+          rank: 4,
+          competition: 'LIBERTADORES',
+          stageLabel: 'Grupos',
+        });
+      }
+      prizeMoney = getCupPrizeMoney('LIBERTADORES', 'Grupo', userWon90, false, {
+        isUserHome,
+        clubDivision: updatedUserClubWithTactics.division,
+      });
     } else if (targetStep.libStage && targetStep.libStage !== 'Grupos') {
       nextLib = advanceLibertadoresKnockoutStage(
         working.libertadores,
@@ -1306,17 +1519,27 @@ export function simulateNextAutoStep(
         working.userClubId,
         rng
       );
+      const libKoFixes = nextLib.knockoutFixtures[targetStep.libStage] || [];
       nextAiSquads = attributeAiRoundPlayerStats(
         nextAiSquads,
-        nextLib.knockoutFixtures[targetStep.libStage] || [],
+        libKoFixes,
         working.userClubId,
         rng
       );
+      for (const fx of libKoFixes) {
+        aiHomeMatches.push({
+          clubId: fx.homeClubId,
+          rank: 4,
+          competition: 'LIBERTADORES',
+          stageLabel: targetStep.libStage,
+        });
+      }
       prizeMoney = getCupPrizeMoney(
         'LIBERTADORES',
         targetStep.libStage,
         userAdvanced,
-        targetStep.libStage === 'Final' && userAdvanced
+        targetStep.libStage === 'Final' && userAdvanced,
+        { isUserHome, clubDivision: updatedUserClubWithTactics.division }
       );
       if (targetStep.libStage === 'Final' && nextMundial && !nextMundial.isSeeded) {
         nextMundial = seedMundialBracket(
@@ -1337,12 +1560,21 @@ export function simulateNextAutoStep(
       working.userClubId,
       rng
     );
+    const munFixes = nextMundial.fixturesByStage[targetStep.mundialStage] || [];
     nextAiSquads = attributeAiRoundPlayerStats(
       nextAiSquads,
-      nextMundial.fixturesByStage[targetStep.mundialStage] || [],
+      munFixes,
       working.userClubId,
       rng
     );
+    for (const fx of munFixes) {
+      aiHomeMatches.push({
+        clubId: fx.homeClubId,
+        rank: 2,
+        competition: 'MUNDIAL',
+        stageLabel: targetStep.mundialStage,
+      });
+    }
     prizeMoney = getCupPrizeMoney(
       'MUNDIAL',
       targetStep.mundialStage,
@@ -1373,6 +1605,14 @@ export function simulateNextAutoStep(
         working.userClubId,
         rng
       );
+      for (const fx of smFixes) {
+        aiHomeMatches.push({
+          clubId: fx.homeClubId,
+          rank: 3,
+          competition: 'SUPER_MUNDIAL',
+          stageLabel: 'Grupos',
+        });
+      }
       prizeMoney = getCupPrizeMoney('SUPER_MUNDIAL', 'Grupo', userWon90, false);
     } else if (
       targetStep.superMundialStage &&
@@ -1386,12 +1626,22 @@ export function simulateNextAutoStep(
         working.userClubId,
         rng
       );
+      const smKoFixes =
+        nextSuperMundial.knockoutFixtures[targetStep.superMundialStage] || [];
       nextAiSquads = attributeAiRoundPlayerStats(
         nextAiSquads,
-        nextSuperMundial.knockoutFixtures[targetStep.superMundialStage] || [],
+        smKoFixes,
         working.userClubId,
         rng
       );
+      for (const fx of smKoFixes) {
+        aiHomeMatches.push({
+          clubId: fx.homeClubId,
+          rank: 2,
+          competition: 'SUPER_MUNDIAL',
+          stageLabel: targetStep.superMundialStage,
+        });
+      }
       prizeMoney = getCupPrizeMoney(
         'SUPER_MUNDIAL',
         targetStep.superMundialStage,
@@ -1415,6 +1665,15 @@ export function simulateNextAutoStep(
       working.userClubId,
       rng
     );
+    for (const fx of roundCompleted) {
+      const rankIdx = nextStandings.findIndex((s) => s.clubId === fx.homeClubId);
+      aiHomeMatches.push({
+        clubId: fx.homeClubId,
+        rank: rankIdx >= 0 ? rankIdx + 1 : 10,
+        totalTeams: nextStandings.length || 20,
+        competition: 'BRASILEIRAO',
+      });
+    }
 
     nextSecondaryFixtures = simulateRoundFixtures(
       working.secondaryFixtures,
@@ -1440,9 +1699,20 @@ export function simulateNextAutoStep(
       working.userClubId,
       rng
     );
+    for (const fx of secCompleted) {
+      const rankIdx = nextSecondaryStandings.findIndex(
+        (s) => s.clubId === fx.homeClubId
+      );
+      aiHomeMatches.push({
+        clubId: fx.homeClubId,
+        rank: rankIdx >= 0 ? rankIdx + 1 : 10,
+        totalTeams: nextSecondaryStandings.length || 20,
+        competition: 'BRASILEIRAO',
+      });
+    }
   }
 
-  // Monthly sponsorship installment & youth academy deduction if month boundary crossed
+  // Monthly sponsorship installment (-30% operational cost) & youth academy deduction if month boundary crossed
   const prevMonth = dayOffsetToDate(working.dayOffset, seasonYear).getMonth();
   const nextMonth = dayOffsetToDate(stepDayOffset, seasonYear).getMonth();
   const baseLedger =
@@ -1453,6 +1723,14 @@ export function simulateNextAutoStep(
   const monthlySponsorInstallment =
     monthsCrossed > 0
       ? baseLedger.sponsorshipContract.monthlyInstallment * monthsCrossed
+      : 0;
+  const gateOperationalCost = calculateOperationalCost(gateRevenue);
+  const sponsorOperationalCost = calculateOperationalCost(monthlySponsorInstallment);
+  const totalOperationalCost = gateOperationalCost + sponsorOperationalCost;
+  const monthlyPayrollSpend =
+    monthsCrossed > 0
+      ? getEffectivePayroll(recoveredSquad, working.loanedOutPlayers || []) *
+        monthsCrossed
       : 0;
   const monthlyYouthSpend =
     monthsCrossed > 0 && working.youthAcademy
@@ -1473,17 +1751,43 @@ export function simulateNextAutoStep(
     ? 1
     : -4;
   const totalNetCashDelta =
-    gateRevenue + prizeMoney + monthlySponsorInstallment - monthlyYouthSpend;
+    gateRevenue +
+    prizeMoney +
+    monthlySponsorInstallment -
+    totalOperationalCost -
+    monthlyPayrollSpend -
+    monthlyYouthSpend;
 
-  nextClubs = nextClubs.map((c) =>
-    c.id === working.userClubId
-      ? {
-          ...c,
-          cashBalance: Math.max(0, c.cashBalance + totalNetCashDelta),
-          boardConfidence: Math.min(100, Math.max(30, c.boardConfidence + confidenceDelta)),
-        }
-      : c
-  );
+  nextClubs = nextClubs.map((c) => {
+    if (c.id !== working.userClubId) return c;
+    const nextCash = c.cashBalance + totalNetCashDelta;
+    const debtConfidencePenalty = monthsCrossed > 0 && nextCash < 0 ? 2 : 0;
+    return {
+      ...c,
+      // Sem piso em zero: folha e despesas maiores que receitas levam o clube à dívida (saldo negativo)
+      cashBalance: nextCash,
+      boardConfidence: Math.min(
+        100,
+        Math.max(20, c.boardConfidence + confidenceDelta - debtConfidencePenalty)
+      ),
+    };
+  });
+
+  // Credita bilheteria líquida (-30% custo operacional) e patrocínio mensal (-30% custo operacional) para todos os clubes de IA
+  nextClubs = applyAiHomeGateRevenues({
+    clubs: nextClubs,
+    userClubId: working.userClubId,
+    homeMatches: aiHomeMatches,
+  }).updatedClubs;
+  if (monthsCrossed > 0) {
+    nextClubs = applyAiMonthlyEconomyTick({
+      clubs: nextClubs,
+      aiSquads: nextAiSquads,
+      userClubId: working.userClubId,
+      monthsElapsed: monthsCrossed,
+      seasonYear,
+    }).updatedClubs;
+  }
 
   const nextLedger: ClubFinanceLedger = {
     ...baseLedger,
@@ -1491,6 +1795,10 @@ export function simulateNextAutoStep(
     seasonPrizeRevenue: baseLedger.seasonPrizeRevenue + prizeMoney,
     seasonSponsorshipRevenue:
       baseLedger.seasonSponsorshipRevenue + monthlySponsorInstallment,
+    seasonOperationalExpense:
+      baseLedger.seasonOperationalExpense + totalOperationalCost,
+    seasonPayrollExpense:
+      (baseLedger.seasonPayrollExpense || 0) + monthlyPayrollSpend,
     seasonYouthAcademySpend:
       (baseLedger.seasonYouthAcademySpend || 0) + monthlyYouthSpend,
     lastMatchGateRevenue: isUserHome ? gateRevenue : baseLedger.lastMatchGateRevenue,
@@ -1520,33 +1828,56 @@ export function simulateNextAutoStep(
     (e) => e.type === 'CARTAO_AMARELO' && e.team === userTeamTag
   );
 
-  const squadAfterStats = recoveredSquad.map((p) => {
+  const userInjuriesThisMatch = (simMatch.inMatchInjuries || []).filter(
+    (rec) => rec.team === userTeamTag
+  );
+  const injuryByPlayerId = new Map(
+    userInjuriesThisMatch.map((rec) => [rec.playerId, rec])
+  );
+
+  const squadAfterStatsRaw = recoveredSquad.map((p) => {
     const tok = tokenMap.get(p.id);
-    if (!tok) return p;
+    const matchInjury = injuryByPlayerId.get(p.id);
+
+    if (!tok && !matchInjury) {
+      // Rested player: reset consecutive streak and gain light rest bonus
+      return p.injured
+        ? p
+        : {
+            ...p,
+            condition: Math.min(99, p.condition + 4),
+            consecutiveMatches: 0,
+          };
+    }
 
     const scoredCount = userGoalEvents.filter((e) => e.scorerName === p.name).length;
     const assistCount = userGoalEvents.filter(
       (e) => e.assistName === p.name && e.scorerName !== p.name
     ).length;
     const ycCount = userYellowEvents.filter((e) => e.text.includes(p.name)).length;
+    const gotRedCard = ycCount >= 2;
+
+    const liveRating = tok?.rating ?? 6.5;
+    const liveCond = tok?.condition ?? p.condition;
 
     const prevMatches = p.seasonStats.matches;
     const newMatches = prevMatches + 1;
     const nextAvgRating = Number(
-      ((p.seasonStats.avgRating * prevMatches + tok.rating) / newMatches).toFixed(2)
+      ((p.seasonStats.avgRating * prevMatches + liveRating) / newMatches).toFixed(2)
     );
 
     const finalCond = isCupAdvance
-      ? Math.min(100, Math.round(tok.condition) + 8)
-      : Math.max(55, Math.round(tok.condition));
+      ? Math.min(100, Math.round(liveCond) + 5)
+      : Math.max(35, Math.round(liveCond));
     const finalMorale = isCupAdvance
       ? (p.morale === 'Exuberante' ? 'Exuberante' : 'Muito Alta')
       : p.morale;
 
-    return {
+    let withStats: Player = {
       ...p,
       morale: finalMorale as Player['morale'],
       condition: finalCond,
+      consecutiveMatches: (p.consecutiveMatches ?? 0) + 1,
       seasonStats: {
         matches: newMatches,
         goals: p.seasonStats.goals + scoredCount,
@@ -1555,12 +1886,42 @@ export function simulateNextAutoStep(
         avgRating: nextAvgRating,
       },
     };
+
+    if (matchInjury) {
+      withStats = applyInjuryToPlayer(withStats, {
+        injuryType: matchInjury.injuryType,
+        severity: matchInjury.severity,
+        days: matchInjury.days,
+      });
+    }
+
+    return applyPostMatchProbabilisticEvolution({
+      player: withStats,
+      matchRating: liveRating,
+      goals: scoredCount,
+      assists: assistCount,
+      redCard: gotRedCard,
+      clubReputation: updatedUserClubWithTactics.reputation,
+      division: updatedUserClubWithTactics.division,
+      rng,
+    });
   });
+
+  const squadAfterStats = ensureHealthyStartingLineup(squadAfterStatsRaw).updatedSquad;
 
   // Mid-season evolution check around July 1st (dayOffset >= 154)
   let finalSquadAfterMatch = squadAfterStats;
   let midSeasonProcessedYear = working.midSeasonEvolutionProcessedYear;
-  let extraMsgs: InboxMessage[] = [];
+  let extraMsgs: InboxMessage[] = [...stepClearanceMessages];
+  if (userInjuriesThisMatch.length > 0) {
+    extraMsgs.push(
+      createInjuryInboxMessage({
+        injuries: userInjuriesThisMatch,
+        dateLabel: formatCalendarDate(stepDayOffset, seasonYear),
+        competitionLabel: targetStep.label,
+      })
+    );
+  }
 
   if (stepDayOffset >= 154 && midSeasonProcessedYear !== seasonYear) {
     const midRes = processMidSeasonEvolution({
@@ -1637,7 +1998,7 @@ export function simulateNextAutoStep(
       if (newOffer) {
         generatedOffer = newOffer;
         nextPendingOffers = [newOffer, ...nextPendingOffers];
-        extraMsgs = [createOfferInboxMessage(newOffer, latestUserClub)];
+        extraMsgs = [...extraMsgs, createOfferInboxMessage(newOffer, latestUserClub)];
       }
     }
   } else if (nextPendingOffers.some((o) => o.status === 'PENDING')) {

@@ -64,6 +64,10 @@ import { ClubBadge } from './ClubBadge';
 import { StarRating } from './StarRating';
 import { PlayerJersey, PlayerOvrBadge } from './PlayerJersey';
 import { IncomingOfferCard } from './IncomingOfferCard';
+import {
+  MarketDealTransitionModal,
+  MarketDealTransitionPayload,
+} from './MarketDealTransitionModal';
 
 export type MarketFeedback = {
   type: 'success' | 'counter' | 'rejected' | 'error';
@@ -376,14 +380,24 @@ export const MarketView: React.FC<MarketViewProps> = ({
   const [contractYears, setContractYears] = useState<2 | 3 | 4>(3);
   const offerTier: TransferOfferTier = getOfferTierFromMultiplier(offerMultiplier);
 
+  // Deal acceptance celebratory transition state
+  const [dealTransition, setDealTransition] =
+    useState<MarketDealTransitionPayload | null>(null);
+  const lastSeenAttemptIdRef = useRef<string | null>(
+    lastAttemptResult?.id ?? null
+  );
+  const prevOfferStatusMapRef = useRef<Map<string, IncomingTransferOffer['status']>>(
+    new Map(pendingOffers.map((o) => [o.id, o.status]))
+  );
+  const squadNumberCacheRef = useRef<Map<string, number>>(
+    new Map(squad.map((p) => [p.id, p.number]))
+  );
+
   const currentPayroll = useMemo(
     () => getEffectivePayroll(squad, loanedOutPlayers),
     [squad, loanedOutPlayers]
   );
-  const wageUsagePct = Math.round(
-    (currentPayroll / Math.max(1, userClub.wageBudget)) * 100
-  );
-  const wageFreeSpace = Math.max(0, userClub.wageBudget - currentPayroll);
+  const isInDebt = userClub.cashBalance < 0;
   const loanedInCount = squad.filter(
     (p) => p.contractType === 'EMPRESTADO'
   ).length;
@@ -562,6 +576,113 @@ export const MarketView: React.FC<MarketViewProps> = ({
     });
     return () => cancelAnimationFrame(raf);
   }, [lastAttemptResult?.id]);
+
+  // Cache shirt numbers so accepted outgoing deals still show the player's jersey number
+  useEffect(() => {
+    for (const p of squad) {
+      squadNumberCacheRef.current.set(p.id, p.number);
+    }
+  }, [squad]);
+
+  // Trigger celebratory transition when an incoming signing / counter-offer is accepted
+  useEffect(() => {
+    if (!lastAttemptResult) return;
+    if (lastSeenAttemptIdRef.current === lastAttemptResult.id) return;
+    lastSeenAttemptIdRef.current = lastAttemptResult.id;
+
+    if (lastAttemptResult.outcome !== 'ACEITA') return;
+
+    const listing = lastAttemptResult.listing;
+    const player = lastAttemptResult.signedPlayer ?? listing.player;
+    const stars =
+      player.potentialStars ??
+      listing.player.potentialStars ??
+      3;
+
+    setDealTransition({
+      id: `deal-in-${lastAttemptResult.id}`,
+      direction: 'INCOMING',
+      dealMode: lastAttemptResult.dealMode,
+      playerName: player.name,
+      playerNumber: player.number,
+      position: player.position,
+      age: player.age,
+      ovr: listing.ovr,
+      potentialStars: stars,
+      fromClub: listing.originClub
+        ? {
+            id: listing.originClub.id,
+            abbr: listing.originClub.abbr,
+            name: listing.originClub.name,
+            primaryColor: listing.originClub.primaryColor,
+          }
+        : null,
+      toClub: {
+        id: userClub.id,
+        abbr: userClub.abbr,
+        name: userClub.name,
+        primaryColor: userClub.primaryColor,
+      },
+      fee: lastAttemptResult.offeredFee,
+      monthlySalary: lastAttemptResult.offeredSalary,
+      durationYears:
+        lastAttemptResult.dealMode === 'LOAN'
+          ? lastAttemptResult.loanDurationYears ?? 1
+          : lastAttemptResult.contractYears ?? 3,
+    });
+  }, [lastAttemptResult, userClub.id, userClub.abbr, userClub.name, userClub.primaryColor]);
+
+  // Trigger celebratory transition when a user accepts (or wins counter on) an incoming AI offer
+  useEffect(() => {
+    const prevMap = prevOfferStatusMapRef.current;
+    const newlyAccepted = pendingOffers.find(
+      (o) => prevMap.get(o.id) === 'PENDING' && o.status === 'ACCEPTED'
+    );
+
+    const nextMap = new Map<string, IncomingTransferOffer['status']>();
+    for (const o of pendingOffers) {
+      nextMap.set(o.id, o.status);
+    }
+    prevOfferStatusMapRef.current = nextMap;
+
+    if (!newlyAccepted) return;
+
+    const loanedMatch = loanedOutPlayers.find(
+      (p) => p.id === newlyAccepted.playerId
+    );
+    const shirtNumber =
+      loanedMatch?.number ??
+      squadNumberCacheRef.current.get(newlyAccepted.playerId) ??
+      10;
+
+    setDealTransition({
+      id: `deal-out-${newlyAccepted.id}`,
+      direction: 'OUTGOING',
+      dealMode: newlyAccepted.dealType === 'LOAN' ? 'LOAN_OUT' : 'SELL_OUT',
+      playerName: newlyAccepted.playerName,
+      playerNumber: shirtNumber,
+      position: newlyAccepted.playerPosition,
+      age: newlyAccepted.playerAge,
+      ovr: newlyAccepted.playerOvr,
+      potentialStars: newlyAccepted.playerPotentialStars,
+      fromClub: {
+        id: userClub.id,
+        abbr: userClub.abbr,
+        name: userClub.name,
+        primaryColor: userClub.primaryColor,
+      },
+      toClub: {
+        id: newlyAccepted.fromClubId,
+        abbr: newlyAccepted.fromClubAbbr,
+        name: newlyAccepted.fromClubName,
+        primaryColor: newlyAccepted.fromClubPrimaryColor,
+      },
+      fee: newlyAccepted.offeredFee,
+      monthlySalary: newlyAccepted.playerSalary ?? 0,
+      durationYears: 1,
+      wageShareCovered: newlyAccepted.wageShareCovered,
+    });
+  }, [pendingOffers, loanedOutPlayers, userClub.id, userClub.abbr, userClub.name, userClub.primaryColor]);
 
   // Quick difficulty evaluation helper using default parameters for sorting/badge
   const evaluatedListMap = useMemo(() => {
@@ -1157,9 +1278,8 @@ export const MarketView: React.FC<MarketViewProps> = ({
       const isAccepted = lastAttemptResult.outcome === 'ACEITA';
       const isCounter = lastAttemptResult.outcome === 'CONTRAPROPOSTA';
       const counterCanAfford = lastAttemptResult.counterOffer
-        ? lastAttemptResult.counterOffer.counterFee <= userClub.cashBalance &&
-          currentPayroll + lastAttemptResult.counterOffer.counterSalary <=
-            userClub.wageBudget
+        ? lastAttemptResult.counterOffer.counterFee <= 0 ||
+          lastAttemptResult.counterOffer.counterFee <= userClub.cashBalance
         : false;
 
       const handleDismissOutcome = () => {
@@ -1174,8 +1294,9 @@ export const MarketView: React.FC<MarketViewProps> = ({
 
       return (
         <div
+          key={lastAttemptResult.id}
           data-testid="transfer-attempt-result"
-          className={`bg-[#14171f] border-2 rounded-[24px] overflow-hidden flex flex-col shadow-2xl ${
+          className={`bg-[#14171f] border-2 rounded-[24px] overflow-hidden flex flex-col shadow-2xl animate-market-outcome-enter ${
             isAccepted
               ? 'border-[#b5ff00]'
               : isCounter
@@ -1185,7 +1306,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
         >
           {/* Outcome Header replacing previous form */}
           <div
-            className={`p-4 sm:p-5 border-b flex items-start justify-between gap-3 ${
+            className={`relative overflow-hidden p-4 sm:p-5 border-b flex items-start justify-between gap-3 ${
               isAccepted
                 ? 'bg-[#b5ff00]/15 border-[#b5ff00]/40'
                 : isCounter
@@ -1193,6 +1314,12 @@ export const MarketView: React.FC<MarketViewProps> = ({
                 : 'bg-rose-950/60 border-rose-500/40'
             }`}
           >
+            {isAccepted && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-transparent via-[#b5ff00]/20 to-transparent animate-market-sheen-sweep"
+              />
+            )}
             <div className="flex items-center gap-3 min-w-0">
               <PlayerJersey
                 number={attemptPlayer.number}
@@ -1352,7 +1479,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
 
                 {!counterCanAfford && (
                   <div className="text-[11px] text-rose-300 font-semibold">
-                    Saldo em caixa ou teto salarial atual insuficiente para aceitar os novos termos.
+                    Saldo em caixa insuficiente para cobrir a taxa da contraproposta.
                   </div>
                 )}
               </div>
@@ -2048,17 +2175,12 @@ export const MarketView: React.FC<MarketViewProps> = ({
             </div>
 
             <div className="flex items-center justify-between text-[11px]">
-              <span className="text-zinc-400">Nova Folha / Teto</span>
-              <span
-                className={`font-mono tabular-nums font-bold ${
-                  activeEvaluation.fitsWageBudget
-                    ? 'text-zinc-200'
-                    : 'text-rose-400'
-                }`}
-              >
-                {formatCompactBRL(activeEvaluation.projectedPayroll)} /{' '}
-                {formatCompactBRL(userClub.wageBudget)} (
-                {activeEvaluation.projectedWagePct}%)
+              <span className="text-zinc-400">Nova Folha Mensal (Sem Limite)</span>
+              <span className="font-mono tabular-nums font-bold text-zinc-200">
+                {formatCompactBRL(activeEvaluation.projectedPayroll)}/mês{' '}
+                <span className="text-zinc-400 font-normal">
+                  ({formatCompactBRL(activeEvaluation.projectedPayroll * 12)}/ano)
+                </span>
               </span>
             </div>
           </div>
@@ -2214,41 +2336,40 @@ export const MarketView: React.FC<MarketViewProps> = ({
 
       {/* Top Financial KPIs Strip (3 columns side-by-side even on mobile for high density) */}
       <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <div className="bg-[#b5ff00] text-[#090a0f] rounded-2xl sm:rounded-[24px] p-2.5 sm:p-5 shadow-lg">
-          <div className="flex items-center justify-between text-[9px] sm:text-[11px] font-bold uppercase font-mono opacity-80">
-            <span className="truncate">Caixa</span>
+        <div
+          className={`rounded-2xl sm:rounded-[24px] p-2.5 sm:p-5 shadow-lg ${
+            isInDebt
+              ? 'bg-rose-600 text-white'
+              : 'bg-[#b5ff00] text-[#090a0f]'
+          }`}
+        >
+          <div className="flex items-center justify-between text-[9px] sm:text-[11px] font-bold uppercase font-mono opacity-85">
+            <span className="truncate">{isInDebt ? 'Em Dívida' : 'Caixa'}</span>
             <Coins className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
           </div>
           <div className="font-display text-lg sm:text-4xl font-extrabold tabular-nums mt-0.5 sm:mt-1 leading-none truncate">
             {formatCompactBRL(userClub.cashBalance)}
           </div>
-          <div className="hidden sm:block text-[11px] opacity-80 mt-1.5 font-semibold">
-            Disponível para compras e taxas de empréstimo
+          <div className="hidden sm:block text-[11px] opacity-85 mt-1.5 font-semibold">
+            {isInDebt
+              ? 'Saldo negativo — reduza salários ou venda atletas'
+              : 'Disponível para compras e taxas de empréstimo'}
           </div>
         </div>
 
         <div className="bg-[#14171f] border border-white/[0.08] rounded-2xl sm:rounded-[24px] p-2.5 sm:p-5">
           <div className="flex items-center justify-between text-[9px] sm:text-[11px] font-mono uppercase text-zinc-400">
-            <span className="truncate">Folha ({wageUsagePct}%)</span>
+            <span className="truncate">Folha · Sem Limite</span>
             <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#b5ff00] shrink-0" />
           </div>
           <div className="font-display text-lg sm:text-3xl font-extrabold tabular-nums text-white mt-0.5 sm:mt-1 leading-none truncate">
             {formatCompactBRL(currentPayroll)}
             <span className="hidden sm:inline text-sm font-sans font-medium text-zinc-400">
-              {' '}
-              / {formatCompactBRL(userClub.wageBudget)}
+              /mês
             </span>
           </div>
-          <div className="w-full h-1 sm:h-1.5 bg-[#0b0c10] rounded-full overflow-hidden mt-1.5 sm:mt-2.5">
-            <div
-              className={`h-full ${
-                wageUsagePct >= 95 ? 'bg-rose-400' : 'bg-[#b5ff00]'
-              }`}
-              style={{ width: `${Math.min(100, wageUsagePct)}%` }}
-            />
-          </div>
           <div className="hidden sm:block text-[11px] text-zinc-400 mt-1.5 font-mono tabular-nums">
-            Margem livre mensal: {formatCompactBRL(wageFreeSpace)}
+            Custo anual: {formatCompactBRL(currentPayroll * 12)} · sem teto fixo
           </div>
         </div>
 
@@ -2282,7 +2403,8 @@ export const MarketView: React.FC<MarketViewProps> = ({
       {/* Feedback Toast Banner */}
       {lastFeedback && (
         <div
-          className={`rounded-2xl border px-4 py-3 flex items-start justify-between gap-3 text-xs ${
+          key={`${lastFeedback.type}:${lastFeedback.title}`}
+          className={`rounded-2xl border px-4 py-3 flex items-start justify-between gap-3 text-xs animate-market-outcome-enter ${
             lastFeedback.type === 'success'
               ? 'bg-[#b5ff00]/15 border-[#b5ff00]/50 text-white'
               : lastFeedback.type === 'counter'
@@ -2448,7 +2570,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                             <div className="flex items-center gap-2.5">
                               <PlayerJersey
                                 number={player.number}
-                                variant={player.isStarter ? 'lime' : 'white'}
+                                variant="lime"
                                 size="sm"
                               />
                               <PlayerOvrBadge
@@ -2499,7 +2621,7 @@ export const MarketView: React.FC<MarketViewProps> = ({
                                   )}
                                 </div>
                                 <div className="text-[11px] text-zinc-400">
-                                  {player.isStarter ? 'Titular' : 'Reserva'} ·{' '}
+                                  {player.isStarter ? 'Escalado' : 'Elenco'} ·{' '}
                                   {player.contractType === 'EMPRESTADO'
                                     ? `Emprestado (${player.loanOriginClubName || 'Clube'})`
                                     : 'Vínculo Definitivo'}
@@ -4382,6 +4504,12 @@ export const MarketView: React.FC<MarketViewProps> = ({
           </div>
         </div>
       )}
+      {/* Celebratory Transfer Acceptance Transition */}
+      <MarketDealTransitionModal
+        deal={dealTransition}
+        userClub={userClub}
+        onCompleteDismiss={() => setDealTransition(null)}
+      />
     </div>
   );
 };

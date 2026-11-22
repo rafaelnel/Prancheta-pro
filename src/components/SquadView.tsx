@@ -17,6 +17,10 @@ import {
 } from '../engine/matchEngine';
 import { evaluatePlayerRetirementProbability } from '../engine/economyAndEvolution';
 import {
+  evaluatePlayerInjuryRisk,
+  formatInjuryDurationShort,
+} from '../engine/injuryEngine';
+import {
   getPlayerContractEndYear,
   getPlayerContractRemainingYears,
   getRenewalEligiblePlayers,
@@ -71,7 +75,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
   onToggleDoNotRenewContract,
 }) => {
   const [sectorFilter, setSectorFilter] = useState<
-    'ALL' | 'STARTERS' | 'RESERVES' | 'RENEWALS' | 'LISTED' | PositionSector
+    'ALL' | 'LINEUP' | 'INJURED' | 'RENEWALS' | 'LISTED' | PositionSector
   >('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedForSwapId, setSelectedForSwapId] = useState<string | null>(
@@ -126,10 +130,12 @@ export const SquadView: React.FC<SquadViewProps> = ({
     (p) => p.isTransferListed || p.isLoanListed
   ).length;
 
+  const injuredCount = squad.filter((p) => p.injured).length;
+
   const filteredPlayers = squad
     .filter((p) => {
-      if (sectorFilter === 'STARTERS') return p.isStarter;
-      if (sectorFilter === 'RESERVES') return !p.isStarter;
+      if (sectorFilter === 'LINEUP') return p.isStarter;
+      if (sectorFilter === 'INJURED') return p.injured;
       if (sectorFilter === 'LISTED')
         return Boolean(p.isTransferListed || p.isLoanListed);
       if (sectorFilter === 'RENEWALS') return false;
@@ -140,9 +146,14 @@ export const SquadView: React.FC<SquadViewProps> = ({
       p.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
     )
     .sort((a, b) => {
-      if (a.isStarter && !b.isStarter) return -1;
-      if (!a.isStarter && b.isStarter) return 1;
-      return (a.slotIndex ?? 99) - (b.slotIndex ?? 99);
+      if (sectorFilter === 'LINEUP') {
+        return (a.slotIndex ?? 99) - (b.slotIndex ?? 99);
+      }
+      const ovrDiff =
+        calculatePlayerOverall(b.attributes, b.position) -
+        calculatePlayerOverall(a.attributes, a.position);
+      if (ovrDiff !== 0) return ovrDiff;
+      return a.name.localeCompare(b.name);
     });
 
   const handleSwapClick = (targetId: string) => {
@@ -207,12 +218,12 @@ export const SquadView: React.FC<SquadViewProps> = ({
               label: `Renovações (${pendingRenewalsCount})`,
             },
             {
-              id: 'STARTERS',
-              label: `Titulares (${squad.filter((p) => p.isStarter).length})`,
+              id: 'LINEUP',
+              label: `Escalados (${squad.filter((p) => p.isStarter).length})`,
             },
             {
-              id: 'RESERVES',
-              label: `Reservas (${squad.filter((p) => !p.isStarter).length})`,
+              id: 'INJURED',
+              label: `DM (${injuredCount})`,
             },
             {
               id: 'LISTED',
@@ -230,6 +241,8 @@ export const SquadView: React.FC<SquadViewProps> = ({
             className={`px-4 py-2 rounded-full text-xs font-bold transition-colors whitespace-nowrap ${
               sectorFilter === tab.id
                 ? 'bg-[#b5ff00] text-[#090a0f] shadow-sm'
+                : tab.id === 'INJURED' && injuredCount > 0
+                ? 'bg-rose-950/45 text-rose-300 border border-rose-500/45 hover:bg-rose-950/65'
                 : tab.id === 'RENEWALS' && expiringThisYearCount > 0
                 ? 'bg-amber-950/40 text-amber-300 border border-amber-400/45 hover:bg-amber-950/60'
                 : 'bg-[#151821] text-zinc-400 hover:text-white border border-white/[0.07]'
@@ -297,10 +310,9 @@ export const SquadView: React.FC<SquadViewProps> = ({
               </p>
             </div>
             <div className="text-right shrink-0 font-mono text-xs">
-              <div className="text-zinc-400">Folha Mensal / Teto</div>
+              <div className="text-zinc-400">Folha Mensal (Sem Limite)</div>
               <div className="text-white font-bold">
-                {formatCompactBRL(currentPayroll)} /{' '}
-                {formatCompactBRL(club.wageBudget)}
+                {formatCompactBRL(currentPayroll)}/mês
               </div>
             </div>
           </div>
@@ -374,7 +386,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
                         <div className="flex items-start gap-3 min-w-0">
                           <PlayerJersey
                             number={player.number}
-                            variant={player.isStarter ? 'lime' : 'white'}
+                            variant="lime"
                             size="sm"
                           />
                           <PlayerOvrBadge
@@ -672,6 +684,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
           const cond = getConditionColor(player.condition);
           const isSelectedSwap = selectedForSwapId === player.id;
           const retirementEval = evaluatePlayerRetirementProbability(player, ovr);
+          const injuryRisk = evaluatePlayerInjuryRisk(player);
 
           return (
             <div
@@ -679,16 +692,14 @@ export const SquadView: React.FC<SquadViewProps> = ({
               className={`rounded-xl border px-2.5 py-2.5 transition-all ${
                 isSelectedSwap
                   ? 'bg-[#b5ff00]/15 border-[#b5ff00]/60'
-                  : player.isStarter
-                  ? 'bg-[#14171f] border-white/[0.08]'
-                  : 'bg-[#0b0c10]/70 border-white/[0.05]'
+                  : 'bg-[#14171f] border-white/[0.08]'
               }`}
             >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <PlayerJersey
                     number={player.number}
-                    variant={player.isStarter ? 'lime' : 'white'}
+                    variant="lime"
                     size="xs"
                   />
                   <PlayerOvrBadge
@@ -698,15 +709,11 @@ export const SquadView: React.FC<SquadViewProps> = ({
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <span
-                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-extrabold shrink-0 ${
-                          player.isStarter
-                            ? 'bg-[#b5ff00] text-[#090a0f]'
-                            : 'bg-white/[0.07] text-zinc-400'
-                        }`}
-                      >
-                        {player.isStarter ? 'TIT' : 'RES'}
-                      </span>
+                      {player.isStarter && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-extrabold shrink-0 bg-[#b5ff00] text-[#090a0f]">
+                          Escalado
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={() => onInspectPlayer(player)}
@@ -718,9 +725,12 @@ export const SquadView: React.FC<SquadViewProps> = ({
                         · {player.age}a
                       </span>
                       {player.injured && (
-                        <span className="text-rose-400 flex items-center gap-0.5 text-[10px] font-mono font-bold shrink-0">
-                          <AlertTriangle className="w-3 h-3" />
-                          DM
+                        <span
+                          title={player.injuryNote || 'Lesionado'}
+                          className="text-rose-300 bg-rose-500/20 border border-rose-500/40 px-1.5 py-0.2 rounded flex items-center gap-0.5 text-[9px] font-mono font-bold shrink-0"
+                        >
+                          <AlertTriangle className="w-2.5 h-2.5" />
+                          DM{player.injuryDaysRemaining ? ` · ${player.injuryDaysRemaining}d` : ''}
                         </span>
                       )}
                     </div>
@@ -749,6 +759,22 @@ export const SquadView: React.FC<SquadViewProps> = ({
                   <span className={cond.text}>
                     Fís {Math.round(player.condition)}%
                   </span>
+                  {!player.injured &&
+                    (injuryRisk.riskLevel === 'CRITICO' ||
+                      injuryRisk.riskLevel === 'ALTO') && (
+                      <span
+                        title={injuryRisk.advice}
+                        className={`px-1 py-0.2 rounded font-mono text-[9px] font-bold border ${
+                          injuryRisk.riskLevel === 'CRITICO'
+                            ? 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                            : 'bg-amber-500/15 text-amber-300 border-amber-400/35'
+                        }`}
+                      >
+                        {injuryRisk.riskLevel === 'CRITICO'
+                          ? 'Sobrecarga'
+                          : 'Risco Lesão'}
+                      </span>
+                    )}
                   {player.exceededExpectations ? (
                     <span className="px-1 py-0.2 rounded bg-amber-400/25 text-amber-300 text-[9px] font-extrabold border border-amber-400/50">
                       ⚡+{player.recentOvrDelta ?? 0}
@@ -820,7 +846,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-white/[0.07] bg-[#0b0c10]/60 text-[11px] text-zinc-400">
-                <th className="py-3 px-2 font-medium">Status</th>
+                <th className="py-3 px-2 font-medium">Escalação</th>
                 <th className="py-3 px-2.5 font-medium">Jogador · OVR & Posição</th>
                 <th className="py-3 px-2 font-medium">Função & Tarefa</th>
                 <th className="py-3 px-2 font-medium">Condição</th>
@@ -880,6 +906,7 @@ export const SquadView: React.FC<SquadViewProps> = ({
                 const cond = getConditionColor(player.condition);
                 const isSelectedSwap = selectedForSwapId === player.id;
                 const retirementEval = evaluatePlayerRetirementProbability(player, ovr);
+                const injuryRisk = evaluatePlayerInjuryRisk(player);
 
                 return (
                   <tr
@@ -887,27 +914,25 @@ export const SquadView: React.FC<SquadViewProps> = ({
                     className={`transition-colors ${
                       isSelectedSwap
                         ? 'bg-[#b5ff00]/15'
-                        : player.isStarter
-                        ? 'bg-[#14171f] hover:bg-white/[0.04]'
-                        : 'bg-[#0b0c10]/40 hover:bg-white/[0.03] text-zinc-300'
+                        : 'bg-[#14171f] hover:bg-white/[0.04]'
                     }`}
                   >
-                    <td className="py-2.5 px-2 font-mono">
-                      <span
-                        className={
-                          player.isStarter
-                            ? 'text-[#b5ff00] font-bold'
-                            : 'text-zinc-500'
-                        }
-                      >
-                        {player.isStarter ? 'TIT' : 'RES'}
-                      </span>
+                    <td className="py-2.5 px-2 whitespace-nowrap">
+                      {player.isStarter ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#b5ff00]/15 border border-[#b5ff00]/40 text-[#b5ff00] text-[10px] font-mono font-bold">
+                          Escalado
+                        </span>
+                      ) : (
+                        <span className="text-[11px] text-zinc-400">
+                          Elenco
+                        </span>
+                      )}
                     </td>
                     <td className="py-2.5 px-2.5 min-w-[220px]">
                       <div className="flex items-center gap-2">
                         <PlayerJersey
                           number={player.number}
-                          variant={player.isStarter ? 'lime' : 'white'}
+                          variant="lime"
                           size="sm"
                         />
                         <PlayerOvrBadge
@@ -928,11 +953,16 @@ export const SquadView: React.FC<SquadViewProps> = ({
                             </span>
                             {player.injured && (
                               <span
-                                title={player.injuryNote}
-                                className="text-rose-400 flex items-center gap-0.5 text-[10px] font-mono"
+                                title={
+                                  player.injuryNote ||
+                                  `${player.injuryType || 'Lesão'} (${formatInjuryDurationShort(
+                                    player.injuryDaysRemaining ?? 7
+                                  )})`
+                                }
+                                className="px-1.5 py-0.5 rounded bg-rose-500/20 border border-rose-500/40 text-rose-300 flex items-center gap-1 text-[10px] font-mono font-bold whitespace-nowrap"
                               >
-                                <AlertTriangle className="w-3.5 h-3.5" />
-                                DM
+                                <AlertTriangle className="w-3 h-3" />
+                                DM · {player.injuryDaysRemaining ?? '?'}d
                               </span>
                             )}
                           </div>
@@ -1025,6 +1055,35 @@ export const SquadView: React.FC<SquadViewProps> = ({
                           {Math.round(player.condition)}%
                         </span>
                       </div>
+                      {player.injured ? (
+                        <div
+                          className="text-[10px] text-rose-300 font-mono truncate max-w-[125px] mt-0.5"
+                          title={player.injuryNote}
+                        >
+                          {player.injuryType || 'No DM'}
+                        </div>
+                      ) : injuryRisk.riskLevel === 'CRITICO' ||
+                        injuryRisk.riskLevel === 'ALTO' ? (
+                        <div
+                          title={`${injuryRisk.advice} (Risco: ${injuryRisk.riskPctPerMatch}%/jogo · Rendimento: -${injuryRisk.performancePenaltyPct}%)`}
+                          className={`text-[10px] font-mono font-bold mt-0.5 whitespace-nowrap ${
+                            injuryRisk.riskLevel === 'CRITICO'
+                              ? 'text-rose-400'
+                              : 'text-amber-300'
+                          }`}
+                        >
+                          {injuryRisk.riskLevel === 'CRITICO'
+                            ? `Sobrecarga (-${injuryRisk.performancePenaltyPct}%)`
+                            : `Risco alto (-${injuryRisk.performancePenaltyPct}%)`}
+                        </div>
+                      ) : (player.consecutiveMatches ?? 0) >= 3 ? (
+                        <div
+                          title={injuryRisk.advice}
+                          className="text-[10px] font-mono text-zinc-400 mt-0.5 whitespace-nowrap"
+                        >
+                          {player.consecutiveMatches}j seguidos
+                        </div>
+                      ) : null}
                     </td>
                     <td
                       className={`py-2.5 px-1.5 font-medium whitespace-nowrap ${getMoraleColor(

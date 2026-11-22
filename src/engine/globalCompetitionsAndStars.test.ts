@@ -120,6 +120,28 @@ test('Recalibrated global 60–95 OVR & rare 5★ hierarchy keeps 5★ exclusive
     `Expected Palmeiras 21yo Vitor Roque (OVR ${vitorRoqueOvr}) projection >= 4.5★, got ${vitorRoque.potentialStars}`
   );
 
+  // Verify Brazilian & South American 5★ and 4.5★ standouts (UCL, Brasileirão, Libertadores, World)
+  const findWorldPlayer = (clubId: string, namePart: string) =>
+    getRealSquadForClub(ALL_WORLD_CLUBS.find((c) => c.id === clubId)!).find((p) =>
+      p.name.includes(namePart)
+    )!;
+  assert.equal(findWorldPlayer('real-madrid', 'Endrick').potentialStars, 5);
+  assert.equal(findWorldPlayer('inter-miami', 'Suárez').potentialStars, 5);
+  assert.ok((findWorldPlayer('barcelona', 'Raphinha').potentialStars ?? 0) >= 4.5);
+  assert.ok((findWorldPlayer('real-madrid', 'Valverde').potentialStars ?? 0) >= 4.5);
+  assert.ok((findWorldPlayer('liverpool', 'Mac Allister').potentialStars ?? 0) >= 4.5);
+  assert.ok((findWorldPlayer('liverpool', 'Alisson').potentialStars ?? 0) >= 4.5);
+  assert.ok((findWorldPlayer('chelsea', 'Caicedo').potentialStars ?? 0) >= 4.5);
+  assert.ok((findWorldPlayer('man-city', 'Vitor Reis').potentialStars ?? 0) >= 4.5);
+  assert.ok((findWorldPlayer('psg', 'Beraldo').potentialStars ?? 0) >= 4.5);
+  assert.ok((findWorldPlayer('vasco', 'Rayan').potentialStars ?? 0) >= 4.5);
+  assert.ok((findWorldPlayer('sao-paulo', 'Ryan Francisco').potentialStars ?? 0) >= 4.5);
+  assert.ok((findWorldPlayer('corinthians', 'Breno Bidon').potentialStars ?? 0) >= 4.5);
+  assert.ok((findWorldPlayer('botafogo', 'Jair Cunha').potentialStars ?? 0) >= 4.5);
+  assert.ok((findWorldPlayer('internacional', 'Gabriel Carvalho').potentialStars ?? 0) >= 4.5);
+  assert.ok((findWorldPlayer('river-plate', 'Mastantuono').potentialStars ?? 0) >= 4.5);
+  assert.ok((findWorldPlayer('ind-del-valle', 'Kendry Páez').potentialStars ?? 0) >= 4.5);
+
   // Global scarcity check: 5★ must be truly rare ("fora da curva") across all world clubs
   // AND include both high-projection youths (<=22) and peak Ballon d'Or stars, plus late-bloomers
   let totalWorldPlayers = 0;

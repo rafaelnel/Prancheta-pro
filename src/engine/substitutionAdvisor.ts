@@ -1,6 +1,7 @@
 import { getRoleById } from '../data/tacticsData';
 import { LiveMatchState, NaturalPosition, Player } from '../types/football';
 import { calculatePlayerOverall, calculateRoleSuitability } from './matchEngine';
+import { evaluatePlayerInjuryRisk } from './injuryEngine';
 
 export interface SubstitutionSuggestion {
   id: string;
@@ -9,11 +10,13 @@ export interface SubstitutionSuggestion {
   starterLiveCondition: number;
   starterLiveRating: number;
   starterHasYellowCard: boolean;
+  starterInjuredInMatch?: boolean;
   starterOvr: number;
   reserveOvr: number;
   reserveCondition: number;
   roleSuitabilityPct: number;
   categoryLabel:
+    | 'Lesão em Campo'
     | 'Renovação Física'
     | 'Prevenção de Cartão'
     | 'Impulso Ofensivo'
@@ -150,9 +153,11 @@ export function generateSubstitutionSuggestions(
     const starterLiveRating = Number(
       (token ? token.rating : 6.7).toFixed(1)
     );
+    const isInjuredInMatch = Boolean(token?.injuredInMatch);
     const hasYellow = yellowCardEvents.some((e) =>
       e.text.includes(starter.name)
     );
+    const injuryRisk = evaluatePlayerInjuryRisk(starter, starterLiveCond);
 
     const starterOvr = calculatePlayerOverall(
       starter.attributes,
@@ -191,8 +196,16 @@ export function generateSubstitutionSuggestions(
         effectiveOvrDelta * 2.4 +
         (suitability - 65) * 0.3;
 
+      if (isInjuredInMatch) {
+        score += 320;
+      }
       if (starterLiveCond < 78) {
-        score += (78 - starterLiveCond) * 1.4;
+        score += (78 - starterLiveCond) * 1.55;
+      }
+      if (injuryRisk.riskLevel === 'CRITICO') {
+        score += 36;
+      } else if (injuryRisk.riskLevel === 'ALTO') {
+        score += 18;
       }
       if (hasYellow) {
         score += 24;
@@ -225,12 +238,24 @@ export function generateSubstitutionSuggestions(
         'Equilíbrio Tático';
       let reason = '';
 
-      if (hasYellow) {
+      if (isInjuredInMatch) {
+        categoryLabel = 'Lesão em Campo';
+        reason = `URGENTE: #${starter.number} ${starter.name} sofreu lesão durante o jogo e está sem condições. #${reserve.number} ${reserve.name} (${reserve.position}, ${reserveCond}% físico, OVR ${reserveOvr}) deve entrar imediatamente.`;
+      } else if (hasYellow) {
         categoryLabel = 'Prevenção de Cartão';
         reason = `#${starter.number} ${starter.name} já tem cartão amarelo (${starterLiveCond}% físico). #${reserve.number} ${reserve.name} (${reserve.position}, OVR ${reserveOvr}) entra zerado com ${reserveCond}% de fôlego.`;
-      } else if (starterLiveCond <= 79 || condGain >= 14) {
+      } else if (
+        starterLiveCond <= 75 ||
+        injuryRisk.riskLevel === 'ALTO' ||
+        injuryRisk.riskLevel === 'CRITICO' ||
+        condGain >= 14
+      ) {
         categoryLabel = 'Renovação Física';
-        reason = `#${starter.number} ${starter.name} caiu para ${starterLiveCond}% de condição física. #${reserve.number} ${reserve.name} (${reserveCond}% físico, OVR ${reserveOvr}) recompõe a intensidade na faixa de ${reserve.position}.`;
+        const riskSuffix =
+          injuryRisk.riskLevel === 'CRITICO' || injuryRisk.riskLevel === 'ALTO'
+            ? ` (risco ${injuryRisk.riskLevel === 'CRITICO' ? 'crítico' : 'alto'} de lesão e -${injuryRisk.performancePenaltyPct}% rendimento)`
+            : '';
+        reason = `#${starter.number} ${starter.name} caiu para ${starterLiveCond}% físico${riskSuffix}. #${reserve.number} ${reserve.name} (${reserveCond}% físico, OVR ${reserveOvr}) renova a intensidade em ${reserve.position}.`;
       } else if (scoreDiff < 0 && (reserve.sector === 'ATA' || reserve.position === 'MEI')) {
         categoryLabel = 'Impulso Ofensivo';
         reason = `Buscando reagir no placar (${match.homeGoals}x${match.awayGoals}), #${reserve.number} ${reserve.name} (Finalização ${reserve.attributes.finalizacao}, Velocidade ${reserve.attributes.velocidade}) aumenta a agressividade no lugar de #${starter.number} ${starter.name}.`;
@@ -252,6 +277,7 @@ export function generateSubstitutionSuggestions(
         starterLiveCondition: starterLiveCond,
         starterLiveRating,
         starterHasYellowCard: hasYellow,
+        starterInjuredInMatch: isInjuredInMatch,
         starterOvr,
         reserveOvr,
         reserveCondition: reserveCond,

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Eye, Sparkles } from 'lucide-react';
+import { AlertTriangle, Eye, Sparkles } from 'lucide-react';
 import {
   ATTRIBUTE_LABELS,
   FORMATIONS,
@@ -14,6 +14,7 @@ import {
   calculateRoleSuitability,
   calculateTeamTacticalRatings,
 } from '../engine/matchEngine';
+import { evaluatePlayerInjuryRisk } from '../engine/injuryEngine';
 import {
   AttributeKey,
   DefensiveLineType,
@@ -422,10 +423,67 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
           {draggedPlayerId && (
             <div className="flex items-center justify-between bg-[#b5ff00]/15 border border-[#b5ff00]/40 rounded-2xl px-3.5 py-2 text-xs">
               <span className="text-[#b5ff00] font-bold">
-                Arrastando camisa: solte sobre qualquer titular no campo ou reserva no banco para trocar!
+                Arrastando camisa: solte sobre qualquer jogador escalado no campo ou do elenco abaixo para trocar!
               </span>
             </div>
           )}
+
+          {(() => {
+            const injuredInXI = starters.filter((p) => p.injured);
+            const overloadedInXI = starters.filter((p) => {
+              if (p.injured) return false;
+              const risk = evaluatePlayerInjuryRisk(
+                p,
+                p.condition,
+                instructions.pressingIntensity
+              );
+              return risk.riskLevel === 'ALTO' || risk.riskLevel === 'CRITICO';
+            });
+            if (injuredInXI.length === 0 && overloadedInXI.length === 0) {
+              return null;
+            }
+            return (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-amber-950/35 border border-amber-400/40 rounded-2xl px-3.5 py-2.5 text-xs">
+                <div className="flex items-start gap-2 text-amber-100">
+                  <AlertTriangle className="w-4 h-4 text-amber-300 shrink-0 mt-0.5" />
+                  <div className="leading-snug">
+                    {injuredInXI.length > 0 && (
+                      <div className="text-rose-200 font-bold">
+                        DM na escalação:{' '}
+                        {injuredInXI
+                          .map(
+                            (p) =>
+                              `${p.name} (${p.injuryDaysRemaining ?? '?'}d)`
+                          )
+                          .join(', ')}
+                        .
+                      </div>
+                    )}
+                    {overloadedInXI.length > 0 && (
+                      <div>
+                        <strong className="text-amber-300">
+                          Controle de Carga ({overloadedInXI.length}):
+                        </strong>{' '}
+                        {overloadedInXI
+                          .map((p) => `${p.name} (${Math.round(p.condition)}%)`)
+                          .join(', ')}{' '}
+                        — desgaste alto reduz o rendimento e eleva o risco de lesão.
+                      </div>
+                    )}
+                  </div>
+                </div>
+                {onAutoPickBestXI && (
+                  <button
+                    type="button"
+                    onClick={onAutoPickBestXI}
+                    className="px-3 py-1.5 rounded-full bg-amber-400 hover:bg-amber-300 text-[#090a0f] font-extrabold text-[11px] whitespace-nowrap shrink-0 transition-colors"
+                  >
+                    Equilibrar Escalação
+                  </button>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Dark Obsidian 2D SVG Pitch with Curved Dotted Tactical Links & Jersey Icons */}
           <div className="relative w-full aspect-[4/3] sm:aspect-[16/10] bg-[#101217] rounded-[24px] overflow-hidden border border-white/10 select-none shadow-inner">
@@ -666,10 +724,16 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
                       className={`hidden sm:inline font-mono ${
                         isSelected || isDropTarget
                           ? 'text-[#090a0f]/80'
+                          : player.injured || player.condition < 65
+                          ? 'text-rose-400 font-bold'
+                          : player.condition < 75
+                          ? 'text-amber-300 font-bold'
                           : 'text-zinc-400'
                       }`}
                     >
-                      · {player.age}a
+                      {player.injured
+                        ? `· DM ${player.injuryDaysRemaining ?? ''}d`
+                        : `· ${Math.round(player.condition)}%`}
                     </span>
                   </div>
                 </button>
@@ -685,9 +749,9 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
                 <strong className="text-[#b5ff00]">
                   #{selectedPlayer?.number} {selectedPlayer?.name}
                 </strong>{' '}
-                por atleta do banco (arraste ou clique na camisa):
+                por outro jogador do elenco (arraste ou clique na camisa):
               </span>
-              <span className="font-mono">{reserves.length} Reservas disponíveis</span>
+              <span className="font-mono">{reserves.length} Outros jogadores do elenco</span>
             </div>
             <div className="flex items-center gap-2.5 overflow-x-auto pb-1.5 pt-1">
               {reserves.map((res) => {
@@ -749,9 +813,20 @@ export const TacticalBoard: React.FC<TacticalBoardProps> = ({
                     </div>
 
                     <div className="text-[10px] font-mono tabular-nums text-zinc-300 mt-1 flex items-center gap-1.5">
-                      <span>{res.age}a</span>
-                      <span className="text-zinc-600">·</span>
-                      <span className={cond.text}>{Math.round(res.condition)}%</span>
+                      {res.injured ? (
+                        <span
+                          className="text-rose-400 font-bold"
+                          title={res.injuryNote}
+                        >
+                          DM · {res.injuryDaysRemaining ?? '?'}d
+                        </span>
+                      ) : (
+                        <>
+                          <span>{res.age}a</span>
+                          <span className="text-zinc-600">·</span>
+                          <span className={cond.text}>{Math.round(res.condition)}%</span>
+                        </>
+                      )}
                       {res.exceededExpectations ? (
                         <span className="text-amber-300 font-bold" title="Superou o teto de potencial inicial!">⚡+{res.recentOvrDelta ?? 0}</span>
                       ) : res.recentOvrDelta !== undefined && res.recentOvrDelta > 0 ? (

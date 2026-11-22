@@ -291,18 +291,43 @@ export function getInternationalMarketListings(): MarketPlayerListing[] {
     const buyMultiplier = isTransferListed
       ? 0.88
       : isClubStarter
-      ? 1.15
-      : 1.0;
-    const buyFee =
-      Math.round((player.marketValue * buyMultiplier) / 250000) * 250000;
-    const loanFee =
-      !loanAvailable
-        ? Math.round((buyFee * 0.24) / 100000) * 100000
-        : isLoanListed && age <= 22
-        ? Math.round((buyFee * 0.065) / 100000) * 100000
-        : isLoanListed
-        ? Math.round((buyFee * 0.10) / 100000) * 100000
-        : Math.round((buyFee * 0.15) / 100000) * 100000;
+      ? 1.14
+      : 0.98;
+    const buyStep =
+      player.marketValue < 2_000_000
+        ? 25_000
+        : player.marketValue < 8_000_000
+        ? 50_000
+        : player.marketValue < 30_000_000
+        ? 100_000
+        : 250_000;
+    const buyFee = Math.min(
+      Math.floor((player.marketValue * 1.18) / buyStep) * buyStep,
+      Math.max(
+        Math.ceil((player.marketValue * 0.85) / buyStep) * buyStep,
+        Math.round((player.marketValue * buyMultiplier) / buyStep) * buyStep
+      )
+    );
+    const loanRatio = !loanAvailable
+      ? 0.18
+      : isLoanListed && age <= 22
+      ? 0.075
+      : isLoanListed
+      ? 0.10
+      : 0.14;
+    const loanStep =
+      player.marketValue * loanRatio < 1_000_000
+        ? 10_000
+        : player.marketValue * loanRatio < 5_000_000
+        ? 25_000
+        : 50_000;
+    const loanFee = Math.min(
+      Math.floor((player.marketValue * 0.20) / loanStep) * loanStep,
+      Math.max(
+        Math.ceil((player.marketValue * 0.06) / loanStep) * loanStep,
+        Math.round((player.marketValue * loanRatio) / loanStep) * loanStep
+      )
+    );
 
     return {
       player,
@@ -311,7 +336,7 @@ export function getInternationalMarketListings(): MarketPlayerListing[] {
       scope: 'INTERNACIONAL' as const,
       isClubStarter,
       buyFee,
-      loanFee: Math.max(200000, loanFee),
+      loanFee,
       loanAvailable,
       isTransferListed,
       isLoanListed,

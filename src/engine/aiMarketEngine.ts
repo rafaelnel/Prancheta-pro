@@ -2,7 +2,15 @@ import { getRealSquadForClub } from '../data/initialDatabase';
 import { FORMATIONS } from '../data/tacticsData';
 import { calculatePlayerOverall } from './playerOverall';
 import { assignPotentialStars } from './economyAndEvolution';
-import { MIN_GOALKEEPERS, MIN_SQUAD_SIZE, isTransferWindowOpen } from './transferEngine';
+import {
+  MIN_GOALKEEPERS,
+  MIN_SQUAD_SIZE,
+  REALISTIC_BUY_OFFER_MIN_RATIO,
+  REALISTIC_LOAN_COUNTER_MAX_RATIO,
+  clampTransferFeeToMarketCorridor,
+  getDynamicFeeStep,
+  isTransferWindowOpen,
+} from './transferEngine';
 import { formatCalendarDate, formatCompactBRL } from '../utils/formatters';
 import {
   Club,
@@ -570,16 +578,20 @@ export function simulateAiTransferWindowTick(params: {
           (p.age <= 23 && !p.isStarter && seller.reputation > buyer.reputation);
 
         const estFee = prefersLoan
-          ? Math.max(
-              150_000,
-              Math.round((p.marketValue * 0.1) / 50_000) * 50_000
-            )
-          : Math.max(
-              500_000,
-              Math.round(
-                (p.marketValue * (p.isTransferListed ? 0.88 : 1.0)) / 100_000
-              ) * 100_000
-            );
+          ? clampTransferFeeToMarketCorridor({
+              rawFee: p.marketValue * 0.10,
+              marketValue: p.marketValue,
+              dealType: 'LOAN',
+              minRatio: 0.08,
+              maxRatio: 0.15,
+            })
+          : clampTransferFeeToMarketCorridor({
+              rawFee: p.marketValue * (p.isTransferListed ? 0.88 : 1.0),
+              marketValue: p.marketValue,
+              dealType: 'BUY',
+              minRatio: 0.85,
+              maxRatio: 1.15,
+            });
 
         const estSalaryForBuyer = prefersLoan
           ? Math.round(p.salary * 0.8)
@@ -616,18 +628,22 @@ export function simulateAiTransferWindowTick(params: {
     const isLoan = chosen.isLoanDeal;
 
     const fee = isLoan
-      ? Math.max(
-          150_000,
-          Math.round((targetPlayer.marketValue * 0.1) / 50_000) * 50_000
-        )
-      : Math.max(
-          500_000,
-          Math.round(
-            (targetPlayer.marketValue *
-              (targetPlayer.isTransferListed ? 0.88 : 0.96 + rng() * 0.12)) /
-              100_000
-          ) * 100_000
-        );
+      ? clampTransferFeeToMarketCorridor({
+          rawFee: targetPlayer.marketValue * (0.09 + rng() * 0.05),
+          marketValue: targetPlayer.marketValue,
+          dealType: 'LOAN',
+          minRatio: 0.08,
+          maxRatio: 0.15,
+        })
+      : clampTransferFeeToMarketCorridor({
+          rawFee:
+            targetPlayer.marketValue *
+            (targetPlayer.isTransferListed ? 0.86 + rng() * 0.12 : 0.94 + rng() * 0.16),
+          marketValue: targetPlayer.marketValue,
+          dealType: 'BUY',
+          minRatio: 0.85,
+          maxRatio: 1.15,
+        });
 
     if (buyer.cashBalance < fee) continue;
 
@@ -848,38 +864,75 @@ export function maybeGenerateIncomingOfferForUser(params: {
   const forceBuyOnly = Boolean(p.isTransferListed && !p.isLoanListed);
   const isListed = picked.isListed;
 
-  const minBuyCashRequired = isListed
-    ? Math.max(2_500_000, p.marketValue * 0.85)
-    : Math.max(4_000_000, p.marketValue * 0.92);
+  const safeMarketValue = Math.max(50_000, p.marketValue);
+  const minBuyRatio = isListed ? REALISTIC_BUY_OFFER_MIN_RATIO : 0.90;
+  const isEliteWonderkid =
+    p.age <= 22 && picked.stars >= 4.5 && picked.ovr >= 74;
+  const maxBuyRatio = isListed ? 1.10 : isEliteWonderkid ? 1.20 : 1.16;
 
-  const minLoanCashRequired = Math.max(800_000, p.marketValue * 0.12);
+  const minCoherentBuyFee = clampTransferFeeToMarketCorridor({
+    rawFee: safeMarketValue * minBuyRatio,
+    marketValue: safeMarketValue,
+    dealType: 'BUY',
+    minRatio: minBuyRatio,
+    maxRatio: maxBuyRatio,
+  });
+  const minLoanFeeRequired = clampTransferFeeToMarketCorridor({
+    rawFee: safeMarketValue * 0.09,
+    marketValue: safeMarketValue,
+    dealType: 'LOAN',
+    minRatio: 0.08,
+    maxRatio: 0.16,
+  });
 
-  const minCashRequired = forceLoanOnly
-    ? minLoanCashRequired
-    : forceBuyOnly
-    ? minBuyCashRequired
-    : minLoanCashRequired;
+  const canClubAffordBuy = (c: Club): boolean => {
+    if (c.cashBalance >= minCoherentBuyFee) return true;
+    // Elite mega-clubs can use structured transfer financing on R$ 90M+ stars,
+    // while still paying a strictly realistic fee inside the player's market corridor.
+    return (
+      safeMarketValue >= 90_000_000 &&
+      c.reputation >= 84 &&
+      c.cashBalance >= safeMarketValue * 0.65
+    );
+  };
 
   const minRepRequired = isListed
-    ? Math.max(60, picked.ovr - 16)
-    : Math.max(66, picked.ovr - 11);
+    ? Math.max(58, picked.ovr - 16)
+    : Math.max(64, picked.ovr - 11);
 
-  // Pick a plausible interested AI club with cash, prioritizing clubs whose strategic profile needs this exact position
-  let interestedClubs = clubs.filter(
-    (c) =>
-      c.id !== userClub.id &&
-      c.cashBalance >= minCashRequired &&
-      c.reputation >= minRepRequired
-  );
-  // If no club can afford a definitive purchase of a high-OVR star (e.g. 88 OVR worth R$ 60M+),
-  // allow top-reputation clubs (reputation >= 80) backed by transfer financing so offers are never artificially tiny
-  if (interestedClubs.length === 0 && !forceLoanOnly) {
-    interestedClubs = clubs.filter(
-      (c) =>
-        c.id !== userClub.id &&
-        c.reputation >= Math.max(78, minRepRequired) &&
-        c.cashBalance >= Math.max(5_000_000, p.marketValue * 0.35)
-    );
+  const isEuropeanTarget =
+    picked.ovr >= 78 || (p.age <= 22 && picked.stars >= 4 && picked.ovr >= 71);
+  // Prevent European superclubs from making bizarre offers for low-OVR / Série B rotation players
+  const maxRepAllowed = isEuropeanTarget ? 100 : Math.min(89, picked.ovr + 14);
+
+  const meetsClubTier = (c: Club): boolean => {
+    if (c.id === userClub.id) return false;
+    if (c.reputation < minRepRequired || c.reputation > maxRepAllowed) return false;
+    if (!isEuropeanTarget && c.division === 'UCL') return false;
+    return true;
+  };
+
+  // Pick a plausible interested AI club with real affordability for the deal type
+  let interestedClubs = clubs.filter((c) => {
+    if (!meetsClubTier(c)) return false;
+    if (forceLoanOnly) return c.cashBalance >= minLoanFeeRequired;
+    if (forceBuyOnly) return canClubAffordBuy(c);
+    // For unlisted / both-listed players, allow genuine buyers or loan-eligible clubs
+    const loanEligiblePlayer = p.isLoanListed || p.age <= 24 || !p.isStarter;
+    return canClubAffordBuy(c) || (loanEligiblePlayer && c.cashBalance >= minLoanFeeRequired);
+  });
+
+  // Fallback for unlisted players if strict reputation ceiling excluded all clubs with cash
+  if (interestedClubs.length === 0) {
+    interestedClubs = clubs.filter((c) => {
+      if (c.id === userClub.id) return false;
+      if (c.reputation < minRepRequired) return false;
+      if (!isEuropeanTarget && picked.ovr < 74 && c.division === 'UCL') return false;
+      if (forceLoanOnly) return c.cashBalance >= minLoanFeeRequired;
+      if (forceBuyOnly) return canClubAffordBuy(c);
+      const loanEligiblePlayer = p.isLoanListed || p.age <= 24 || !p.isStarter;
+      return canClubAffordBuy(c) || (loanEligiblePlayer && c.cashBalance >= minLoanFeeRequired);
+    });
   }
   if (interestedClubs.length === 0) return null;
 
@@ -905,10 +958,8 @@ export function maybeGenerateIncomingOfferForUser(params: {
     clubsWithNeed.length > 0 && rng() < 0.88 ? clubsWithNeed : interestedClubs;
 
   // Equilibra propostas entre gigantes europeus (Champions League) e mercado sul-americano/global:
-  // - Destaques/promessas (OVR >= 78 ou Sub-22 4★+): forte interesse europeu (Champions) + grandes locais
-  // - Jogadores de rotação/Série B (OVR < 78 sem alto potencial jovem): prioriza mercado brasileiro/CONMEBOL/global
-  const isEuropeanTarget =
-    picked.ovr >= 78 || (p.age <= 22 && picked.stars >= 4);
+  // - Destaques/promessas (OVR >= 78 ou Sub-22 4★+ com OVR >= 71): forte interesse europeu + grandes locais
+  // - Jogadores de rotação/Série B: estritamente mercado doméstico/CONMEBOL/compatível
   const uclBuyers = buyerPool.filter((c) => c.division === 'UCL');
   const nonUclBuyers = buyerPool.filter((c) => c.division !== 'UCL');
 
@@ -916,10 +967,10 @@ export function maybeGenerateIncomingOfferForUser(params: {
   if (isEuropeanTarget && uclBuyers.length > 0 && nonUclBuyers.length > 0) {
     scopedBuyerPool = rng() < 0.56 ? uclBuyers : nonUclBuyers;
   } else if (!isEuropeanTarget && nonUclBuyers.length > 0) {
-    scopedBuyerPool = rng() < 0.88 ? nonUclBuyers : buyerPool;
+    scopedBuyerPool = nonUclBuyers;
   }
 
-  // Prefer richer clubs within the chosen market tier without repeating only the same 1-2 clubs
+  // Prefer clubs whose sporting level and budget fit the player without repeating only the richest 1-2 giants
   const sortedBuyerPool = [...scopedBuyerPool].sort(
     (a, b) => b.cashBalance - a.cashBalance
   );
@@ -932,43 +983,69 @@ export function maybeGenerateIncomingOfferForUser(params: {
   const buyerProfile =
     buyerSq.length > 0 ? analyzeAiClubMarketProfile(buyer, buyerSq) : null;
 
-  const buyerCanAffordFullBuy = buyer.cashBalance >= p.marketValue * 0.85;
+  const buyerCanAffordFullBuy = canClubAffordBuy(buyer);
 
   const isLoan = forceLoanOnly
     ? true
     : forceBuyOnly
     ? false
-    : !buyerCanAffordFullBuy && (p.isLoanListed || p.age <= 24 || !p.isStarter)
+    : !buyerCanAffordFullBuy
     ? true
     : buyerProfile?.preferredIncomingMode === 'EMPRESTIMO' && !p.isTransferListed
     ? true
     : (!p.isStarter || p.age <= 22 || p.isLoanListed) && rng() < 0.35;
 
-  const feeMultiplier = isListed ? 0.92 + rng() * 0.16 : 0.96 + rng() * 0.20;
+  let rawFee = 0;
+  if (isLoan) {
+    const loanMultiplier = 0.09 + rng() * 0.06; // 9%..15% of marketValue
+    rawFee = clampTransferFeeToMarketCorridor({
+      rawFee: safeMarketValue * loanMultiplier,
+      marketValue: safeMarketValue,
+      dealType: 'LOAN',
+      minRatio: 0.08,
+      maxRatio: 0.16,
+    });
+    if (buyer.cashBalance < rawFee) return null;
+  } else {
+    const feeMultiplier =
+      minBuyRatio + rng() * (maxBuyRatio - minBuyRatio);
+    let targetBuyFee = clampTransferFeeToMarketCorridor({
+      rawFee: safeMarketValue * feeMultiplier,
+      marketValue: safeMarketValue,
+      dealType: 'BUY',
+      minRatio: minBuyRatio,
+      maxRatio: maxBuyRatio,
+    });
 
-  // Never cap a purchase offer below 88% of the player's marketValue — OVR & marketValue dictate transfer price!
-  const targetBuyFee = Math.max(
-    750_000,
-    Math.round((p.marketValue * feeMultiplier) / 250_000) * 250_000
-  );
-  const minCoherentBuyFee = Math.max(
-    750_000,
-    Math.round((p.marketValue * 0.88) / 250_000) * 250_000
-  );
+    const isFinancedMegaDeal =
+      safeMarketValue >= 90_000_000 &&
+      buyer.reputation >= 84 &&
+      buyer.cashBalance >= safeMarketValue * 0.65;
 
-  const rawFee = isLoan
-    ? Math.max(250_000, Math.round((p.marketValue * 0.13) / 50_000) * 50_000)
-    : Math.max(
-        minCoherentBuyFee,
-        buyer.cashBalance >= targetBuyFee
-          ? targetBuyFee
-          : Math.max(
-              minCoherentBuyFee,
-              Math.round((buyer.cashBalance * 0.92) / 250_000) * 250_000
-            )
-      );
+    if (!isFinancedMegaDeal && buyer.cashBalance < targetBuyFee) {
+      if (buyer.cashBalance < minCoherentBuyFee) {
+        return null;
+      }
+      const step = getDynamicFeeStep(safeMarketValue, false);
+      const maxAffordable = Math.floor(buyer.cashBalance / step) * step;
+      if (maxAffordable < minCoherentBuyFee) {
+        return null;
+      }
+      targetBuyFee = clampTransferFeeToMarketCorridor({
+        rawFee: maxAffordable,
+        marketValue: safeMarketValue,
+        dealType: 'BUY',
+        minRatio: minBuyRatio,
+        maxRatio: maxBuyRatio,
+      });
+      if (buyer.cashBalance < targetBuyFee) {
+        return null;
+      }
+    }
+    rawFee = targetBuyFee;
+  }
 
-  if (rawFee < 250_000) return null;
+  if (rawFee <= 0) return null;
 
   const reasonParts: string[] = [];
   if (p.isTransferListed && p.isLoanListed) {
@@ -1072,7 +1149,7 @@ export function createOfferInboxMessage(
           )}${marketValText}.`,
     ],
     bulletPoints: [
-      `Atleta: ${offer.playerName} (${offer.playerPosition} · ${offer.playerAge} anos · ${offer.playerIsStarter ? 'Titular' : 'Reserva'})`,
+      `Atleta: ${offer.playerName} (${offer.playerPosition} · ${offer.playerAge} anos · ${offer.playerIsStarter ? 'Escalado' : 'Elenco'})`,
       `Avaliação & Potencial: OVR ${offer.playerOvr}${potentialText} (${offer.playerPotentialStars}★)${marketValText}`,
       ...(offer.playerSalary
         ? [
@@ -1095,6 +1172,46 @@ export type IncomingOfferAction =
   | 'REJECT'
   | 'COUNTER_15'
   | 'COUNTER_30';
+
+export function computeIncomingCounterFee(
+  offer: IncomingTransferOffer,
+  action: IncomingOfferAction,
+  liveMarketValue?: number
+): number {
+  if (action === 'ACCEPT' || action === 'REJECT') {
+    return offer.offeredFee;
+  }
+  const multiplier = action === 'COUNTER_30' ? 1.3 : 1.15;
+  const referenceMv = Math.max(
+    50_000,
+    liveMarketValue && liveMarketValue > 0
+      ? liveMarketValue
+      : offer.playerMarketValue || offer.offeredFee
+  );
+  const isLoan = offer.dealType === 'LOAN';
+  const maxRatio = isLoan
+    ? action === 'COUNTER_30'
+      ? REALISTIC_LOAN_COUNTER_MAX_RATIO
+      : 0.19
+    : action === 'COUNTER_30'
+    ? 1.32
+    : 1.25;
+  const maxAllowed = referenceMv * maxRatio;
+  const rawRequested = offer.offeredFee * multiplier;
+  const step = getDynamicFeeStep(
+    isLoan ? Math.max(rawRequested, referenceMv * 0.12) : referenceMv,
+    isLoan
+  );
+  const capped = Math.min(rawRequested, Math.max(offer.offeredFee + step, maxAllowed));
+  let rounded = Math.round(capped / step) * step;
+  if (rounded <= offer.offeredFee) {
+    rounded = offer.offeredFee + step;
+  }
+  if (rounded > maxAllowed && offer.offeredFee < maxAllowed) {
+    rounded = Math.max(offer.offeredFee + step, Math.floor(maxAllowed / step) * step);
+  }
+  return rounded;
+}
 
 export function resolveIncomingOfferAction(params: {
   offer: IncomingTransferOffer;
@@ -1174,17 +1291,32 @@ export function resolveIncomingOfferAction(params: {
   }
 
   const buyerClub = clubs.find((c) => c.id === offer.fromClubId);
-  const multiplier =
-    action === 'COUNTER_30' ? 1.3 : action === 'COUNTER_15' ? 1.15 : 1.0;
-  const requestedFee = Math.round((offer.offeredFee * multiplier) / 50_000) * 50_000;
+  const referenceMv = Math.max(50_000, targetPlayer.marketValue);
+  const requestedFee = computeIncomingCounterFee(offer, action, referenceMv);
 
   if (action === 'COUNTER_15' || action === 'COUNTER_30') {
     const canBuyerPay = buyerClub ? buyerClub.cashBalance >= requestedFee : true;
+    const ratioVsMarket = requestedFee / referenceMv;
+    const exceedsRealisticCeiling =
+      offer.dealType === 'LOAN' ? ratioVsMarket > 0.23 : ratioVsMarket > 1.33;
+    const marketPremiumPenalty =
+      offer.dealType === 'LOAN'
+        ? ratioVsMarket > 0.18
+          ? 0.22
+          : 0
+        : ratioVsMarket > 1.24
+        ? 0.28
+        : ratioVsMarket > 1.18
+        ? 0.12
+        : 0;
     const listedBonus =
-      targetPlayer.isTransferListed || targetPlayer.isLoanListed ? 0.14 : 0;
-    const baseAcceptProb =
-      (action === 'COUNTER_15' ? 0.68 : 0.42) + listedBonus;
-    const isAccepted = canBuyerPay && rng() < baseAcceptProb;
+      targetPlayer.isTransferListed || targetPlayer.isLoanListed ? 0.10 : 0;
+    const baseAcceptProb = Math.max(
+      0.08,
+      (action === 'COUNTER_15' ? 0.66 : 0.38) + listedBonus - marketPremiumPenalty
+    );
+    const isAccepted =
+      !exceedsRealisticCeiling && canBuyerPay && rng() < baseAcceptProb;
 
     if (!isAccepted) {
       const rejectedRec: TransferRecord = {
@@ -1283,6 +1415,13 @@ export function resolveIncomingOfferAction(params: {
     return c;
   });
 
+  const counterPct =
+    offer.offeredFee > 0
+      ? Math.max(1, Math.round(((requestedFee - offer.offeredFee) / offer.offeredFee) * 100))
+      : action === 'COUNTER_30'
+      ? 30
+      : 15;
+
   const record: TransferRecord = {
     id: `tr-offer-acc-${Date.now()}`,
     date: dateLabel,
@@ -1297,9 +1436,7 @@ export function resolveIncomingOfferAction(params: {
     note:
       action === 'ACCEPT'
         ? `Proposta aceita de ${offer.fromClubName}.`
-        : `Contraproposta (+${action === 'COUNTER_30' ? '30%' : '15%'}) aceita por ${
-            offer.fromClubName
-          }.`,
+        : `Contraproposta (+${counterPct}%) aceita por ${offer.fromClubName}.`,
   };
 
   return {

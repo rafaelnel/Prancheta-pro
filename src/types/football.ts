@@ -75,6 +75,19 @@ export interface TacticalRoleDefinition {
 
 export type PotentialStars = 1 | 1.5 | 2 | 2.5 | 3 | 3.5 | 4 | 4.5 | 5;
 
+export type InjurySeverity = 'LEVE' | 'MODERADA' | 'GRAVE' | 'MUITO_GRAVE';
+
+export interface InMatchInjuryRecord {
+  playerId: string;
+  playerName: string;
+  team: 'HOME' | 'AWAY';
+  minute: number;
+  injuryType: string;
+  severity: InjurySeverity;
+  days: number;
+  wasFatigued: boolean;
+}
+
 export interface PlayerSeasonStats {
   matches: number;
   goals: number;
@@ -105,6 +118,11 @@ export interface Player {
   assignedDuty: TacticalDuty;
   injured: boolean;
   injuryNote?: string;
+  injuryType?: string;
+  injurySeverity?: InjurySeverity;
+  injuryDaysRemaining?: number;
+  injuryTotalDays?: number;
+  consecutiveMatches?: number;
   seasonStats: PlayerSeasonStats;
   contractType?: 'DEFINITIVO' | 'EMPRESTADO';
   contractYearsRemaining?: number; // 1 = expires at end of current season; 2 = eligible for early renewal
@@ -583,6 +601,7 @@ export type MatchEventType =
   | 'SUBSTITUICAO'
   | 'PASSE_CHAVE'
   | 'DESARME'
+  | 'LESAO'
   | 'INICIO'
   | 'INTERVALO'
   | 'FIM';
@@ -597,6 +616,9 @@ export interface MatchEvent {
   assistName?: string;
   playerId?: string;
   xGAdded?: number;
+  injuryType?: string;
+  injuryDays?: number;
+  injurySeverity?: InjurySeverity;
 }
 
 export interface PitchTokenState {
@@ -615,6 +637,7 @@ export interface PitchTokenState {
   roleCode: string;
   condition: number;
   rating: number;
+  injuredInMatch?: boolean;
 }
 
 export type MatchPhase =
@@ -672,6 +695,7 @@ export interface LiveMatchState {
   substitutionsMade: number;
   maxSubstitutions: number;
   roundProcessed: boolean;
+  inMatchInjuries?: InMatchInjuryRecord[];
 }
 
 export interface SponsorshipContract {
@@ -719,6 +743,7 @@ export interface ClubFinanceLedger {
   seasonTransferSpend: number;
   seasonPrizeRevenue: number;
   seasonSponsorshipRevenue: number;
+  seasonPayrollExpense?: number;
   seasonOperationalExpense: number;
   seasonYouthAcademySpend?: number;
   lastMatchGateRevenue: number;
@@ -775,12 +800,21 @@ export interface PlayerEvolutionReportItem {
   playerId: string;
   playerName: string;
   position: NaturalPosition;
+  shirtNumber?: number;
   oldAge: number;
   newAge: number;
   oldOvr: number;
   newOvr: number;
   deltaOvr: number;
+  oldPotentialStars?: PotentialStars;
   potentialStars: PotentialStars;
+  oldMarketValue?: number;
+  newMarketValue?: number;
+  matchesPlayed?: number;
+  goals?: number;
+  assists?: number;
+  avgRating?: number;
+  isLoanedOut?: boolean;
   reasonNote: string;
   exceededExpectations?: boolean;
   breakoutBonusOvr?: number;
@@ -793,6 +827,17 @@ export interface PlayerEvolutionReportItem {
     | 'ESTAGNADO'
     | 'DECLINIO_TECNICO'
     | 'REGRESSAO_FISICA';
+}
+
+export interface NewSeasonEvolutionReport {
+  fromYear: number;
+  toYear: number;
+  clubId: string;
+  clubName: string;
+  items: PlayerEvolutionReportItem[];
+  retiredPlayers: RetiredPlayerReportItem[];
+  squadAvgOvrBefore: number;
+  squadAvgOvrAfter: number;
 }
 
 export interface RetiredPlayerReportItem {
@@ -939,6 +984,7 @@ export interface CareerSaveData {
   youthAcademy?: YouthAcademyState;
   seasonHistory?: SeasonArchiveEntry[];
   seasonEndReport?: SeasonEndReport | null;
+  newSeasonEvolutionReport?: NewSeasonEvolutionReport | null;
   midSeasonEvolutionProcessedYear?: number;
   negotiationStates?: Record<string, PlayerNegotiationState>;
   globalScaleVersion?: number;

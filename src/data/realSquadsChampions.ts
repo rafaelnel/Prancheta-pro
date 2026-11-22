@@ -68,7 +68,7 @@ export const REAL_SQUADS_CHAMPIONS: Record<string, RealPlayerSeed[]> = {
     // 7 Reservas & Joias
     [18, 'Stefan Ortega', 33, 'Alemanha', 'GOL', 16.9],
     [5, 'John Stones', 31, 'Inglaterra', 'ZAG', 17.3],
-    [22, 'Vitor Reis', 20, 'Brasil', 'ZAG', 16.1, { desarme: 17, posicionamento: 17 }],
+    [22, 'Vitor Reis', 20, 'Brasil', 'ZAG', 17.0, { desarme: 18, posicionamento: 18, impulsao: 17, forca: 17 }],
     [14, 'Nico González', 24, 'Espanha', 'VOL', 16.9],
     [20, 'Bernardo Silva', 31, 'Portugal', 'MC', 17.7, { primeiroToque: 19, indiceDeTrabalho: 19, drible: 19 }],
     [11, 'Jérémy Doku', 23, 'Bélgica', 'PE', 17.2, { drible: 20, aceleracao: 20 }],
@@ -136,7 +136,7 @@ export const REAL_SQUADS_CHAMPIONS: Record<string, RealPlayerSeed[]> = {
     [29, 'Bradley Barcola', 23, 'França', 'ATA', 17.4, { velocidade: 19, drible: 19, aceleracao: 19 }],
     // 7 Reservas & Joias
     [39, 'Matvey Safonov', 27, 'Rússia', 'GOL', 16.7],
-    [35, 'Lucas Beraldo', 22, 'Brasil', 'ZAG', 16.5, { passe: 18, posicionamento: 17 }],
+    [35, 'Lucas Beraldo', 22, 'Brasil', 'ZAG', 16.9, { passe: 18, posicionamento: 18 }],
     [21, 'Lucas Hernández', 30, 'França', 'ZAG', 17.1],
     [33, 'Warren Zaïre-Emery', 20, 'França', 'MC', 17.1, { resistencia: 18, forca: 18 }],
     [14, 'Désiré Doué', 20, 'França', 'MEI', 17.2, { drible: 19, agilidade: 19 }],

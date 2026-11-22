@@ -12,8 +12,17 @@ import {
 } from '../data/cupFactory';
 import { calculatePlayerOverall } from './playerOverall';
 import {
+  applyInjuryToPlayer,
+  advanceSquadRecoveryByDays,
+  ensureHealthyStartingLineup,
+  evaluatePlayerInjuryRisk,
+  pickWeightedInjury,
+} from './injuryEngine';
+import {
   applyAntiInflationSeasonMaintenance,
+  applyPostMatchProbabilisticEvolution,
   calculateDynamicSponsorship,
+  calculateOperationalCost,
   evaluatePlayerRetirementProbability,
   processSeasonEvolutionAndAging,
 } from './economyAndEvolution';
@@ -33,6 +42,7 @@ import {
   LibertadoresState,
   LiveMatchState,
   MundialState,
+  NewSeasonEvolutionReport,
   Player,
   PlayerEvolutionReportItem,
   RoundFixture,
@@ -67,12 +77,36 @@ export function attributeAiRoundPlayerStats(
     const roster = updated[clubId];
     if (!roster || roster.length === 0) return;
 
-    // Pick 11 starters + up to 3 subs
-    const starters = roster.filter((p) => p.isStarter).slice(0, 11);
+    // Advance AI squad recovery (~5 days between rounds) & ensure injured players are rotated out
+    const { updatedSquad: recoveredRoster } = advanceSquadRecoveryByDays(roster, 5);
+    const { updatedSquad: healthyRoster } = ensureHealthyStartingLineup(recoveredRoster);
+
+    // Pick 11 healthy/freshest starters (AI rotates heavily fatigued players <70% when fresh option exists)
+    const healthyPlayers = healthyRoster.filter((p) => !p.injured);
+    const poolForXI = healthyPlayers.length >= 11 ? healthyPlayers : healthyRoster;
+    const starters = [...poolForXI]
+      .sort((a, b) => {
+        const aStarterBonus = a.isStarter ? 4 : 0;
+        const bStarterBonus = b.isStarter ? 4 : 0;
+        const aFatiguePen = a.condition < 70 ? -14 : a.condition < 78 ? -5 : 0;
+        const bFatiguePen = b.condition < 70 ? -14 : b.condition < 78 ? -5 : 0;
+        return (
+          calculatePlayerOverall(b.attributes, b.position) +
+          bStarterBonus +
+          bFatiguePen -
+          (calculatePlayerOverall(a.attributes, a.position) +
+            aStarterBonus +
+            aFatiguePen)
+        );
+      })
+      .slice(0, 11);
     const activeSet =
-      starters.length >= 11 ? starters : roster.slice(0, Math.min(11, roster.length));
-    const bench = roster.filter((p) => !activeSet.some((a) => a.id === p.id)).slice(0, 3);
+      starters.length >= 11 ? starters : healthyRoster.slice(0, Math.min(11, healthyRoster.length));
+    const bench = healthyRoster
+      .filter((p) => !p.injured && !activeSet.some((a) => a.id === p.id))
+      .slice(0, 3);
     const participants = [...activeSet, ...bench];
+    const starterIds = new Set(activeSet.map((p) => p.id));
     const participantIds = new Set(participants.map((p) => p.id));
 
     // Distribute goals weighted towards attackers/midfielders
@@ -142,11 +176,28 @@ export function attributeAiRoundPlayerStats(
       goalsScored > goalsConceded ? 0.38 : goalsScored === goalsConceded ? 0.05 : -0.28;
     const cleanSheetBonus = goalsConceded === 0 ? 0.35 : -Math.min(0.45, goalsConceded * 0.14);
 
-    updated[clubId] = roster.map((p) => {
-      if (!participantIds.has(p.id)) return p;
+    let aiTeamInjuriesThisMatch = 0;
+
+    const afterMatchRoster = healthyRoster.map((p) => {
+      if (!participantIds.has(p.id)) {
+        // Rested AI player recovers extra freshness & resets consecutive match streak
+        return p.injured
+          ? p
+          : {
+              ...p,
+              condition: Math.min(99, p.condition + 6),
+              consecutiveMatches: 0,
+            };
+      }
       const gCount = goalScorerIds.filter((id) => id === p.id).length;
       const aCount = assistIds.filter((id) => id === p.id).length;
       const ovr = calculatePlayerOverall(p.attributes, p.position);
+      const isFullMatch = starterIds.has(p.id);
+      const fatigueDrain =
+        p.sector === 'GOL' ? 6 : isFullMatch ? Math.round(19 + rng() * 8) : Math.round(8 + rng() * 5);
+      const nextCond = Math.max(38, p.condition - fatigueDrain);
+      const nextStreak = isFullMatch ? (p.consecutiveMatches ?? 0) + 1 : p.consecutiveMatches ?? 0;
+
       const baseMatchRating =
         6.55 +
         (ovr - 74) * 0.025 +
@@ -154,6 +205,7 @@ export function attributeAiRoundPlayerStats(
         (p.sector === 'GOL' || p.sector === 'DEF' ? cleanSheetBonus : 0) +
         gCount * 0.65 +
         aCount * 0.4 +
+        (p.condition < 70 ? -0.45 : 0) +
         (rng() - 0.5) * 0.45;
       const clampedRating = Math.max(5.2, Math.min(9.6, baseMatchRating));
 
@@ -163,8 +215,10 @@ export function attributeAiRoundPlayerStats(
         ((p.seasonStats.avgRating * prevM + clampedRating) / nextM).toFixed(2)
       );
 
-      return {
+      let updatedPlayer: Player = {
         ...p,
+        condition: nextCond,
+        consecutiveMatches: nextStreak,
         seasonStats: {
           ...p.seasonStats,
           matches: nextM,
@@ -173,7 +227,29 @@ export function attributeAiRoundPlayerStats(
           avgRating: nextAvg,
         },
       };
+
+      // Roll AI match injury based on workload & condition (cap 1 per AI match)
+      if (aiTeamInjuriesThisMatch < 1 && !updatedPlayer.injured) {
+        const risk = evaluatePlayerInjuryRisk(updatedPlayer, nextCond);
+        if (rng() < (risk.riskPctPerMatch / 100) * (isFullMatch ? 0.9 : 0.35)) {
+          aiTeamInjuriesThisMatch += 1;
+          const rolled = pickWeightedInjury(nextCond < 74 || nextStreak >= 3, rng);
+          updatedPlayer = applyInjuryToPlayer(updatedPlayer, rolled);
+        }
+      }
+
+      return applyPostMatchProbabilisticEvolution({
+        player: updatedPlayer,
+        matchRating: clampedRating,
+        goals: gCount,
+        assists: aCount,
+        clubReputation: Math.min(95, Math.max(66, Math.round(ovr))),
+        division: 'A',
+        rng,
+      });
     });
+
+    updated[clubId] = ensureHealthyStartingLineup(afterMatchRoster).updatedSquad;
   };
 
   for (const fix of completedFixtures) {
@@ -269,6 +345,52 @@ export function buildSeasonAwardsSummary(params: {
   };
 }
 
+/**
+ * Premiação oficial por colocação final do Brasileirão Série A (em Reais):
+ * 1º: R$ 48,1M · 2º: R$ 45,7M · 3º: R$ 43,4M · 4º: R$ 40,9M
+ * Caindo progressivamente até R$ 16,3M no 16º lugar.
+ * 17º ao 20º (rebaixados): R$ 0 de bônus por colocação/desempenho.
+ */
+export const SERIE_A_END_PRIZES: ReadonlyArray<number> = [
+  48_100_000, // 1º
+  45_700_000, // 2º
+  43_400_000, // 3º
+  40_900_000, // 4º
+  38_500_000, // 5º
+  36_100_000, // 6º
+  33_700_000, // 7º
+  31_300_000, // 8º
+  28_800_000, // 9º
+  26_400_000, // 10º
+  24_000_000, // 11º
+  21_600_000, // 12º
+  19_900_000, // 13º
+  18_700_000, // 14º
+  17_500_000, // 15º
+  16_300_000, // 16º
+  0, // 17º (rebaixado)
+  0, // 18º (rebaixado)
+  0, // 19º (rebaixado)
+  0, // 20º (rebaixado)
+];
+
+/**
+ * Premiação oficial por colocação final do Brasileirão Série B (em Reais):
+ * 1º (Campeão): R$ 3,5M · 2º ao 4º (G-4): R$ 1,35M cada · 5º ao 20º: R$ 1M cada.
+ */
+export function getLeagueEndPrizeMoney(
+  division: 'A' | 'B',
+  rank: number
+): number {
+  const safeRank = Math.max(1, Math.min(20, Math.round(rank)));
+  if (division === 'A') {
+    return SERIE_A_END_PRIZES[safeRank - 1] ?? 0;
+  }
+  if (safeRank === 1) return 3_500_000;
+  if (safeRank <= 4) return 1_350_000;
+  return 1_000_000;
+}
+
 export function buildSeasonEndSummary(params: {
   seasonYear: number;
   clubs: Club[];
@@ -347,25 +469,7 @@ export function buildSeasonEndSummary(params: {
   );
   const userFinalPoints = userTable[userRank - 1]?.points ?? 0;
 
-  let userSeasonPrize = 0;
-  if (userDiv === 'A') {
-    // Premiação oficial escalonada do Brasileirão Série A (R$ 90M ao Campeão até cota de consolação ao Z-4)
-    if (userRank === 1) userSeasonPrize = 90_000_000;
-    else if (userRank === 2) userSeasonPrize = 82_000_000;
-    else if (userRank === 3) userSeasonPrize = 76_000_000;
-    else if (userRank === 4) userSeasonPrize = 70_000_000;
-    else if (userRank <= 6) userSeasonPrize = 62_000_000;
-    else if (userRank <= 8) userSeasonPrize = 52_000_000;
-    else if (userRank <= 12) userSeasonPrize = 40_000_000;
-    else if (userRank <= 16) userSeasonPrize = 30_000_000;
-    else userSeasonPrize = 15_000_000;
-  } else {
-    // Premiação e bônus de acesso da Série B
-    if (userRank === 1) userSeasonPrize = 28_000_000;
-    else if (userRank <= 4) userSeasonPrize = 19_000_000;
-    else if (userRank <= 10) userSeasonPrize = 11_500_000;
-    else userSeasonPrize = 7_500_000;
-  }
+  const userSeasonPrize = getLeagueEndPrizeMoney(userDiv, userRank);
 
   const awards = buildSeasonAwardsSummary({
     clubs,
@@ -472,6 +576,7 @@ export function executeNewSeasonRollover(params: {
   nextMessages: InboxMessage[];
   nextDivision: 'A' | 'B';
   nextYouthAcademy: import('../types/football').YouthAcademyState;
+  newSeasonEvolutionReport: NewSeasonEvolutionReport;
 } {
   const {
     currentYear,
@@ -598,18 +703,17 @@ export function executeNewSeasonRollover(params: {
     nextYear,
   });
 
-  // 4. Apply Anti-Inflation seasonal operational maintenance & cash/wage caps across ALL clubs
-  let userMaintenanceCost = 0;
+  // 4. Apply Anti-Inflation seasonal reserve guardrail & UCL/WORLD commercial operational costs across ALL clubs
   const maintainedClubs = evoResult.updatedClubs.map((club) => {
     const sq =
       club.id === userClubId
         ? contractRollover.updatedUserSquad
         : contractRollover.updatedAiSquads[club.id] || [];
-    const { updatedClub, annualMaintenanceCost } =
-      applyAntiInflationSeasonMaintenance(club, sq);
-    if (club.id === userClubId) {
-      userMaintenanceCost = annualMaintenanceCost;
-    }
+    const { updatedClub } = applyAntiInflationSeasonMaintenance(
+      club,
+      sq,
+      club.id === userClubId
+    );
     return updatedClub;
   });
 
@@ -618,7 +722,7 @@ export function executeNewSeasonRollover(params: {
   const nextDivision: 'A' | 'B' = updatedUserClub.division === 'B' ? 'B' : 'A';
   const otherDivision: 'A' | 'B' = nextDivision === 'A' ? 'B' : 'A';
 
-  // 5. Dynamic Sponsorship for new season
+  // 5. Dynamic Sponsorship for new season (with 30% operational cost applied to all Brazilian clubs)
   const avgUserOvr =
     contractRollover.updatedUserSquad.reduce(
       (s, p) => s + calculatePlayerOverall(p.attributes, p.position),
@@ -629,13 +733,35 @@ export function executeNewSeasonRollover(params: {
     avgUserOvr,
     nextYear
   );
-
-  // Credit opening sponsorship installment
-  const clubsAfterSponsor = maintainedClubs.map((c) =>
-    c.id === userClubId
-      ? { ...c, cashBalance: c.cashBalance + newSponsorship.monthlyInstallment }
-      : c
+  const openingSponsorOpCost = calculateOperationalCost(
+    newSponsorship.monthlyInstallment
   );
+  const openingSponsorNet =
+    newSponsorship.monthlyInstallment - openingSponsorOpCost;
+
+  // Credit opening sponsorship installment net of 30% operational cost for user and all Série A/B AI clubs
+  const clubsAfterSponsor = maintainedClubs.map((c) => {
+    if (c.id === userClubId) {
+      return { ...c, cashBalance: c.cashBalance + openingSponsorNet };
+    }
+    if (c.division === 'A' || c.division === 'B') {
+      const sq = contractRollover.updatedAiSquads[c.id] || [];
+      const avgOvr =
+        sq.length > 0
+          ? sq.reduce(
+              (sum, p) => sum + calculatePlayerOverall(p.attributes, p.position),
+              0
+            ) / sq.length
+          : Math.max(66, c.reputation - 5);
+      const aiSp = calculateDynamicSponsorship(c, avgOvr, nextYear);
+      const aiOpCost = calculateOperationalCost(aiSp.monthlyInstallment);
+      return {
+        ...c,
+        cashBalance: c.cashBalance + aiSp.monthlyInstallment - aiOpCost,
+      };
+    }
+    return c;
+  });
   const finalUserClub =
     clubsAfterSponsor.find((c) => c.id === userClubId) || updatedUserClub;
 
@@ -646,7 +772,8 @@ export function executeNewSeasonRollover(params: {
     seasonTransferSpend: 0,
     seasonPrizeRevenue: 0,
     seasonSponsorshipRevenue: newSponsorship.monthlyInstallment,
-    seasonOperationalExpense: userMaintenanceCost,
+    seasonPayrollExpense: 0,
+    seasonOperationalExpense: openingSponsorOpCost,
     lastMatchGateRevenue: 0,
     lastMatchAttendance: 0,
     sponsorshipContract: newSponsorship,
@@ -746,8 +873,52 @@ export function executeNewSeasonRollover(params: {
   );
 
   const sortedEvoHighlights = [...evoResult.userEvolutionReport].sort(
-    (a, b) => Math.abs(b.deltaOvr) - Math.abs(a.deltaOvr)
+    (a, b) =>
+      Math.abs(b.deltaOvr) - Math.abs(a.deltaOvr) ||
+      b.deltaOvr - a.deltaOvr ||
+      b.newOvr - a.newOvr
   );
+
+  const squadOnlyEvoItems = evoResult.userEvolutionReport.filter(
+    (item) => !item.isLoanedOut
+  );
+  const avgBasis =
+    squadOnlyEvoItems.length > 0 ? squadOnlyEvoItems : evoResult.userEvolutionReport;
+  const squadAvgOvrBefore =
+    avgBasis.length > 0
+      ? Number(
+          (
+            avgBasis.reduce((sum, item) => sum + item.oldOvr, 0) /
+            avgBasis.length
+          ).toFixed(1)
+        )
+      : 0;
+  const squadAvgOvrAfter =
+    avgBasis.length > 0
+      ? Number(
+          (
+            avgBasis.reduce((sum, item) => sum + item.newOvr, 0) /
+            avgBasis.length
+          ).toFixed(1)
+        )
+      : 0;
+
+  const newSeasonEvolutionReport: NewSeasonEvolutionReport = {
+    fromYear: currentYear,
+    toYear: nextYear,
+    clubId: finalUserClub.id,
+    clubName: finalUserClub.shortName,
+    items: [...evoResult.userEvolutionReport].sort(
+      (a, b) =>
+        b.deltaOvr - a.deltaOvr ||
+        Number(Boolean(b.exceededExpectations)) -
+          Number(Boolean(a.exceededExpectations)) ||
+        b.newOvr - a.newOvr
+    ),
+    retiredPlayers: evoResult.retiredUserPlayers,
+    squadAvgOvrBefore,
+    squadAvgOvrAfter,
+  };
 
   const upcomingRenewals = getRenewalEligiblePlayers(
     finalUserSquad,
@@ -929,14 +1100,31 @@ export function executeNewSeasonRollover(params: {
       senderRole: 'Análise de Desempenho',
       subject: `Relatório de Evolução do Elenco (${currentYear} → ${nextYear})`,
       category: 'Tática',
-      priority: 'normal',
+      priority:
+        newSeasonEvolutionReport.items.filter((i) => i.deltaOvr > 0).length >=
+        newSeasonEvolutionReport.items.filter((i) => i.deltaOvr < 0).length
+          ? 'positive'
+          : 'normal',
       read: false,
       body: [
-        `Todos os atletas completaram +1 ano de idade e passaram pela reavaliação técnica, tática e física de virada de temporada.`,
-        sortedEvoHighlights[0]
-          ? `Principal movimentação no elenco: ${sortedEvoHighlights[0].playerName} (${sortedEvoHighlights[0].deltaOvr >= 0 ? '+' : ''}${sortedEvoHighlights[0].deltaOvr} OVR, agora ${sortedEvoHighlights[0].newOvr}).`
-          : 'Elenco avaliado e pronto para a pré-temporada.',
+        `Todos os atletas completaram +1 ano de idade e passaram pela reavaliação técnica, tática e física de início da temporada ${nextYear}. Média do elenco: ${squadAvgOvrBefore.toFixed(1)} → ${squadAvgOvrAfter.toFixed(1)} OVR.`,
+        `Resumo geral: ${
+          newSeasonEvolutionReport.items.filter((i) => i.deltaOvr > 0).length
+        } evoluíram · ${
+          newSeasonEvolutionReport.items.filter((i) => i.deltaOvr === 0).length
+        } estáveis · ${
+          newSeasonEvolutionReport.items.filter((i) => i.deltaOvr < 0).length
+        } regrediram.`,
       ],
+      bulletPoints: sortedEvoHighlights.slice(0, 6).map((evo) => {
+        const sign = evo.deltaOvr > 0 ? `+${evo.deltaOvr}` : `${evo.deltaOvr}`;
+        const starShift =
+          evo.oldPotentialStars !== undefined &&
+          evo.oldPotentialStars !== evo.potentialStars
+            ? ` · Potencial ${evo.oldPotentialStars}★→${evo.potentialStars}★`
+            : '';
+        return `${evo.playerName} (${evo.position} · ${evo.newAge}a): ${evo.oldOvr} → ${evo.newOvr} OVR (${sign})${starShift} — ${evo.reasonNote}`;
+      }),
       actionLabel: 'Ver Elenco',
       actionTargetTab: 'squad',
     },
@@ -970,6 +1158,7 @@ export function executeNewSeasonRollover(params: {
     nextMessages,
     nextDivision,
     nextYouthAcademy,
+    newSeasonEvolutionReport,
   };
 }
 

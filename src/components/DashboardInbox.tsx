@@ -1,18 +1,15 @@
 import React from 'react';
 import {
-  Mail,
-  MailOpen,
-  CheckCircle2,
   ArrowRight,
-  ArrowLeft,
   Trophy,
-  UserCheck,
   MapPin,
   Sliders,
   Play,
   Target,
   AlertTriangle,
   FastForward,
+  TrendingUp,
+  Handshake,
 } from 'lucide-react';
 import {
   Club,
@@ -26,8 +23,6 @@ import {
   StandingsRow,
 } from '../types/football';
 import { IncomingOfferAction } from '../engine/aiMarketEngine';
-import { getTransferWindowStatus } from '../engine/transferEngine';
-import { formatCompactBRL } from '../utils/formatters';
 import { calculateTeamTacticalRatings } from '../engine/matchEngine';
 import {
   generateOpponentScoutingSummary,
@@ -35,7 +30,6 @@ import {
 } from '../engine/opponentScout';
 import { ClubBadge } from './ClubBadge';
 import { PlayerOvrBadge } from './PlayerJersey';
-import { IncomingOfferCard } from './IncomingOfferCard';
 
 interface DashboardInboxProps {
   messages: InboxMessage[];
@@ -64,14 +58,12 @@ interface DashboardInboxProps {
     offerId: string,
     action: IncomingOfferAction
   ) => void;
+  hasNewSeasonEvolutionReport?: boolean;
+  onOpenNewSeasonEvolutionReport?: () => void;
 }
 
 export const DashboardInbox: React.FC<DashboardInboxProps> = ({
-  messages,
-  onMarkMessageRead,
   onNavigate,
-  onInspectPlayer,
-  onQuickSwapFatiguedPlayer,
   userClub,
   nextFixture,
   opponentClub,
@@ -87,28 +79,12 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   onGoToMatch,
   onQuickSimulateMatch,
   pendingOffers = [],
-  dayOffset = 0,
-  seasonYear = 2026,
-  onResolveIncomingOffer,
+  hasNewSeasonEvolutionReport = false,
+  onOpenNewSeasonEvolutionReport,
 }) => {
-  const windowStatus = getTransferWindowStatus(dayOffset);
-  const [selectedMsgId, setSelectedMsgId] = React.useState<string>(
-    messages[0]?.id || ''
-  );
-  const [mobileReadingOpen, setMobileReadingOpen] =
-    React.useState<boolean>(false);
-  const [matchCardTab, setMatchCardTab] = React.useState<'PROJECTION' | 'SCOUT'>(
-    'PROJECTION'
-  );
-
-  const selectedMessage =
-    messages.find((m) => m.id === selectedMsgId) || messages[0];
-
-  const handleSelectMessage = (id: string) => {
-    setSelectedMsgId(id);
-    onMarkMessageRead(id);
-    setMobileReadingOpen(true);
-  };
+  const [matchCardTab, setMatchCardTab] = React.useState<
+    'PROJECTION' | 'SCOUT'
+  >('PROJECTION');
 
   const userRatings = calculateTeamTacticalRatings(
     squad,
@@ -153,20 +129,6 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
     nextFixture,
   ]);
 
-  // Dynamic medical quick-swap resolution for any club
-  const relatedFatiguedPlayer = selectedMessage?.relatedPlayerId
-    ? squad.find((p) => p.id === selectedMessage.relatedPlayerId)
-    : undefined;
-  const healthySubstituteCandidate = relatedFatiguedPlayer
-    ? squad.find(
-        (p) =>
-          !p.isStarter &&
-          !p.injured &&
-          p.sector === relatedFatiguedPlayer.sector &&
-          p.condition >= 85
-      ) || squad.find((p) => !p.isStarter && !p.injured)
-    : undefined;
-
   // Compute match probability tiles (Home / Draw / Away) based on tactical ratings
   const userOverall =
     (userRatings.attack + userRatings.midfield + userRatings.defense) / 3;
@@ -201,7 +163,9 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
       ? `CHAMPIONS LEAGUE · ${nextFixture?.stageLabel || 'MATA-MATA'}`
       : `SÉRIE ${userClub.division} · R${currentRound}`;
 
-  const unreadCount = messages.filter((m) => !m.read).length;
+  const activePendingOffers = pendingOffers.filter(
+    (o) => o.status === 'PENDING'
+  );
 
   const renderComparisonBar = (
     label: string,
@@ -232,13 +196,17 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
           <div className="bg-[#0b0c10] rounded-l-full overflow-hidden flex justify-end">
             <div
               className="bg-[#b5ff00] h-full rounded-l-full"
-              style={{ width: `${Math.min(100, Math.max(8, (userVal / 95) * 100))}%` }}
+              style={{
+                width: `${Math.min(100, Math.max(8, (userVal / 95) * 100))}%`,
+              }}
             />
           </div>
           <div className="bg-[#0b0c10] rounded-r-full overflow-hidden">
             <div
               className="bg-zinc-200 h-full rounded-r-full"
-              style={{ width: `${Math.min(100, Math.max(8, (oppVal / 95) * 100))}%` }}
+              style={{
+                width: `${Math.min(100, Math.max(8, (oppVal / 95) * 100))}%`,
+              }}
             />
           </div>
         </div>
@@ -252,7 +220,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 pb-2 border-b border-white/[0.07]">
         <div>
           <span className="block text-xs sm:text-sm font-normal text-zinc-400 tracking-wide">
-            Comando técnico · Próximo compromisso & comunicação interna
+            Comando técnico · Próximo compromisso & panorama da temporada
           </span>
           <h2 className="font-display text-3xl sm:text-5xl font-extrabold uppercase tracking-tight text-white leading-[0.95] mt-0.5">
             CENTRAL DO CLUBE
@@ -263,7 +231,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
           <button
             type="button"
             onClick={() => onNavigate('tactics')}
-            className="px-3.5 py-2 rounded-full text-xs font-bold bg-[#14171f] hover:bg-white/[0.08] text-zinc-200 border border-white/10 transition-colors flex items-center gap-1.5 whitespace-nowrap"
+            className="px-3.5 py-2 rounded-full text-xs font-bold bg-[#14171f] hover:bg-white/[0.08] text-zinc-200 border border-white/10 transition-colors flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
           >
             <Sliders className="w-3.5 h-3.5 text-[#b5ff00]" />
             <span>Prancheta ({userClub.formation})</span>
@@ -271,7 +239,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
           <button
             type="button"
             onClick={onGoToMatch}
-            className="px-4 py-2 rounded-full text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1.5 whitespace-nowrap shadow-sm"
+            className="px-4 py-2 rounded-full text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1.5 whitespace-nowrap shadow-sm cursor-pointer"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
             <span>Ir para o Jogo ({currentRound}ªR)</span>
@@ -280,8 +248,8 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Unified Match Ticket + Integrated Opponent Scout + G-6 Standings (5 cols) */}
-        <div className="xl:col-span-5 space-y-6">
+        {/* Left Column: Unified Match Ticket + Integrated Opponent Scout (7 cols) */}
+        <div className="xl:col-span-7 space-y-6">
           {opponentClub && nextFixture && (
             <div className="rounded-[28px] overflow-hidden border border-white/10 shadow-2xl bg-[#14171f]">
               {/* Upper Half: Electric Lime Gradient Header with Club Badges & Black VS Circle */}
@@ -390,7 +358,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                     <button
                       type="button"
                       onClick={() => setMatchCardTab('PROJECTION')}
-                      className={`py-2 px-3 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1.5 ${
+                      className={`py-2 px-3 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
                         matchCardTab === 'PROJECTION'
                           ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold'
                           : 'text-zinc-400 hover:text-white'
@@ -401,7 +369,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                     <button
                       type="button"
                       onClick={() => setMatchCardTab('SCOUT')}
-                      className={`py-2 px-3 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1.5 ${
+                      className={`py-2 px-3 rounded-lg text-xs font-bold transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
                         matchCardTab === 'SCOUT'
                           ? 'bg-[#b5ff00] text-[#090a0f] font-extrabold'
                           : 'text-zinc-400 hover:text-white'
@@ -509,7 +477,8 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                           Campanha
                         </div>
                         <div className="font-mono text-xs font-bold text-white mt-0.5 tabular-nums">
-                          {opponentScoutReport.won}V · {opponentScoutReport.drawn}E ·{' '}
+                          {opponentScoutReport.won}V ·{' '}
+                          {opponentScoutReport.drawn}E ·{' '}
                           {opponentScoutReport.lost}D
                         </div>
                       </div>
@@ -608,7 +577,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                   <div className="grid grid-cols-2 gap-2.5">
                     <button
                       onClick={onGoToMatch}
-                      className="py-3 px-4 rounded-2xl text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shadow-md"
+                      className="py-3 px-4 rounded-2xl text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shadow-md cursor-pointer"
                     >
                       <Play className="w-3.5 h-3.5 fill-current" />
                       <span>Assistir Jogo 2D</span>
@@ -616,7 +585,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                     {onQuickSimulateMatch ? (
                       <button
                         onClick={onQuickSimulateMatch}
-                        className="py-3 px-4 rounded-2xl text-xs font-extrabold bg-white hover:bg-zinc-200 text-[#090a0f] transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shadow-md"
+                        className="py-3 px-4 rounded-2xl text-xs font-extrabold bg-white hover:bg-zinc-200 text-[#090a0f] transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap shadow-md cursor-pointer"
                       >
                         <FastForward className="w-3.5 h-3.5" />
                         <span>Simular Rápido</span>
@@ -624,7 +593,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
                     ) : (
                       <button
                         onClick={() => onNavigate('tactics')}
-                        className="py-3 px-4 rounded-2xl text-xs font-bold bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-100 border border-white/10 transition-colors whitespace-nowrap"
+                        className="py-3 px-4 rounded-2xl text-xs font-bold bg-[#0b0c10] hover:bg-white/[0.08] text-zinc-100 border border-white/10 transition-colors whitespace-nowrap cursor-pointer"
                       >
                         Ajustar Prancheta
                       </button>
@@ -634,7 +603,10 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
               </div>
             </div>
           )}
+        </div>
 
+        {/* Right Column: Standings Summary + Direct Action Cards (5 cols) */}
+        <div className="xl:col-span-5 space-y-5">
           {/* Mini League Table Summary */}
           <div className="bg-[#14171f] border border-white/[0.07] rounded-[24px] overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
@@ -646,7 +618,7 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
               </div>
               <button
                 onClick={() => onNavigate('competitions')}
-                className="text-xs text-[#b5ff00] hover:underline font-semibold transition-colors"
+                className="text-xs text-[#b5ff00] hover:underline font-semibold transition-colors cursor-pointer"
               >
                 Ver 20 Clubes →
               </button>
@@ -739,236 +711,63 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
               </table>
             </div>
           </div>
-        </div>
 
-        {/* Right Column: Interactive Coaching Inbox (7 columns on xl) */}
-        <div className="xl:col-span-7 space-y-6">
-          <div className="bg-[#14171f] border border-white/[0.07] rounded-[28px] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-white/[0.07]">
-              <div className="flex items-center gap-2.5">
-                <Mail className="w-4 h-4 text-[#b5ff00]" />
-                <h3 className="font-display text-lg font-extrabold uppercase tracking-tight text-white">
-                  Caixa de Entrada da Comissão Técnica
-                </h3>
-              </div>
-              <span className="text-xs text-zinc-400 font-mono tabular-nums">
-                {unreadCount} não lidas · {messages.length} msgs
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-12 flex-1 min-h-[460px] md:min-h-[540px]">
-              {/* Message List (Hidden on mobile when reading a selected message) */}
-              <div
-                className={`${
-                  mobileReadingOpen ? 'hidden md:block' : 'block'
-                } md:col-span-5 border-b md:border-b-0 md:border-r border-white/[0.07] divide-y divide-white/[0.05] overflow-y-auto max-h-[460px] md:max-h-[580px]`}
-              >
-                {messages.map((msg) => {
-                  const isSelected = selectedMessage?.id === msg.id;
-                  return (
-                    <button
-                      key={msg.id}
-                      onClick={() => handleSelectMessage(msg.id)}
-                      className={`w-full text-left p-4 transition-colors flex flex-col gap-1.5 ${
-                        isSelected
-                          ? 'bg-white/[0.08]'
-                          : 'hover:bg-white/[0.03] bg-transparent'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2 text-[11px]">
-                        <span
-                          className={`font-semibold ${
-                            msg.priority === 'warning'
-                              ? 'text-amber-400'
-                              : msg.priority === 'danger'
-                              ? 'text-rose-400'
-                              : msg.priority === 'positive'
-                              ? 'text-[#b5ff00]'
-                              : 'text-zinc-400'
-                          }`}
-                        >
-                          {msg.category}
-                        </span>
-                        <span className="text-zinc-400 font-mono tabular-nums">
-                          {msg.date.split('·')[0]}
-                        </span>
-                      </div>
-                      <div className="flex items-start gap-2">
-                        {!msg.read ? (
-                          <Mail className="w-3.5 h-3.5 text-[#b5ff00] shrink-0 mt-0.5" />
-                        ) : (
-                          <MailOpen className="w-3.5 h-3.5 text-zinc-500 shrink-0 mt-0.5" />
-                        )}
-                        <span
-                          className={`text-xs line-clamp-2 ${
-                            !msg.read
-                              ? 'font-bold text-white'
-                              : 'font-normal text-zinc-300'
-                          }`}
-                        >
-                          {msg.subject}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-zinc-400 pl-5 truncate">
-                        {msg.sender} · {msg.senderRole}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Message Reading Pane */}
-              <div
-                className={`${
-                  mobileReadingOpen ? 'flex' : 'hidden md:flex'
-                } md:col-span-7 p-4 sm:p-6 flex-col justify-between bg-[#0b0c10]/40`}
-              >
-                {selectedMessage ? (
-                  <div className="space-y-4">
-                    {/* Mobile Back to List Button */}
-                    <button
-                      type="button"
-                      onClick={() => setMobileReadingOpen(false)}
-                      className="md:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/[0.08] text-xs font-bold text-[#b5ff00] mb-1"
-                    >
-                      <ArrowLeft className="w-3.5 h-3.5" />
-                      <span>Voltar para lista ({messages.length})</span>
-                    </button>
-
-                    <div className="pb-4 border-b border-white/[0.07]">
-                      <div className="flex items-center justify-between text-xs text-zinc-400 mb-1.5">
-                        <span>
-                          {selectedMessage.category} ·{' '}
-                          {selectedMessage.senderRole}
-                        </span>
-                        <span className="font-mono tabular-nums">
-                          {selectedMessage.date}
-                        </span>
-                      </div>
-                      <h4 className="text-base sm:text-lg font-bold text-white leading-snug">
-                        {selectedMessage.subject}
-                      </h4>
-                      <div className="text-xs text-[#b5ff00] font-medium mt-1">
-                        Remetente: {selectedMessage.sender}
-                      </div>
-                    </div>
-
-                    <div className="space-y-3 text-xs sm:text-sm text-zinc-300 leading-relaxed">
-                      {selectedMessage.body.map((paragraph, i) => (
-                        <p key={i}>{paragraph}</p>
-                      ))}
-                    </div>
-
-                    {selectedMessage.bulletPoints &&
-                      selectedMessage.bulletPoints.length > 0 && (
-                        <div className="bg-[#0b0c10] border border-white/[0.07] rounded-2xl p-4 space-y-2">
-                          <div className="text-xs font-bold text-white">
-                            Pontos de Atenção da Comissão:
-                          </div>
-                          <ul className="space-y-1.5 text-xs text-zinc-300">
-                            {selectedMessage.bulletPoints.map((pt, idx) => (
-                              <li key={idx} className="flex items-start gap-2">
-                                <span className="text-[#b5ff00] font-mono font-bold">
-                                  ·
-                                </span>
-                                <span>{pt}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
+          {/* Pending Market Offers Direct Shortcut (when active offers exist) */}
+          {activePendingOffers.length > 0 && (
+            <div className="bg-[#14171f] border border-amber-400/35 rounded-[22px] p-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-amber-400/15 border border-amber-400/35 flex items-center justify-center shrink-0">
+                  <Handshake className="w-4 h-4 text-amber-300" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-white truncate">
+                    {activePendingOffers.length}{' '}
+                    {activePendingOffers.length === 1
+                      ? 'proposta ativa no mercado'
+                      : 'propostas ativas no mercado'}
                   </div>
-                ) : null}
-
-              {/* Contextual Action Footer inside Inbox Message */}
-              {selectedMessage && (
-                <div className="pt-4 mt-5 border-t border-white/[0.07] space-y-3">
-                  {selectedMessage.relatedOfferId &&
-                    onResolveIncomingOffer &&
-                    (() => {
-                      const matchedOffer = pendingOffers.find(
-                        (o) => o.id === selectedMessage.relatedOfferId
-                      );
-                      if (!matchedOffer) return null;
-                      if (matchedOffer.status !== 'PENDING') {
-                        return (
-                          <div className="rounded-xl bg-[#0b0c10] border border-white/10 px-3 py-2 text-xs text-zinc-300 font-mono">
-                            Proposta{' '}
-                            {matchedOffer.status === 'ACCEPTED'
-                              ? 'aceita'
-                              : matchedOffer.status === 'EXPIRED'
-                              ? 'expirada (janela encerrada)'
-                              : 'recusada'}{' '}
-                            ({formatCompactBRL(matchedOffer.offeredFee)}).
-                          </div>
-                        );
-                      }
-                      return (
-                        <IncomingOfferCard
-                          offer={matchedOffer}
-                          userClub={userClub}
-                          squad={squad}
-                          seasonYear={seasonYear}
-                          variant="inbox"
-                          disabled={!windowStatus.isOpen}
-                          disabledReason={
-                            !windowStatus.isOpen
-                              ? `Janela de transferências fechada — ${windowStatus.description}`
-                              : undefined
-                          }
-                          onResolve={onResolveIncomingOffer}
-                          onInspectPlayer={onInspectPlayer}
-                        />
-                      );
-                    })()}
-
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    {relatedFatiguedPlayer && (
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          onClick={() => onInspectPlayer(relatedFatiguedPlayer)}
-                          className="px-3.5 py-2 rounded-full text-xs font-semibold bg-white/[0.08] hover:bg-white/[0.14] text-white transition-colors whitespace-nowrap"
-                        >
-                          Ver Ficha de {relatedFatiguedPlayer.name.split(' ')[0]}
-                        </button>
-                        {relatedFatiguedPlayer.isStarter ? (
-                          <button
-                            onClick={onQuickSwapFatiguedPlayer}
-                            className="px-3.5 py-2 rounded-full text-xs font-bold bg-amber-400 hover:bg-amber-300 text-[#090a0f] transition-colors flex items-center gap-1.5 whitespace-nowrap"
-                          >
-                            <UserCheck className="w-3.5 h-3.5" />
-                            Poupar {relatedFatiguedPlayer.name.split(' ')[0]}{' '}
-                            {healthySubstituteCandidate
-                              ? `(Escalar ${healthySubstituteCandidate.name})`
-                              : ''}
-                          </button>
-                        ) : (
-                          <span className="text-xs text-[#b5ff00] font-medium flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            {relatedFatiguedPlayer.name} já foi poupado do time titular
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {selectedMessage.actionLabel &&
-                      selectedMessage.actionTargetTab && (
-                        <button
-                          onClick={() =>
-                            onNavigate(selectedMessage.actionTargetTab!)
-                          }
-                          className="ml-auto px-4 py-2 rounded-full text-xs font-bold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1.5 whitespace-nowrap"
-                        >
-                          <span>{selectedMessage.actionLabel}</span>
-                          <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                  <div className="text-[11px] text-zinc-400 truncate">
+                    Analise, contraproponha ou recuse na Central de Mercado
                   </div>
                 </div>
-              )}
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigate('market')}
+                className="px-3.5 py-2 rounded-xl text-xs font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <span>Ver Mercado</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
             </div>
-          </div>
-          </div>
+          )}
+
+          {/* New Season Evolution Report Shortcut */}
+          {hasNewSeasonEvolutionReport && onOpenNewSeasonEvolutionReport && (
+            <div className="bg-[#14171f] border border-[#b5ff00]/30 rounded-[22px] p-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-[#b5ff00]/15 border border-[#b5ff00]/35 flex items-center justify-center shrink-0">
+                  <TrendingUp className="w-4 h-4 text-[#b5ff00]" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-white truncate">
+                    Relatório de Evolução da Temporada
+                  </div>
+                  <div className="text-[11px] text-zinc-400 truncate">
+                    Consulte o balanço de evolução e aposentadorias do elenco
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onOpenNewSeasonEvolutionReport}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold bg-[#b5ff00]/15 hover:bg-[#b5ff00]/25 border border-[#b5ff00]/45 text-[#b5ff00] transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <TrendingUp className="w-3.5 h-3.5" />
+                <span>Abrir Relatório Completo</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

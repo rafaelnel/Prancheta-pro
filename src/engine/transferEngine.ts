@@ -24,6 +24,76 @@ import { formatCalendarDate } from '../utils/formatters';
 export const MIN_SQUAD_SIZE = 18;
 export const MIN_GOALKEEPERS = 1;
 
+export const REALISTIC_BUY_OFFER_MIN_RATIO = 0.85;
+export const REALISTIC_BUY_OFFER_MAX_RATIO = 1.20;
+export const REALISTIC_BUY_COUNTER_MAX_RATIO = 1.28;
+export const REALISTIC_LOAN_FEE_MIN_RATIO = 0.06;
+export const REALISTIC_LOAN_FEE_MAX_RATIO = 0.16;
+export const REALISTIC_LOAN_COUNTER_MAX_RATIO = 0.22;
+
+export function getDynamicFeeStep(
+  referenceValue: number,
+  isLoan: boolean = false
+): number {
+  const ref = Math.max(0, referenceValue);
+  if (isLoan) {
+    if (ref < 200_000) return 5_000;
+    if (ref < 1_000_000) return 10_000;
+    if (ref < 5_000_000) return 25_000;
+    return 50_000;
+  }
+  if (ref < 500_000) return 10_000;
+  if (ref < 2_000_000) return 25_000;
+  if (ref < 8_000_000) return 50_000;
+  if (ref < 30_000_000) return 100_000;
+  return 250_000;
+}
+
+export function clampTransferFeeToMarketCorridor(params: {
+  rawFee: number;
+  marketValue: number;
+  dealType: 'BUY' | 'LOAN';
+  minRatio?: number;
+  maxRatio?: number;
+  durationYears?: 1 | 2;
+}): number {
+  const { rawFee, marketValue, dealType, durationYears = 1 } = params;
+  const safeMv = Math.max(50_000, marketValue);
+  const isLoan = dealType === 'LOAN';
+  const durationScale = isLoan && durationYears === 2 ? 1.5 : 1.0;
+
+  const minRatio =
+    params.minRatio ??
+    (isLoan
+      ? REALISTIC_LOAN_FEE_MIN_RATIO * durationScale
+      : REALISTIC_BUY_OFFER_MIN_RATIO);
+  const maxRatio =
+    params.maxRatio ??
+    (isLoan
+      ? REALISTIC_LOAN_FEE_MAX_RATIO * durationScale
+      : REALISTIC_BUY_OFFER_MAX_RATIO);
+
+  const minAllowed = safeMv * minRatio;
+  const maxAllowed = safeMv * maxRatio;
+  const clampedRaw = Math.max(minAllowed, Math.min(maxAllowed, rawFee));
+  const step = getDynamicFeeStep(
+    isLoan ? Math.max(clampedRaw, safeMv * 0.12) : safeMv,
+    isLoan
+  );
+
+  let rounded = Math.round(clampedRaw / step) * step;
+  if (rounded < minAllowed) {
+    rounded = Math.ceil(minAllowed / step) * step;
+  }
+  if (rounded > maxAllowed) {
+    rounded = Math.floor(maxAllowed / step) * step;
+  }
+  if (rounded < minAllowed || rounded > maxAllowed || rounded <= 0) {
+    rounded = Math.max(1_000, Math.round(clampedRaw / 1_000) * 1_000);
+  }
+  return rounded;
+}
+
 export type LoanWageShare = 0.5 | 0.75 | 1.0;
 
 export function getPlayerPaidSalary(player: Player): number {
@@ -121,25 +191,33 @@ export function buildAllMarketListings(params: {
       const isLoanListed = !player.isStarter && Boolean(player.isLoanListed);
 
       const buyMultiplier = isTransferListed
-        ? 0.85
+        ? 0.88
         : player.isStarter
-        ? 1.15
-        : 0.96;
-      const buyFee =
-        Math.round((player.marketValue * buyMultiplier) / 250000) * 250000;
+        ? 1.14
+        : 0.98;
+      const buyFee = clampTransferFeeToMarketCorridor({
+        rawFee: player.marketValue * buyMultiplier,
+        marketValue: player.marketValue,
+        dealType: 'BUY',
+        minRatio: 0.85,
+        maxRatio: 1.18,
+      });
 
       const loanAvailable = !player.isStarter && isLoanListed;
       const loanRatio = isLoanListed
-        ? 0.06
+        ? 0.07
         : player.isStarter
-        ? 0.22
+        ? 0.18
         : player.age <= 22
-        ? 0.08
+        ? 0.09
         : 0.13;
-      const loanFee = Math.max(
-        100000,
-        Math.round((buyFee * loanRatio) / 50000) * 50000
-      );
+      const loanFee = clampTransferFeeToMarketCorridor({
+        rawFee: player.marketValue * loanRatio,
+        marketValue: player.marketValue,
+        dealType: 'LOAN',
+        minRatio: 0.06,
+        maxRatio: 0.20,
+      });
 
       listings.push({
         player,
@@ -147,7 +225,7 @@ export function buildAllMarketListings(params: {
         originClub,
         scope: originClub.scope,
         isClubStarter: player.isStarter,
-        buyFee: Math.max(500000, buyFee),
+        buyFee,
         loanFee,
         loanAvailable,
         isTransferListed,
@@ -654,10 +732,14 @@ export function evaluateTransferNegotiation(params: {
 
     if (dealMode === 'LOAN') {
       const durationFeeMult = loanDurationYears === 2 ? 1.55 : 1.0;
+      const loanStep = getDynamicFeeStep(
+        Math.max(listing.loanFee * durationFeeMult, p.marketValue * 0.12),
+        true
+      );
       effectiveFee = Math.max(
-        50000,
-        Math.round((listing.loanFee * offerMult * durationFeeMult) / 50000) *
-          50000
+        loanStep,
+        Math.round((listing.loanFee * offerMult * durationFeeMult) / loanStep) *
+          loanStep
       );
       effectiveSalary =
         Math.round((p.salary * loanWageShare * salaryOfferMult) / 5000) * 5000;
@@ -694,9 +776,13 @@ export function evaluateTransferNegotiation(params: {
           salaryBoostRelief * 0.5
       );
     } else {
+      const buyStep = getDynamicFeeStep(
+        Math.max(listing.buyFee, p.marketValue),
+        false
+      );
       effectiveFee = Math.max(
-        250000,
-        Math.round((listing.buyFee * offerMult) / 250000) * 250000
+        buyStep,
+        Math.round((listing.buyFee * offerMult) / buyStep) * buyStep
       );
       effectiveSalary = Math.round((p.salary * salaryOfferMult) / 5000) * 5000;
 
@@ -739,6 +825,19 @@ export function evaluateTransferNegotiation(params: {
     Math.min(98, Math.round(112 - clampedResistance * 1.1))
   );
 
+  // Guardrail against unrealistic lowball bids far below market value
+  if (dealMode === 'BUY' && p.marketValue > 0) {
+    const feeVsMarket = effectiveFee / p.marketValue;
+    if (feeVsMarket < 0.65) {
+      acceptanceChance = Math.min(acceptanceChance, 3);
+    } else if (feeVsMarket < 0.78) {
+      const lowballCap = Math.round(
+        4 + ((feeVsMarket - 0.65) / 0.13) * 14
+      );
+      acceptanceChance = Math.min(acceptanceChance, lowballCap);
+    }
+  }
+
   if (willHardRejectByPlayer) {
     acceptanceChance = Math.min(
       acceptanceChance,
@@ -772,20 +871,18 @@ export function evaluateTransferNegotiation(params: {
     (projectedPayroll / Math.max(1, userClub.wageBudget)) * 100
   );
 
-  const canAffordCash = effectiveFee <= userClub.cashBalance;
-  const fitsWageBudget = projectedPayroll <= userClub.wageBudget;
-  const isBlocked = !canAffordCash || !fitsWageBudget;
+  // Teto salarial sem limite rígido: o clube pode assumir qualquer salário, mas corre risco real de entrar em dívida.
+  const canAffordCash =
+    effectiveFee <= 0 ? true : effectiveFee <= userClub.cashBalance;
+  const fitsWageBudget = true;
+  const isBlocked = !canAffordCash;
 
   let blockReason: string | null = null;
-  if (!canAffordCash && !fitsWageBudget) {
+  if (!canAffordCash) {
     blockReason =
-      'Saldo em caixa e teto salarial insuficientes para fechar esta operação.';
-  } else if (!canAffordCash) {
-    blockReason =
-      'Saldo em caixa insuficiente. Venda atletas ou tente empréstimo com taxa menor.';
-  } else if (!fitsWageBudget) {
-    blockReason =
-      'A contratação ultrapassa o teto da folha salarial mensal. Venda ou empreste atletas para liberar orçamento.';
+      userClub.cashBalance < 0
+        ? 'Clube em dívida (saldo negativo). Venda atletas ou faça contratações gratuitas para reorganizar o caixa.'
+        : 'Saldo em caixa insuficiente para pagar a taxa de transferência. Venda atletas ou tente empréstimo com taxa menor.';
   }
 
   return {
@@ -984,7 +1081,7 @@ export function executeIncomingTransfer(params: {
       headline: `Operação bloqueada para ${p.name}`,
       summary:
         evaluation.blockReason ||
-        'Saldo em caixa ou teto salarial mensal insuficiente.',
+        'Saldo em caixa insuficiente para pagar a taxa de transferência.',
       factors: baseFactors,
       roll: 100,
       updatedClub: userClub,
@@ -999,7 +1096,13 @@ export function executeIncomingTransfer(params: {
 
   // Hard rejection check when young high-potential/OVR prospect refuses weaker club
   if (evaluation.willHardRejectByPlayer && roll > evaluation.acceptanceChance) {
+    const isUnrealisticLowballBuy =
+      dealMode === 'BUY' &&
+      p.marketValue > 0 &&
+      evaluation.effectiveFee < p.marketValue * REALISTIC_BUY_OFFER_MIN_RATIO;
+
     if (
+      !isUnrealisticLowballBuy &&
       evaluation.playerWillingnessChance >= 20 &&
       roll <= evaluation.acceptanceChance + 18
     ) {
@@ -1127,6 +1230,7 @@ export function executeIncomingTransfer(params: {
     let counterLoanWageShare: LoanWageShare | undefined =
       dealMode === 'LOAN' ? loanWageShare : undefined;
 
+    let effectiveSource = source;
     if (dealMode === 'FREE') {
       counterFee = 0;
       const baseExpectedSalary = Math.max(evaluation.effectiveSalary, p.salary);
@@ -1139,47 +1243,101 @@ export function executeIncomingTransfer(params: {
         counterLoanWageShare = loanWageShare === 0.5 ? 0.75 : 1.0;
       }
       const durationFeeMult = loanDurationYears === 2 ? 1.55 : 1.0;
-      const askingLoanFee =
-        Math.round((listing.loanFee * durationFeeMult) / 50000) * 50000;
+      const askingLoanFee = clampTransferFeeToMarketCorridor({
+        rawFee: listing.loanFee * durationFeeMult,
+        marketValue: p.marketValue,
+        dealType: 'LOAN',
+        minRatio: 0.06 * (loanDurationYears === 2 ? 1.5 : 1),
+        maxRatio: REALISTIC_LOAN_COUNTER_MAX_RATIO * (loanDurationYears === 2 ? 1.35 : 1),
+      });
+      const maxLoanCounter = clampTransferFeeToMarketCorridor({
+        rawFee:
+          p.marketValue *
+          REALISTIC_LOAN_COUNTER_MAX_RATIO *
+          (loanDurationYears === 2 ? 1.35 : 1),
+        marketValue: p.marketValue,
+        dealType: 'LOAN',
+        minRatio: 0.08,
+        maxRatio: REALISTIC_LOAN_COUNTER_MAX_RATIO * (loanDurationYears === 2 ? 1.35 : 1),
+      });
       const feeBase = Math.max(evaluation.effectiveFee, askingLoanFee);
-      counterFee =
-        source === 'JOGADOR'
-          ? Math.max(evaluation.effectiveFee, askingLoanFee)
-          : feeBase > 0
-          ? Math.round((feeBase * 1.15) / 50000) * 50000
-          : 250_000;
+      if (effectiveSource === 'JOGADOR' || evaluation.effectiveFee >= maxLoanCounter) {
+        counterFee = Math.max(evaluation.effectiveFee, askingLoanFee);
+        if (evaluation.effectiveFee >= maxLoanCounter) {
+          effectiveSource = 'JOGADOR';
+        }
+      } else {
+        const bumpedLoan = clampTransferFeeToMarketCorridor({
+          rawFee: feeBase * 1.12,
+          marketValue: p.marketValue,
+          dealType: 'LOAN',
+          minRatio: 0.08,
+          maxRatio: REALISTIC_LOAN_COUNTER_MAX_RATIO * (loanDurationYears === 2 ? 1.35 : 1),
+        });
+        counterFee = Math.max(
+          evaluation.effectiveFee,
+          Math.min(maxLoanCounter, bumpedLoan)
+        );
+      }
       const shareToUse = counterLoanWageShare ?? loanWageShare;
-      const salaryBump = source === 'CLUBE' ? 1.0 : 1.2;
+      const salaryBump = effectiveSource === 'CLUBE' ? 1.0 : 1.18;
       counterSalary = Math.max(
-        evaluation.effectiveSalary + (source === 'CLUBE' ? 0 : 10000),
+        evaluation.effectiveSalary + (effectiveSource === 'CLUBE' ? 0 : 10000),
         Math.round(
           (p.salary * shareToUse * Math.max(1.0, salaryBump)) / 5000
         ) * 5000
       );
     } else {
-      const minClubCounterFee =
-        Math.round((listing.buyFee * 0.95) / 250_000) * 250_000;
-      counterFee =
-        source === 'JOGADOR'
-          ? Math.max(evaluation.effectiveFee, minClubCounterFee)
-          : Math.max(
-              minClubCounterFee,
-              evaluation.effectiveFee + 250_000,
-              Math.round((evaluation.effectiveFee * 1.2) / 250_000) * 250_000
-            );
+      const referenceMv = Math.max(50_000, p.marketValue);
+      const buyStep = getDynamicFeeStep(referenceMv, false);
+      const minClubCounterFee = Math.max(
+        clampTransferFeeToMarketCorridor({
+          rawFee: referenceMv * 0.90,
+          marketValue: referenceMv,
+          dealType: 'BUY',
+          minRatio: 0.88,
+          maxRatio: REALISTIC_BUY_COUNTER_MAX_RATIO,
+        }),
+        Math.round((listing.buyFee * 0.95) / buyStep) * buyStep
+      );
+      const maxRealisticCounterFee = clampTransferFeeToMarketCorridor({
+        rawFee: referenceMv * REALISTIC_BUY_COUNTER_MAX_RATIO,
+        marketValue: referenceMv,
+        dealType: 'BUY',
+        minRatio: 0.90,
+        maxRatio: REALISTIC_BUY_COUNTER_MAX_RATIO,
+      });
+
+      if (effectiveSource === 'JOGADOR') {
+        counterFee = Math.max(evaluation.effectiveFee, minClubCounterFee);
+      } else if (evaluation.effectiveFee >= maxRealisticCounterFee) {
+        // User's offer is already at or above the club's realistic valuation ceiling;
+        // do not inflate the fee further into absurd territory — shift negotiation to player salary instead.
+        counterFee = evaluation.effectiveFee;
+        effectiveSource = 'JOGADOR';
+      } else {
+        const desiredBump = Math.max(
+          minClubCounterFee,
+          evaluation.effectiveFee + buyStep,
+          Math.round((evaluation.effectiveFee * 1.12) / buyStep) * buyStep
+        );
+        counterFee = Math.min(maxRealisticCounterFee, desiredBump);
+        counterFee = Math.max(evaluation.effectiveFee, counterFee);
+      }
+
       counterSalary =
-        source === 'CLUBE'
+        effectiveSource === 'CLUBE'
           ? evaluation.effectiveSalary
           : Math.max(
               evaluation.effectiveSalary + 15000,
-              Math.round((evaluation.effectiveSalary * 1.22) / 5000) * 5000
+              Math.round((evaluation.effectiveSalary * 1.18) / 5000) * 5000
             );
     }
 
     const summary =
-      source === 'CLUBE'
+      effectiveSource === 'CLUBE'
         ? `${counterpartyName} respondeu com uma contraproposta: exige ajuste nos valores de liberação para fechar agora.`
-        : source === 'JOGADOR'
+        : effectiveSource === 'JOGADOR'
         ? `${p.name} aceitou conversar, mas o estafe pediu salário mensal maior para assinar com o ${userClub.shortName}.`
         : `${counterpartyName} e ${p.name} enviaram contraproposta combinada (ajuste na taxa e no salário mensal).`;
 
@@ -1193,7 +1351,7 @@ export function executeIncomingTransfer(params: {
         `Negociação próxima do aceite (${evaluation.acceptanceChance}% de chance inicial)`,
       ],
       counterOffer: {
-        source,
+        source: effectiveSource,
         counterFee,
         counterSalary,
         counterLoanWageShare,
@@ -1271,17 +1429,18 @@ export function acceptTransferCounterOffer(params: {
     seasonYear = 2026,
   } = params;
 
-  const currentPayroll = getEffectivePayroll(userSquad, loanedOutPlayers);
-  const canAffordCash = counterOffer.counterFee <= userClub.cashBalance;
-  const fitsWageBudget =
-    currentPayroll + counterOffer.counterSalary <= userClub.wageBudget;
+  const canAffordCash =
+    counterOffer.counterFee <= 0
+      ? true
+      : counterOffer.counterFee <= userClub.cashBalance;
 
-  if (!canAffordCash || !fitsWageBudget) {
+  if (!canAffordCash) {
     return {
       accepted: false,
-      blockReason: !canAffordCash
-        ? 'Saldo em caixa insuficiente para cobrir a contraproposta.'
-        : 'A contraproposta salarial ultrapassa o teto mensal da folha.',
+      blockReason:
+        userClub.cashBalance < 0
+          ? 'Clube em dívida (saldo negativo) para cobrir a taxa da contraproposta.'
+          : 'Saldo em caixa insuficiente para cobrir a taxa da contraproposta.',
       updatedClub: userClub,
       updatedSquad: userSquad,
       updatedFreeAgents: freeAgents,
@@ -1345,16 +1504,22 @@ export function evaluateOutgoingPlayer(
   }
 
   const saleMultiplier =
-    (ovr >= 82 ? 1.05 : 0.92) + (player.isTransferListed ? 0.06 : 0);
-  const saleValue = Math.max(
-    500000,
-    Math.round((player.marketValue * saleMultiplier) / 250000) * 250000
-  );
-  const loanMultiplier = 0.08 + (player.isLoanListed ? 0.03 : 0);
-  const loanOutFee = Math.max(
-    100000,
-    Math.round((player.marketValue * loanMultiplier) / 50000) * 50000
-  );
+    (ovr >= 82 ? 1.04 : 0.93) + (player.isTransferListed ? 0.04 : 0);
+  const saleValue = clampTransferFeeToMarketCorridor({
+    rawFee: player.marketValue * saleMultiplier,
+    marketValue: player.marketValue,
+    dealType: 'BUY',
+    minRatio: 0.88,
+    maxRatio: 1.12,
+  });
+  const loanMultiplier = 0.09 + (player.isLoanListed ? 0.03 : 0);
+  const loanOutFee = clampTransferFeeToMarketCorridor({
+    rawFee: player.marketValue * loanMultiplier,
+    marketValue: player.marketValue,
+    dealType: 'LOAN',
+    minRatio: 0.07,
+    maxRatio: 0.15,
+  });
   const loanOutResidualShare = 0.1; // Partner club pays 90% of salary
   const paidCurrently = getPlayerPaidSalary(player);
 

@@ -776,7 +776,744 @@ test('AutoSimModal renders paused incoming offer strictly outside the scrollable
     false,
     'Match history scroll container must not contain the paused incoming offer block'
   );
+  assert.ok(
+    modalSource.includes('data-testid="autosim-open-offer-modal-btn"'),
+    'AutoSimModal must render a compact Ver Proposta trigger button for paused offers'
+  );
+  assert.ok(
+    modalSource.includes('data-testid="autosim-offer-detail-modal"'),
+    'AutoSimModal must render a dedicated proposal modal when Ver Proposta is clicked'
+  );
+  assert.ok(
+    modalSource.includes('data-testid="autosim-back-to-sim-btn"'),
+    'Dedicated proposal modal must provide a button to return to the simulation modal'
+  );
+  assert.ok(
+    modalSource.includes('data-testid="autosim-reject-offer-btn"'),
+    'AutoSimModal must provide a direct Negar button to reject incoming offers during simulation'
+  );
 });
+
+test('NewSeasonEvolutionModal removes filter/sort controls and top KPI cards to show full player list directly', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const modalSource = fs.readFileSync(
+    path.resolve('src/components/NewSeasonEvolutionModal.tsx'),
+    'utf-8'
+  );
+  assert.equal(
+    modalSource.includes('Ordenar relatório de evolução'),
+    false,
+    'NewSeasonEvolutionModal must not render sort dropdown'
+  );
+  assert.equal(
+    modalSource.includes('Média OVR do Elenco'),
+    false,
+    'NewSeasonEvolutionModal must not render top summary KPI cards'
+  );
+  assert.equal(
+    modalSource.includes("setFilter("),
+    false,
+    'NewSeasonEvolutionModal must not render filter buttons'
+  );
+  assert.ok(
+    modalSource.includes('data-testid="evolution-report-row"'),
+    'NewSeasonEvolutionModal must render the full player evolution list'
+  );
+});
+
+test('Unlimited wage cap allows signings/renewals while monthly payroll costs can put club into debt', async () => {
+  const { createNewCareerSave } = await import('../data/careerFactory');
+  const { evaluateTransferNegotiation } = await import('./transferEngine');
+  const { negotiateContractRenewal } = await import('./contractEngine');
+  const { applyAntiInflationSeasonMaintenance } = await import('./economyAndEvolution');
+  const { simulateNextAutoStep } = await import('./autoTacticsAndSim');
+  const { buildAllMarketListings } = await import('./transferEngine');
+
+  const career = createNewCareerSave(1, 'mirassol', 'Técnico');
+  const club = career.clubs.find((c) => c.id === 'mirassol')!;
+
+  // 1. Contract renewal with massive salary above old wageBudget is never blocked by wage cap
+  const renewal = negotiateContractRenewal({
+    player: career.squad[0],
+    club: { ...club, wageBudget: 100_000 },
+    userSquad: career.squad,
+    currentYear: 2026,
+    offeredSalary: 15_000_000,
+    addYears: 2,
+    rng: () => 0.5,
+  });
+  assert.equal(
+    renewal.outcome,
+    'ACEITA',
+    'High-salary renewal must not be blocked by wageBudget cap'
+  );
+
+  // 2. Free transfer signing above old wageBudget is never blocked by wage cap
+  const listings = buildAllMarketListings({
+    clubs: career.clubs,
+    userClubId: 'mirassol',
+    freeAgents: career.freeAgents || [],
+    transferredOutClubPlayerIds: [],
+    aiSquads: career.aiSquads,
+  });
+  const freeTarget = listings.find((l) => l.scope === 'LIVRES')!;
+  const freeEval = evaluateTransferNegotiation({
+    userClub: { ...club, wageBudget: 50_000 },
+    userSquad: career.squad,
+    listing: freeTarget,
+    dealMode: 'FREE',
+  });
+  assert.equal(freeEval.fitsWageBudget, true);
+  assert.equal(freeEval.isBlocked, false);
+
+  // 3. Bloated payroll causes club cashBalance to drop below 0 (debt) across a month boundary in auto-sim
+  const bloatedSquad = career.squad.map((p) => ({ ...p, salary: 12_000_000 }));
+  const lowCashClubs = career.clubs.map((c) =>
+    c.id === 'mirassol' ? { ...c, cashBalance: 5_000_000 } : c
+  );
+  let snap: import('./autoTacticsAndSim').AutoSimCareerSnapshot = {
+    clubs: lowCashClubs,
+    userClubId: 'mirassol',
+    squad: bloatedSquad,
+    loanedOutPlayers: [],
+    aiSquads: career.aiSquads,
+    standings: career.standings,
+    fixtures: career.fixtures,
+    secondaryStandings: career.secondaryStandings!,
+    secondaryFixtures: career.secondaryFixtures!,
+    copaDoBrasil: career.copaDoBrasil!,
+    libertadores: career.libertadores!,
+    championsLeague: career.championsLeague,
+    mundial: career.mundial,
+    superMundial: career.superMundial,
+    messages: career.messages,
+    matchState: career.matchState,
+    seasonYear: 2026,
+    seasonStepIndex: 0,
+    currentRound: 1,
+    dayOffset: 0,
+    isMatchDay: false,
+    transferredOutClubPlayerIds: [],
+    pendingOffers: [],
+    transferHistory: [],
+    financeLedger: career.financeLedger,
+    youthAcademy: career.youthAcademy,
+  };
+  for (let i = 0; i < 6; i++) {
+    const step = simulateNextAutoStep(snap, 60, () => 0.5);
+    snap = step.snapshot;
+  }
+  const userAfterMonth = snap.clubs.find((c) => c.id === 'mirassol')!;
+  assert.ok(
+    userAfterMonth.cashBalance < 0,
+    `Expected club with huge payroll to enter debt (< 0), got ${userAfterMonth.cashBalance}`
+  );
+  assert.ok(
+    (snap.financeLedger?.seasonPayrollExpense || 0) > 0,
+    'Monthly payroll deductions must be tracked in seasonPayrollExpense'
+  );
+
+  // 4. Season maintenance preserves user club debt instead of silently resetting to a positive floor
+  const maint = applyAntiInflationSeasonMaintenance(userAfterMonth, bloatedSquad, true);
+  assert.ok(
+    maint.updatedClub.cashBalance < 0,
+    'User club in debt must remain negative after season maintenance'
+  );
+});
+
+test('Realistic sponsorship corridors (Série A R$ 40M to >R$ 250M; Série B R$ 12M to R$ 30M) and official League, Copa do Brasil, and Libertadores 2026 prizes', async () => {
+  const { SERIE_A_CLUBS, SERIE_B_CLUBS } = await import('../data/initialDatabase');
+  const { calculateDynamicSponsorship } = await import('./economyAndEvolution');
+  const { getLeagueEndPrizeMoney } = await import('./seasonLifecycle');
+  const {
+    COPA_DO_BRASIL_PRIZE_TABLE,
+    LIBERTADORES_2026_PRIZE_USD,
+    LIBERTADORES_USD_TO_BRL,
+    getCopaDoBrasilStagePrize,
+    getCupPrizeMoney,
+  } = await import('../data/cupFactory');
+
+  // 1. Série B sponsorships strictly between R$ 12M and R$ 30M
+  for (const club of SERIE_B_CLUBS) {
+    const sp = calculateDynamicSponsorship(club, 69, 2026);
+    assert.ok(
+      sp.annualValue >= 12_000_000 && sp.annualValue <= 30_000_000,
+      `Série B ${club.shortName} sponsorship (${sp.annualValue}) must be within R$ 12M..30M`
+    );
+  }
+
+  // 2. Série A sponsorships scale from ~R$ 40M (smaller fanbase) to >R$ 250M (major giants)
+  const mirassol = SERIE_A_CLUBS.find((c) => c.id === 'mirassol')!;
+  const flamengo = SERIE_A_CLUBS.find((c) => c.id === 'flamengo')!;
+  const corinthians = SERIE_A_CLUBS.find((c) => c.id === 'corinthians')!;
+  const mirassolSp = calculateDynamicSponsorship(mirassol, 71, 2026);
+  const flamengoSp = calculateDynamicSponsorship(flamengo, 79, 2026);
+  const corinthiansSp = calculateDynamicSponsorship(corinthians, 77, 2026);
+  assert.ok(
+    mirassolSp.annualValue >= 40_000_000 && mirassolSp.annualValue <= 55_000_000,
+    `Expected Mirassol sponsorship around R$ 40M-55M, got ${mirassolSp.annualValue}`
+  );
+  assert.ok(
+    flamengoSp.annualValue > 250_000_000,
+    `Expected Flamengo sponsorship > R$ 250M, got ${flamengoSp.annualValue}`
+  );
+  assert.ok(
+    corinthiansSp.annualValue >= 240_000_000,
+    `Expected Corinthians sponsorship near/above R$ 250M, got ${corinthiansSp.annualValue}`
+  );
+
+  // 3. Série A official placement prizes (1º..16º decreasing; 17º..20º = R$ 0)
+  assert.equal(getLeagueEndPrizeMoney('A', 1), 48_100_000);
+  assert.equal(getLeagueEndPrizeMoney('A', 2), 45_700_000);
+  assert.equal(getLeagueEndPrizeMoney('A', 3), 43_400_000);
+  assert.equal(getLeagueEndPrizeMoney('A', 4), 40_900_000);
+  assert.equal(getLeagueEndPrizeMoney('A', 16), 16_300_000);
+  for (let r = 1; r < 16; r++) {
+    assert.ok(
+      getLeagueEndPrizeMoney('A', r) > getLeagueEndPrizeMoney('A', r + 1),
+      `Série A rank ${r} prize must exceed rank ${r + 1}`
+    );
+  }
+  for (let r = 17; r <= 20; r++) {
+    assert.equal(getLeagueEndPrizeMoney('A', r), 0, `Relegated rank ${r} must get R$ 0`);
+  }
+
+  // 4. Série B official placement prizes
+  assert.equal(getLeagueEndPrizeMoney('B', 1), 3_500_000);
+  assert.equal(getLeagueEndPrizeMoney('B', 2), 1_350_000);
+  assert.equal(getLeagueEndPrizeMoney('B', 3), 1_350_000);
+  assert.equal(getLeagueEndPrizeMoney('B', 4), 1_350_000);
+  assert.equal(getLeagueEndPrizeMoney('B', 5), 1_000_000);
+  assert.equal(getLeagueEndPrizeMoney('B', 20), 1_000_000);
+
+  // 5. Copa do Brasil exact official BRL prizes
+  assert.equal(getCopaDoBrasilStagePrize('1ª Fase', 'GRUPO_III'), 400_000);
+  assert.equal(getCopaDoBrasilStagePrize('2ª Fase', 'GRUPO_II'), 1_380_000);
+  assert.equal(getCopaDoBrasilStagePrize('2ª Fase', 'GRUPO_III'), 830_000);
+  assert.equal(getCopaDoBrasilStagePrize('3ª Fase', 'GRUPO_II'), 1_530_000);
+  assert.equal(getCopaDoBrasilStagePrize('3ª Fase', 'GRUPO_III'), 950_000);
+  assert.equal(getCopaDoBrasilStagePrize('4ª Fase', 'GRUPO_II'), 1_680_000);
+  assert.equal(getCopaDoBrasilStagePrize('4ª Fase', 'GRUPO_III'), 1_070_000);
+  assert.equal(getCopaDoBrasilStagePrize('5ª Fase', 'GRUPO_I'), 2_000_000);
+  assert.equal(getCupPrizeMoney('COPA_DO_BRASIL', '3ª Fase', true, false, { clubDivision: 'A' }), 2_000_000);
+  assert.equal(
+    getCupPrizeMoney('COPA_DO_BRASIL', '3ª Fase', true, false, { clubDivision: 'B' }),
+    COPA_DO_BRASIL_PRIZE_TABLE.fase2.GRUPO_II +
+      COPA_DO_BRASIL_PRIZE_TABLE.fase3.GRUPO_II +
+      COPA_DO_BRASIL_PRIZE_TABLE.fase4.GRUPO_II +
+      COPA_DO_BRASIL_PRIZE_TABLE.fase5
+  );
+  assert.equal(getCupPrizeMoney('COPA_DO_BRASIL', 'Oitavas', true, false), 3_000_000);
+  assert.equal(getCupPrizeMoney('COPA_DO_BRASIL', 'Quartas', true, false), 4_000_000);
+  assert.equal(getCupPrizeMoney('COPA_DO_BRASIL', 'Semifinal', true, false), 9_000_000);
+  assert.equal(getCupPrizeMoney('COPA_DO_BRASIL', 'Final', false, false), 34_000_000);
+  assert.equal(getCupPrizeMoney('COPA_DO_BRASIL', 'Final', true, true), 78_000_000);
+
+  // 6. Copa Libertadores 2026 official USD prizes converted to BRL
+  const usd = (amount: number) => Math.round(amount * LIBERTADORES_USD_TO_BRL);
+  assert.equal(
+    getCupPrizeMoney('LIBERTADORES', 'Grupo', false, false, { isUserHome: true }),
+    usd(LIBERTADORES_2026_PRIZE_USD.groupHomeMatch)
+  );
+  assert.equal(
+    getCupPrizeMoney('LIBERTADORES', 'Grupo', true, false, { isUserHome: true }),
+    usd(LIBERTADORES_2026_PRIZE_USD.groupHomeMatch + LIBERTADORES_2026_PRIZE_USD.groupWinBonus)
+  );
+  assert.equal(
+    getCupPrizeMoney('LIBERTADORES', 'Grupo', true, false, { isUserHome: false }),
+    usd(LIBERTADORES_2026_PRIZE_USD.groupWinBonus)
+  );
+  assert.equal(
+    getCupPrizeMoney('LIBERTADORES', 'Grupo', false, false, { isUserHome: false }),
+    0
+  );
+  assert.equal(getCupPrizeMoney('LIBERTADORES', 'Oitavas', true, false), usd(1_250_000));
+  assert.equal(getCupPrizeMoney('LIBERTADORES', 'Quartas', true, false), usd(1_700_000));
+  assert.equal(getCupPrizeMoney('LIBERTADORES', 'Semifinal', true, false), usd(2_300_000));
+  assert.equal(getCupPrizeMoney('LIBERTADORES', 'Final', true, true), usd(25_000_000));
+});
+
+test('DashboardInbox removes Caixa de Entrada panel while keeping match overview and evolution report shortcut', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const dashboardSource = fs.readFileSync(
+    path.resolve('src/components/DashboardInbox.tsx'),
+    'utf-8'
+  );
+  assert.equal(
+    dashboardSource.includes('Caixa de Entrada da Comissão Técnica'),
+    false,
+    'DashboardInbox must not render the removed Caixa de Entrada panel'
+  );
+  assert.ok(
+    dashboardSource.includes('Abrir Relatório Completo'),
+    'DashboardInbox must still expose the evolution report shortcut'
+  );
+});
+
+test('MarketView wires celebratory deal acceptance transition with reduced-motion CSS safeguards', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const css = fs.readFileSync(path.resolve('src/index.css'), 'utf-8');
+  const modalSource = fs.readFileSync(
+    path.resolve('src/components/MarketDealTransitionModal.tsx'),
+    'utf-8'
+  );
+  const marketViewSource = fs.readFileSync(
+    path.resolve('src/components/MarketView.tsx'),
+    'utf-8'
+  );
+
+  assert.ok(css.includes('@keyframes market-deal-card-in'));
+  assert.ok(css.includes('@keyframes market-sheen-sweep'));
+  assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'));
+  assert.ok(modalSource.includes('data-testid="deal-accepted-transition"'));
+  assert.ok(modalSource.includes('CONTRATAÇÃO OFICIALIZADA'));
+  assert.ok(modalSource.includes('VENDA OFICIALIZADA'));
+  assert.ok(marketViewSource.includes('MarketDealTransitionModal'));
+  assert.ok(marketViewSource.includes("lastAttemptResult.outcome !== 'ACEITA'"));
+  assert.ok(
+    marketViewSource.includes(
+      "prevMap.get(o.id) === 'PENDING' && o.status === 'ACCEPTED'"
+    )
+  );
+});
+
+test('AI incoming offers, loans, listings, outgoing valuations and counteroffers stay strictly within realistic market-value corridors', async () => {
+  const {
+    maybeGenerateIncomingOfferForUser,
+    computeIncomingCounterFee,
+    resolveIncomingOfferAction,
+    simulateAiTransferWindowTick,
+  } = await import('./aiMarketEngine');
+  const {
+    buildAllMarketListings,
+    evaluateOutgoingPlayer,
+    REALISTIC_BUY_OFFER_MIN_RATIO,
+    REALISTIC_BUY_OFFER_MAX_RATIO,
+    REALISTIC_BUY_COUNTER_MAX_RATIO,
+    REALISTIC_LOAN_COUNTER_MAX_RATIO,
+  } = await import('./transferEngine');
+
+  // 1. Incoming offers across Série B (including low-value R$ 200k player) and Série A stay close to marketValue
+  const ponteCareer = createNewCareerSave(1, 'ponte-preta', 'Técnico');
+  const ponteClub = ponteCareer.clubs.find((c) => c.id === 'ponte-preta')!;
+  const lowValueProspect: Player = {
+    ...ponteCareer.squad[0],
+    id: 'low-val-youth-200k',
+    name: 'Promessa Base 200k',
+    age: 18,
+    position: 'ATA',
+    sector: 'ATA',
+    marketValue: 200_000,
+    salary: 25_000,
+    isStarter: false,
+    isTransferListed: true,
+    isLoanListed: false,
+  };
+  const lowValueLoanProspect: Player = {
+    ...lowValueProspect,
+    id: 'low-val-loan-250k',
+    name: 'Empréstimo Base 250k',
+    marketValue: 250_000,
+    isTransferListed: false,
+    isLoanListed: true,
+  };
+  const augmentedPonteSquad = [
+    ...ponteCareer.squad,
+    lowValueProspect,
+    lowValueLoanProspect,
+  ];
+
+  for (const r of [0.05, 0.5, 0.95]) {
+    const buyOffer = maybeGenerateIncomingOfferForUser({
+      clubs: ponteCareer.clubs,
+      userClub: ponteClub,
+      userSquad: augmentedPonteSquad,
+      pendingOffers: [],
+      dayOffset: 10,
+      seasonYear: 2026,
+      aiSquads: ponteCareer.aiSquads,
+      specificPlayerId: lowValueProspect.id,
+      rng: () => r,
+    });
+    assert.ok(buyOffer, 'Expected realistic BUY offer for R$ 200k listed player');
+    assert.equal(buyOffer!.dealType, 'BUY');
+    const buyRatio = buyOffer!.offeredFee / lowValueProspect.marketValue;
+    assert.ok(
+      buyRatio >= REALISTIC_BUY_OFFER_MIN_RATIO &&
+        buyRatio <= REALISTIC_BUY_OFFER_MAX_RATIO,
+      `Low-value BUY offer (${buyOffer!.offeredFee}) must stay within ${REALISTIC_BUY_OFFER_MIN_RATIO}..${REALISTIC_BUY_OFFER_MAX_RATIO} of MV (${lowValueProspect.marketValue}), got ${buyRatio.toFixed(2)}`
+    );
+
+    const loanOffer = maybeGenerateIncomingOfferForUser({
+      clubs: ponteCareer.clubs,
+      userClub: ponteClub,
+      userSquad: augmentedPonteSquad,
+      pendingOffers: [],
+      dayOffset: 10,
+      seasonYear: 2026,
+      aiSquads: ponteCareer.aiSquads,
+      specificPlayerId: lowValueLoanProspect.id,
+      rng: () => r,
+    });
+    assert.ok(loanOffer, 'Expected realistic LOAN offer for R$ 250k loan-listed player');
+    assert.equal(loanOffer!.dealType, 'LOAN');
+    const loanRatio = loanOffer!.offeredFee / lowValueLoanProspect.marketValue;
+    assert.ok(
+      loanRatio >= 0.08 && loanRatio <= 0.16,
+      `Low-value LOAN offer (${loanOffer!.offeredFee}) must stay within 8%..16% of MV (${lowValueLoanProspect.marketValue}), got ${(loanRatio * 100).toFixed(1)}%`
+    );
+  }
+
+  // 2. Poor clubs cannot submit unrealistic lowball purchase offers for expensive stars
+  const flamengoCareer = createNewCareerSave(1, 'flamengo', 'Técnico');
+  const flamengoClub = flamengoCareer.clubs.find((c) => c.id === 'flamengo')!;
+  const expensiveStar = [...flamengoCareer.squad]
+    .filter((p) => p.position !== 'GOL')
+    .sort((a, b) => b.marketValue - a.marketValue)[0];
+  const brokeClubs = flamengoCareer.clubs.map((c) =>
+    c.id === 'flamengo' ? c : { ...c, cashBalance: 5_000_000 }
+  );
+  const listedStarSquad = flamengoCareer.squad.map((p) =>
+    p.id === expensiveStar.id
+      ? { ...p, isTransferListed: true, isLoanListed: false }
+      : p
+  );
+  const blockedOffer = maybeGenerateIncomingOfferForUser({
+    clubs: brokeClubs,
+    userClub: flamengoClub,
+    userSquad: listedStarSquad,
+    pendingOffers: [],
+    dayOffset: 10,
+    seasonYear: 2026,
+    aiSquads: flamengoCareer.aiSquads,
+    specificPlayerId: expensiveStar.id,
+    rng: () => 0.5,
+  });
+  assert.equal(
+    blockedOffer,
+    null,
+    'Clubs unable to afford >=85% of star market value must not send unrealistic lowball BUY offers'
+  );
+
+  // 3. UCL superclubs must not bid for low-OVR Série B rotation players
+  for (const p of ponteCareer.squad) {
+    const ovr = calculatePlayerOverall(p.attributes, p.position);
+    if (ovr >= 74 || (p.age <= 22 && (p.potentialStars ?? 0) >= 4)) continue;
+    for (const r of [0.1, 0.5, 0.92]) {
+      const offer = maybeGenerateIncomingOfferForUser({
+        clubs: ponteCareer.clubs,
+        userClub: ponteClub,
+        userSquad: ponteCareer.squad,
+        pendingOffers: [],
+        dayOffset: 10,
+        seasonYear: 2026,
+        aiSquads: ponteCareer.aiSquads,
+        specificPlayerId: p.id,
+        rng: () => r,
+      });
+      if (!offer) continue;
+      const buyer = ponteCareer.clubs.find((c) => c.id === offer.fromClubId)!;
+      assert.notEqual(
+        buyer.division,
+        'UCL',
+        `UCL giant ${buyer.shortName} should not bid for Série B player ${p.name} (OVR ${ovr})`
+      );
+      const ratio = offer.offeredFee / p.marketValue;
+      if (offer.dealType === 'BUY') {
+        assert.ok(
+          ratio >= 0.85 && ratio <= 1.20,
+          `BUY offer ratio for ${p.name} out of bounds: ${ratio.toFixed(2)}`
+        );
+      } else {
+        assert.ok(
+          ratio >= 0.08 && ratio <= 0.16,
+          `LOAN offer ratio for ${p.name} out of bounds: ${ratio.toFixed(2)}`
+        );
+      }
+    }
+  }
+
+  // 4. Incoming counteroffer cap & AI rejection above realistic ceiling
+  const highOffer = maybeGenerateIncomingOfferForUser({
+    clubs: flamengoCareer.clubs,
+    userClub: flamengoClub,
+    userSquad: flamengoCareer.squad,
+    pendingOffers: [],
+    dayOffset: 10,
+    seasonYear: 2026,
+    aiSquads: flamengoCareer.aiSquads,
+    specificPlayerId: expensiveStar.id,
+    rng: () => 0.95,
+  });
+  if (highOffer) {
+    const c15 = computeIncomingCounterFee(
+      highOffer,
+      'COUNTER_15',
+      expensiveStar.marketValue
+    );
+    const c30 = computeIncomingCounterFee(
+      highOffer,
+      'COUNTER_30',
+      expensiveStar.marketValue
+    );
+    if (highOffer.dealType === 'BUY') {
+      assert.ok(
+        c15 <= expensiveStar.marketValue * 1.26,
+        `COUNTER_15 (${c15}) exceeded realistic ceiling for MV ${expensiveStar.marketValue}`
+      );
+      assert.ok(
+        c30 <= expensiveStar.marketValue * 1.33,
+        `COUNTER_30 (${c30}) exceeded realistic ceiling for MV ${expensiveStar.marketValue}`
+      );
+    } else {
+      assert.ok(
+        c30 <= expensiveStar.marketValue * (REALISTIC_LOAN_COUNTER_MAX_RATIO + 0.01),
+        `Loan COUNTER_30 (${c30}) exceeded realistic ceiling for MV ${expensiveStar.marketValue}`
+      );
+    }
+
+    // Artificially inflated offer forced past ceiling must always be rejected on counter
+    const absurdOffer = {
+      ...highOffer,
+      dealType: 'BUY' as const,
+      offeredFee: Math.round(expensiveStar.marketValue * 1.4),
+    };
+    const rejectedCounter = resolveIncomingOfferAction({
+      offer: absurdOffer,
+      action: 'COUNTER_30',
+      userClub: flamengoClub,
+      userSquad: flamengoCareer.squad,
+      aiSquads: flamengoCareer.aiSquads || {},
+      loanedOutPlayers: [],
+      clubs: flamengoCareer.clubs,
+      dayOffset: 11,
+      seasonYear: 2026,
+      rng: () => 0.01,
+    });
+    assert.equal(
+      rejectedCounter.outcome,
+      'COUNTER_REJECTED',
+      'AI club must always reject counteroffers above the realistic market ceiling'
+    );
+  }
+
+  // 5. All market listings, outgoing evaluations, and AI counteroffers on user buys stay within realistic bounds
+  const listings = buildAllMarketListings({
+    clubs: flamengoCareer.clubs,
+    userClubId: 'flamengo',
+    freeAgents: flamengoCareer.freeAgents || [],
+    transferredOutClubPlayerIds: [],
+    aiSquads: flamengoCareer.aiSquads,
+  });
+  for (const l of listings) {
+    if (l.scope === 'LIVRES') continue;
+    const buyR = l.buyFee / l.player.marketValue;
+    const loanR = l.loanFee / l.player.marketValue;
+    assert.ok(
+      buyR >= 0.84 && buyR <= 1.19,
+      `Listing buyFee out of corridor for ${l.player.name}: ${buyR.toFixed(2)}`
+    );
+    assert.ok(
+      loanR >= 0.055 && loanR <= 0.21,
+      `Listing loanFee out of corridor for ${l.player.name}: ${loanR.toFixed(2)}`
+    );
+  }
+
+  for (const p of augmentedPonteSquad) {
+    const out = evaluateOutgoingPlayer(p, augmentedPonteSquad);
+    const saleR = out.saleValue / p.marketValue;
+    const loanR = out.loanOutFee / p.marketValue;
+    assert.ok(
+      saleR >= 0.87 && saleR <= 1.13,
+      `Outgoing saleValue out of corridor for ${p.name}: ${saleR.toFixed(2)}`
+    );
+    assert.ok(
+      loanR >= 0.065 && loanR <= 0.16,
+      `Outgoing loanOutFee out of corridor for ${p.name}: ${loanR.toFixed(2)}`
+    );
+  }
+
+  // 6. Club counteroffers when user bids aggressively (1.0x or 1.5x) on UCL stars never inflate to 2x MV
+  const richFlamengo = {
+    ...flamengoClub,
+    cashBalance: 2_500_000_000,
+    wageBudget: 500_000_000,
+  };
+  const intlListings = listings.filter((l) => l.scope === 'INTERNACIONAL').slice(0, 30);
+  for (const l of intlListings) {
+    for (const mult of [0.5, 1.0, 1.5]) {
+      const ev = evaluateTransferNegotiation({
+        userClub: richFlamengo,
+        userSquad: flamengoCareer.squad,
+        listing: l,
+        dealMode: 'BUY',
+        offerMultiplier: mult,
+      });
+      const res = executeIncomingTransfer({
+        userClub: richFlamengo,
+        userSquad: flamengoCareer.squad,
+        freeAgents: [],
+        transferredOutClubPlayerIds: [],
+        listing: l,
+        dealMode: 'BUY',
+        evaluation: ev,
+        rng: () => Math.min(0.92, (ev.acceptanceChance + 10) / 100),
+      });
+      if (res.outcome === 'CONTRAPROPOSTA' && res.counterOffer) {
+        const counterRatio = res.counterOffer.counterFee / l.player.marketValue;
+        assert.ok(
+          counterRatio >= 0.85,
+          `Counteroffer on ${l.player.name} (mult ${mult}) must not undercut market value: ratio=${counterRatio.toFixed(2)}`
+        );
+        if (res.counterOffer.source === 'CLUBE' || res.counterOffer.source === 'AMBOS') {
+          assert.ok(
+            counterRatio <= REALISTIC_BUY_COUNTER_MAX_RATIO + 0.01,
+            `Club counteroffer on ${l.player.name} (mult ${mult}) exceeded realistic cap: ratio=${counterRatio.toFixed(2)}`
+          );
+        }
+      }
+    }
+  }
+
+  // 7. Autonomous AI-to-AI transfers stay within realistic corridor
+  const aiTick = simulateAiTransferWindowTick({
+    clubs: flamengoCareer.clubs,
+    aiSquads: flamengoCareer.aiSquads || {},
+    userClubId: 'flamengo',
+    dayOffset: 10,
+    seasonYear: 2026,
+    maxDeals: 4,
+    rng: () => 0.35,
+  });
+  for (const rec of aiTick.newRecords) {
+    assert.ok(rec.feeAmount > 0, `AI transfer ${rec.playerName} must have positive fee`);
+  }
+});
+
+test('30% operational cost applies to all sponsorship and ticket revenues for user and AI clubs', async () => {
+  const { createNewCareerSave } = await import('../data/careerFactory');
+  const {
+    OPERATIONAL_COST_RATE,
+    calculateOperationalCost,
+    applyAiHomeGateRevenues,
+    applyAiMonthlyEconomyTick,
+    applyAntiInflationSeasonMaintenance,
+  } = await import('./economyAndEvolution');
+  const { simulateNextAutoStep } = await import('./autoTacticsAndSim');
+
+  assert.equal(OPERATIONAL_COST_RATE, 0.3);
+  assert.equal(calculateOperationalCost(10_000_000), 3_000_000);
+  assert.equal(calculateOperationalCost(0), 0);
+
+  // 1. Initial ledger charges 30% operational cost on opening sponsorship
+  const career = createNewCareerSave(1, 'flamengo', 'Teste Operacional');
+  const initLedger = career.financeLedger!;
+  assert.equal(
+    initLedger.seasonOperationalExpense,
+    calculateOperationalCost(initLedger.seasonSponsorshipRevenue),
+    'Initial operational cost must equal 30% of opening sponsorship revenue'
+  );
+
+  // 2. Across AutoSim steps (home tickets + monthly sponsorship), user seasonOperationalExpense == 30% of (gate + sponsor)
+  let snap: import('./autoTacticsAndSim').AutoSimCareerSnapshot = {
+    clubs: career.clubs,
+    userClubId: 'flamengo',
+    squad: career.squad,
+    loanedOutPlayers: [],
+    aiSquads: career.aiSquads,
+    standings: career.standings,
+    fixtures: career.fixtures,
+    secondaryStandings: career.secondaryStandings!,
+    secondaryFixtures: career.secondaryFixtures!,
+    copaDoBrasil: career.copaDoBrasil!,
+    libertadores: career.libertadores!,
+    championsLeague: career.championsLeague,
+    mundial: career.mundial,
+    superMundial: career.superMundial,
+    messages: career.messages,
+    matchState: career.matchState,
+    seasonYear: 2026,
+    seasonStepIndex: 0,
+    currentRound: 1,
+    dayOffset: 0,
+    isMatchDay: false,
+    transferredOutClubPlayerIds: [],
+    pendingOffers: [],
+    transferHistory: [],
+    financeLedger: career.financeLedger,
+    youthAcademy: career.youthAcademy,
+  };
+  for (let i = 0; i < 8; i++) {
+    snap = simulateNextAutoStep(snap, 90, () => 0.45).snapshot;
+  }
+  const afterLedger = snap.financeLedger!;
+  assert.ok(afterLedger.seasonGateRevenue > 0, 'User must earn home gate revenue across 8 steps');
+  assert.ok(
+    afterLedger.seasonSponsorshipRevenue > initLedger.seasonSponsorshipRevenue,
+    'User must earn monthly sponsorship across 8 steps'
+  );
+  const expectedUserOpCost = calculateOperationalCost(
+    afterLedger.seasonGateRevenue + afterLedger.seasonSponsorshipRevenue
+  );
+  assert.ok(
+    Math.abs(afterLedger.seasonOperationalExpense - expectedUserOpCost) <= 10,
+    `User seasonOperationalExpense (${afterLedger.seasonOperationalExpense}) must match 30% of gate+sponsor (${expectedUserOpCost})`
+  );
+
+  // 3. AI clubs pay 30% operational cost on home gate revenues
+  const palmeirasBefore = career.clubs.find((c) => c.id === 'palmeiras')!;
+  const aiGateRes = applyAiHomeGateRevenues({
+    clubs: career.clubs,
+    userClubId: 'flamengo',
+    homeMatches: [
+      { clubId: 'palmeiras', rank: 2, totalTeams: 20, competition: 'BRASILEIRAO' },
+    ],
+  });
+  const palmeirasAfter = aiGateRes.updatedClubs.find((c) => c.id === 'palmeiras')!;
+  assert.ok(aiGateRes.totalGrossGate > 0);
+  assert.equal(
+    aiGateRes.totalOperationalCost,
+    calculateOperationalCost(aiGateRes.totalGrossGate)
+  );
+  assert.equal(
+    palmeirasAfter.cashBalance - palmeirasBefore.cashBalance,
+    aiGateRes.totalGrossGate - aiGateRes.totalOperationalCost,
+    'AI home club must receive exactly 70% net gate revenue (30% operational cost deducted)'
+  );
+
+  // 4. AI clubs pay 30% operational cost on monthly sponsorship payouts
+  const aiMonthlyRes = applyAiMonthlyEconomyTick({
+    clubs: career.clubs,
+    aiSquads: career.aiSquads || {},
+    userClubId: 'flamengo',
+    monthsElapsed: 1,
+    seasonYear: 2026,
+  });
+  assert.ok(aiMonthlyRes.totalGrossSponsor > 0);
+  assert.ok(
+    Math.abs(
+      aiMonthlyRes.totalOperationalCost -
+        calculateOperationalCost(aiMonthlyRes.totalGrossSponsor)
+    ) <= 50,
+    'AI monthly operational cost must be 30% of AI monthly sponsorship revenue'
+  );
+
+  // 5. UCL/WORLD clubs also pay 30% operational cost on their commercial refill
+  const uclClub = career.clubs.find((c) => c.division === 'UCL')!;
+  const uclStart = { ...uclClub, cashBalance: 500_000_000 };
+  const uclMaint = applyAntiInflationSeasonMaintenance(uclStart, [], false);
+  const expectedGrossRefill = Math.round((uclClub.reputation * 3_100_000) / 500_000) * 500_000;
+  const expectedUclOpCost = calculateOperationalCost(expectedGrossRefill);
+  assert.equal(uclMaint.annualMaintenanceCost, expectedUclOpCost);
+  assert.equal(
+    uclMaint.updatedClub.cashBalance,
+    Math.round((500_000_000 + expectedGrossRefill - expectedUclOpCost) / 100_000) * 100_000
+  );
+});
+
 
 
 

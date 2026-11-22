@@ -820,34 +820,170 @@ export function findUserFixtureForStep(
   return null;
 }
 
+export const LIBERTADORES_USD_TO_BRL = 5.5;
+
+export type CopaDoBrasilPrizeGroup = 'GRUPO_I' | 'GRUPO_II' | 'GRUPO_III';
+
+/**
+ * Premiação oficial da Copa do Brasil (valores em Reais — BRL):
+ * - 1ª fase: Grupo III (Séries C, D e outros): R$ 400 mil
+ * - 2ª fase: Grupo II (Série B): R$ 1,38M | Grupo III: R$ 830 mil
+ * - 3ª fase: Grupo II (Série B): R$ 1,53M | Grupo III: R$ 950 mil
+ * - 4ª fase: Grupo II (Série B): R$ 1,68M | Grupo III: R$ 1,07M
+ * - 5ª fase (entrada da Série A): R$ 2M para todos os grupos
+ * - Oitavas: R$ 3M | Quartas: R$ 4M | Semifinal: R$ 9M
+ * - Vice-campeão: R$ 34M | Campeão: R$ 78M
+ */
+export const COPA_DO_BRASIL_PRIZE_TABLE = {
+  fase1: {
+    GRUPO_I: 0,
+    GRUPO_II: 0,
+    GRUPO_III: 400_000,
+  },
+  fase2: {
+    GRUPO_I: 0,
+    GRUPO_II: 1_380_000,
+    GRUPO_III: 830_000,
+  },
+  fase3: {
+    GRUPO_I: 0,
+    GRUPO_II: 1_530_000,
+    GRUPO_III: 950_000,
+  },
+  fase4: {
+    GRUPO_I: 0,
+    GRUPO_II: 1_680_000,
+    GRUPO_III: 1_070_000,
+  },
+  fase5: 2_000_000,
+  oitavas: 3_000_000,
+  quartas: 4_000_000,
+  semifinal: 9_000_000,
+  viceCampeao: 34_000_000,
+  campeao: 78_000_000,
+} as const;
+
+/**
+ * Premiação oficial da Copa Libertadores 2026 (valores em Dólares — USD):
+ * - Fase de grupos: US$ 1 milhão por jogo como mandante (US$ 3 milhões no total da fase)
+ * - Bônus por vitória (fase de grupos): US$ 340 mil por vitória
+ * - Oitavas: US$ 1,25 milhão | Quartas: US$ 1,7 milhão | Semifinal: US$ 2,3 milhões
+ * - Vice-campeão: US$ 7 milhões | Campeão: US$ 25 milhões
+ */
+export const LIBERTADORES_2026_PRIZE_USD = {
+  groupHomeMatch: 1_000_000,
+  groupWinBonus: 340_000,
+  oitavas: 1_250_000,
+  quartas: 1_700_000,
+  semifinal: 2_300_000,
+  viceCampeao: 7_000_000,
+  campeao: 25_000_000,
+} as const;
+
+export function getCopaDoBrasilStagePrize(
+  phase:
+    | '1ª Fase'
+    | '2ª Fase'
+    | '3ª Fase'
+    | '4ª Fase'
+    | '5ª Fase'
+    | 'Oitavas'
+    | 'Quartas'
+    | 'Semifinal'
+    | 'Vice'
+    | 'Campeão',
+  group: CopaDoBrasilPrizeGroup = 'GRUPO_I'
+): number {
+  switch (phase) {
+    case '1ª Fase':
+      return COPA_DO_BRASIL_PRIZE_TABLE.fase1[group];
+    case '2ª Fase':
+      return COPA_DO_BRASIL_PRIZE_TABLE.fase2[group];
+    case '3ª Fase':
+      return COPA_DO_BRASIL_PRIZE_TABLE.fase3[group];
+    case '4ª Fase':
+      return COPA_DO_BRASIL_PRIZE_TABLE.fase4[group];
+    case '5ª Fase':
+      return COPA_DO_BRASIL_PRIZE_TABLE.fase5;
+    case 'Oitavas':
+      return COPA_DO_BRASIL_PRIZE_TABLE.oitavas;
+    case 'Quartas':
+      return COPA_DO_BRASIL_PRIZE_TABLE.quartas;
+    case 'Semifinal':
+      return COPA_DO_BRASIL_PRIZE_TABLE.semifinal;
+    case 'Vice':
+      return COPA_DO_BRASIL_PRIZE_TABLE.viceCampeao;
+    case 'Campeão':
+      return COPA_DO_BRASIL_PRIZE_TABLE.campeao;
+  }
+}
+
 export function getCupPrizeMoney(
   competition: CompetitionType,
   stageLabel: string | undefined,
   userAdvancedOrWon: boolean,
-  isFinalWinner: boolean
+  isFinalWinner: boolean,
+  options?: {
+    isUserHome?: boolean;
+    clubDivision?: 'A' | 'B' | 'LIB' | 'UCL' | 'WORLD';
+  }
 ): number {
   if (competition === 'COPA_DO_BRASIL') {
-    if (!userAdvancedOrWon) {
-      return stageLabel === 'Final' ? 54_000_000 : 3_200_000;
+    if (stageLabel === 'Final') {
+      return isFinalWinner || userAdvancedOrWon
+        ? COPA_DO_BRASIL_PRIZE_TABLE.campeao
+        : COPA_DO_BRASIL_PRIZE_TABLE.viceCampeao;
     }
-    if (isFinalWinner || stageLabel === 'Final') return 125_000_000;
-    if (stageLabel === 'Semifinal') return 16_500_000;
-    if (stageLabel === 'Quartas') return 9_500_000;
-    if (stageLabel === 'Oitavas') return 7_500_000;
-    return 5_800_000;
+    if (stageLabel === 'Semifinal') return COPA_DO_BRASIL_PRIZE_TABLE.semifinal;
+    if (stageLabel === 'Quartas') return COPA_DO_BRASIL_PRIZE_TABLE.quartas;
+    if (stageLabel === 'Oitavas') return COPA_DO_BRASIL_PRIZE_TABLE.oitavas;
+
+    // Fase de entrada dos 32 clubes (equivalente à 5ª fase onde entram os clubes da Série A):
+    // Clubes da Série B (Grupo II) que chegaram aos 32 acumulam cotas da 2ª, 3ª, 4ª e 5ª fases.
+    if (options?.clubDivision === 'B') {
+      return (
+        COPA_DO_BRASIL_PRIZE_TABLE.fase2.GRUPO_II +
+        COPA_DO_BRASIL_PRIZE_TABLE.fase3.GRUPO_II +
+        COPA_DO_BRASIL_PRIZE_TABLE.fase4.GRUPO_II +
+        COPA_DO_BRASIL_PRIZE_TABLE.fase5
+      );
+    }
+    return COPA_DO_BRASIL_PRIZE_TABLE.fase5;
   }
+
   if (competition === 'LIBERTADORES') {
     if (stageLabel?.startsWith('Grupo')) {
-      return userAdvancedOrWon ? 6_500_000 : 3_000_000;
+      // US$ 1M por jogo como mandante + US$ 340 mil por vitória (convertido para BRL)
+      const isHome = options?.isUserHome ?? true;
+      const homeUsd = isHome ? LIBERTADORES_2026_PRIZE_USD.groupHomeMatch : 0;
+      const winUsd = userAdvancedOrWon
+        ? LIBERTADORES_2026_PRIZE_USD.groupWinBonus
+        : 0;
+      return Math.round((homeUsd + winUsd) * LIBERTADORES_USD_TO_BRL);
     }
-    if (!userAdvancedOrWon) {
-      return stageLabel === 'Final' ? 68_000_000 : 3_800_000;
+    if (stageLabel === 'Final') {
+      const usd =
+        isFinalWinner || userAdvancedOrWon
+          ? LIBERTADORES_2026_PRIZE_USD.campeao
+          : LIBERTADORES_2026_PRIZE_USD.viceCampeao;
+      return Math.round(usd * LIBERTADORES_USD_TO_BRL);
     }
-    if (isFinalWinner || stageLabel === 'Final') return 225_000_000;
-    if (stageLabel === 'Semifinal') return 24_000_000;
-    if (stageLabel === 'Quartas') return 17_500_000;
-    return 12_500_000;
+    if (stageLabel === 'Semifinal') {
+      return Math.round(
+        LIBERTADORES_2026_PRIZE_USD.semifinal * LIBERTADORES_USD_TO_BRL
+      );
+    }
+    if (stageLabel === 'Quartas') {
+      return Math.round(
+        LIBERTADORES_2026_PRIZE_USD.quartas * LIBERTADORES_USD_TO_BRL
+      );
+    }
+    // Oitavas de final
+    return Math.round(
+      LIBERTADORES_2026_PRIZE_USD.oitavas * LIBERTADORES_USD_TO_BRL
+    );
   }
+
   if (competition === 'MUNDIAL') {
     // Copa Intercontinental / Mundial de Clubes anual (FIFA)
     if (!userAdvancedOrWon) {

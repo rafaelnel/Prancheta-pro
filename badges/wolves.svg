@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <polygon points="100,10 182,55 182,145 100,190 18,145 18,55" fill="#fdb913" stroke="#18181b" stroke-width="10"/>
+  <polygon points="100,24 168,62 168,138 100,176 32,138 32,62" fill="none" stroke="#18181b" stroke-width="4"/>
+  <polygon points="100,50 144,82 132,136 100,152 68,136 56,82" fill="#18181b"/>
+  <text x="100" y="114" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="34" fill="#fdb913" letter-spacing="1">WOL</text>
+  <text x="100" y="168" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="13" fill="#18181b" letter-spacing="2">1877</text>
+</svg>

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs><clipPath id="clip-real-betis"><polygon points="20,42 180,42 100,186"/></clipPath></defs>
+  <polygon points="16,38 184,38 100,192" fill="#d4af37"/>
+  <g clip-path="url(#clip-real-betis)">
+    <rect x="20" y="40" width="160" height="150" fill="#ffffff"/>
+    <rect x="34" y="40" width="22" height="150" fill="#0bb363"/>
+    <rect x="78" y="40" width="22" height="150" fill="#0bb363"/>
+    <rect x="122" y="40" width="22" height="150" fill="#0bb363"/>
+    <rect x="166" y="40" width="22" height="150" fill="#0bb363"/>
+  </g>
+  <circle cx="100" cy="92" r="34" fill="#0bb363" stroke="#d4af37" stroke-width="5"/>
+  <text x="100" y="104" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="28" fill="#ffffff">BET</text>
+  <path d="M72 36 L82 14 L100 26 L118 14 L128 36 Z" fill="#d4af37"/>
+</svg>

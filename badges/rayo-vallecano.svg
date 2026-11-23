@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs><clipPath id="clip-rayo-vallecano"><path d="M30,22 L170,22 L170,110 C170,154 134,178 100,190 C66,178 30,154 30,110 Z"/></clipPath></defs>
+  <path d="M30,22 L170,22 L170,110 C170,154 134,178 100,190 C66,178 30,154 30,110 Z" fill="#ffffff" stroke="#e53027" stroke-width="8"/>
+  <g clip-path="url(#clip-rayo-vallecano)">
+    <polygon points="150,15 185,15 55,195 20,195" fill="#e53027"/>
+  </g>
+  <path d="M30,22 L170,22 L170,110 C170,154 134,178 100,190 C66,178 30,154 30,110 Z" fill="none" stroke="#e53027" stroke-width="7"/>
+  <circle cx="100" cy="100" r="38" fill="#ffffff" stroke="#e53027" stroke-width="5"/>
+  <text x="100" y="112" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="30" fill="#e53027" letter-spacing="1">RAY</text>
+</svg>

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <clipPath id="edlpBody">
+      <path d="M40 58 H160 V132 C160 158 132 178 100 186 C68 178 40 158 40 132 Z"/>
+    </clipPath>
+  </defs>
+  <path d="M36 22 H164 V134 C164 162 134 182 100 190 C66 182 36 162 36 134 Z" fill="#D5001C" stroke="#ffffff" stroke-width="4"/>
+  <rect x="40" y="26" width="120" height="32" fill="#D5001C"/>
+  <text x="100" y="50" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="24" fill="#ffffff" letter-spacing="2">EDLP</text>
+  <g clip-path="url(#edlpBody)">
+    <rect x="40" y="58" width="24" height="130" fill="#D5001C"/>
+    <rect x="64" y="58" width="24" height="130" fill="#ffffff"/>
+    <rect x="88" y="58" width="24" height="130" fill="#D5001C"/>
+    <rect x="112" y="58" width="24" height="130" fill="#ffffff"/>
+    <rect x="136" y="58" width="24" height="130" fill="#D5001C"/>
+  </g>
+  <line x1="38" y1="58" x2="162" y2="58" stroke="#ffffff" stroke-width="3"/>
+</svg>

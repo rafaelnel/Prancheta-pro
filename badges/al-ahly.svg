@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <g fill="#FACC15" stroke="#111111" stroke-width="1.5">
+    <circle cx="64" cy="24" r="5"/><circle cx="88" cy="18" r="5.5"/><circle cx="112" cy="18" r="5.5"/><circle cx="136" cy="24" r="5"/>
+  </g>
+  <path d="M36 40 H164 V124 C164 156 134 178 100 189 C66 178 36 156 36 124 Z" fill="#C8102E" stroke="#FACC15" stroke-width="5"/>
+  <path d="M62 84 L100 64 L138 84 L124 128 L100 112 L76 128 Z" fill="#111111" stroke="#FACC15" stroke-width="3"/>
+  <rect x="44" y="130" width="112" height="26" rx="4" fill="#111111" stroke="#FACC15" stroke-width="2.5"/>
+  <text x="100" y="149" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="16" fill="#FACC15" letter-spacing="1">AL AHLY</text>
+</svg>

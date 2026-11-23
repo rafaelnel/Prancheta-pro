@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <path d="M40 34 L62 22 L82 34 L100 20 L118 34 L138 22 L160 34 V112 C160 150 132 178 100 188 C68 178 40 150 40 112 Z" fill="#00357A" stroke="#FACC15" stroke-width="5"/>
+  <rect x="43" y="82" width="114" height="36" fill="#FACC15"/>
+  <text x="100" y="109" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="27" fill="#00357A" letter-spacing="1.5">CABJ</text>
+  <polygon points="75,54 78,62 86,62 80,67 82,75 75,70 68,75 70,67 64,62 72,62" fill="#FACC15"/>
+  <polygon points="100,46 103,54 111,54 105,59 107,67 100,62 93,67 95,59 89,54 97,54" fill="#FACC15"/>
+  <polygon points="125,54 128,62 136,62 130,67 132,75 125,70 118,75 120,67 114,62 122,62" fill="#FACC15"/>
+  <polygon points="84,136 87,143 94,143 88,147 90,154 84,150 78,154 80,147 74,143 81,143" fill="#FACC15"/>
+  <polygon points="116,136 119,143 126,143 120,147 122,154 116,150 110,154 112,147 106,143 113,143" fill="#FACC15"/>
+  <polygon points="100,152 103,159 110,159 104,163 106,170 100,166 94,170 96,163 90,159 97,159" fill="#FACC15"/>
+</svg>

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs><clipPath id="clip-osasuna"><path d="M30,22 L170,22 L170,110 C170,154 134,178 100,190 C66,178 30,154 30,110 Z"/></clipPath></defs>
+  <g clip-path="url(#clip-osasuna)">
+    <rect x="30" y="22" width="70" height="170" fill="#d91a21"/>
+    <rect x="100" y="22" width="70" height="170" fill="#0a346f"/>
+  </g>
+  <path d="M30,22 L170,22 L170,110 C170,154 134,178 100,190 C66,178 30,154 30,110 Z" fill="none" stroke="#facc15" stroke-width="8"/>
+  <rect x="42" y="76" width="116" height="52" rx="8" fill="#0a346f" stroke="#facc15" stroke-width="4"/>
+  <text x="100" y="113" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="34" fill="#ffffff" letter-spacing="1.5">OSA</text>
+  <text x="100" y="54" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="14" fill="#facc15" letter-spacing="1.5">OSASUNA</text>
+</svg>

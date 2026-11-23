@@ -84,8 +84,14 @@ export function calculateContractRenewalExpectation(
       ? 16_000_000
       : club.division === 'PL'
       ? 12_000_000
-      : club.division === 'LALIGA'
+      : club.division === 'LALIGA' ||
+        club.division === 'BUNDESLIGA' ||
+        club.division === 'SERIE_A_IT'
       ? 10_000_000
+      : club.division === 'LIGUE_1'
+      ? 8_000_000
+      : club.division === 'LIGA_PORTUGAL'
+      ? 6_000_000
       : club.division === 'WORLD'
       ? 8_000_000
       : club.division === 'B'

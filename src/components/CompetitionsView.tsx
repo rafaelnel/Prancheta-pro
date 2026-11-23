@@ -5,13 +5,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Globe2,
-  Award,
   Shield,
 } from 'lucide-react';
 import {
   USER_CLUB_ID,
   generateLeagueSchedule,
   getInitialStandingsForDivision,
+  getLeagueTotalRounds,
   getPlayableLeagueLabel,
   getPlayableLeagueShortLabel,
   isEuropeanPlayableDivision,
@@ -44,12 +44,17 @@ import {
   SuperMundialState,
 } from '../types/football';
 import { ClubBadge } from './ClubBadge';
+import { CompetitionLogo } from './CompetitionLogo';
 
 type CompTab =
   | 'A'
   | 'B'
   | 'PL'
   | 'LALIGA'
+  | 'BUNDESLIGA'
+  | 'SERIE_A_IT'
+  | 'LIGUE_1'
+  | 'LIGA_PORTUGAL'
   | 'COPA_DO_BRASIL'
   | 'LIBERTADORES'
   | 'CHAMPIONS'
@@ -223,10 +228,17 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
     viewedTab === 'A' ||
     viewedTab === 'B' ||
     viewedTab === 'PL' ||
-    viewedTab === 'LALIGA'
+    viewedTab === 'LALIGA' ||
+    viewedTab === 'BUNDESLIGA' ||
+    viewedTab === 'SERIE_A_IT' ||
+    viewedTab === 'LIGUE_1' ||
+    viewedTab === 'LIGA_PORTUGAL'
       ? viewedTab
       : userDivision;
   const viewedIsEuro = isEuropeanPlayableDivision(viewedDivision);
+  const totalRounds = getLeagueTotalRounds(viewedDivision);
+  const halfRounds = Math.floor(totalRounds / 2);
+  const safeSelectedRound = Math.min(totalRounds, Math.max(1, selectedRound));
   const isViewingUserDivision = viewedDivision === userDivision;
   const activeStandings = isViewingUserDivision
     ? standings
@@ -240,10 +252,17 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
     : generateLeagueSchedule('__none__', viewedDivision, clubs);
 
   const roundMatches = activeFixtures.filter(
-    (f) => f.roundNumber === selectedRound
+    (f) => f.roundNumber === safeSelectedRound
   );
 
-  const relegationStartPos = viewedIsEuro ? 18 : 17;
+  const relegationStartPos =
+    viewedDivision === 'BUNDESLIGA' ||
+    viewedDivision === 'LIGUE_1' ||
+    viewedDivision === 'LIGA_PORTUGAL'
+      ? 16
+      : viewedIsEuro
+      ? 18
+      : 17;
 
   const filteredStandings = activeStandings
     .map((row, idx) => ({ row, pos: idx + 1 }))
@@ -404,12 +423,47 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
       ? superMundial?.isActiveThisSeason
         ? `Super Mundial de Clubes ${seasonYear} · 16 Clubes (6 UEFA · 6 CONMEBOL · 4 Globais) · Quadrienal`
         : `Super Mundial de Clubes · Próxima Edição em ${superMundial?.nextEditionYear ?? seasonYear + 1} (Quadrienal)`
-      : `${getPlayableLeagueLabel(viewedDivision)} ${seasonYear} · 38 Rodadas (Turno & Returno)`;
+      : `${getPlayableLeagueLabel(viewedDivision)} ${seasonYear} · ${totalRounds} Rodadas (Turno & Returno)`;
+
+  const isGermanItalianPair =
+    userDivision === 'BUNDESLIGA' || userDivision === 'SERIE_A_IT';
+  const isFrancoPortuguesePair =
+    userDivision === 'LIGUE_1' || userDivision === 'LIGA_PORTUGAL';
 
   const competitionTabs: Array<{ id: CompTab; label: string }> = userIsEuro
     ? [
-        { id: 'PL', label: `Premier League ${userDivision === 'PL' ? '★' : ''}` },
-        { id: 'LALIGA', label: `La Liga ${userDivision === 'LALIGA' ? '★' : ''}` },
+        ...(isGermanItalianPair
+          ? [
+              {
+                id: 'BUNDESLIGA' as const,
+                label: `Bundesliga ${userDivision === 'BUNDESLIGA' ? '★' : ''}`,
+              },
+              {
+                id: 'SERIE_A_IT' as const,
+                label: `Serie A Italiana ${userDivision === 'SERIE_A_IT' ? '★' : ''}`,
+              },
+            ]
+          : isFrancoPortuguesePair
+          ? [
+              {
+                id: 'LIGUE_1' as const,
+                label: `Ligue 1 ${userDivision === 'LIGUE_1' ? '★' : ''}`,
+              },
+              {
+                id: 'LIGA_PORTUGAL' as const,
+                label: `Liga Portugal ${userDivision === 'LIGA_PORTUGAL' ? '★' : ''}`,
+              },
+            ]
+          : [
+              {
+                id: 'PL' as const,
+                label: `Premier League ${userDivision === 'PL' ? '★' : ''}`,
+              },
+              {
+                id: 'LALIGA' as const,
+                label: `La Liga ${userDivision === 'LALIGA' ? '★' : ''}`,
+              },
+            ]),
         {
           id: 'CHAMPIONS',
           label: `Champions ${userParticipatesUcl ? '★' : ''}`,
@@ -462,13 +516,18 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
     <div className="space-y-5">
       {/* Header + Competition Tabs */}
       <div className="flex flex-col gap-4 pb-2 border-b border-white/[0.07]">
-        <div>
-          <span className="block text-xs sm:text-sm font-normal text-zinc-400 tracking-wide">
-            {headerSubtitle}
-          </span>
-          <h2 className="font-display text-3xl sm:text-5xl font-extrabold uppercase tracking-tight text-white leading-[0.95] mt-0.5">
-            {headerTitle}
-          </h2>
+        <div className="flex items-center gap-3.5">
+          {viewedTab !== 'HALL' && (
+            <CompetitionLogo competition={viewedTab} size="lg" />
+          )}
+          <div className="min-w-0">
+            <span className="block text-xs sm:text-sm font-normal text-zinc-400 tracking-wide">
+              {headerSubtitle}
+            </span>
+            <h2 className="font-display text-3xl sm:text-5xl font-extrabold uppercase tracking-tight text-white leading-[0.95] mt-0.5">
+              {headerTitle}
+            </h2>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -477,33 +536,41 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
             {competitionTabs.map((tab) => (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => {
                   setViewedTab(tab.id);
                   setZoneFilter('ALL');
                 }}
-                className={`px-3 py-1.5 rounded-full text-xs font-extrabold transition-colors whitespace-nowrap ${
+                className={`px-3 py-1.5 rounded-full text-xs font-extrabold transition-colors whitespace-nowrap inline-flex items-center gap-1.5 cursor-pointer ${
                   viewedTab === tab.id
                     ? 'bg-[#b5ff00] text-[#090a0f]'
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                {tab.label.trim()}
+                {tab.id !== 'HALL' && (
+                  <CompetitionLogo competition={tab.id} size="xs" />
+                )}
+                <span>{tab.label.trim()}</span>
               </button>
             ))}
           </div>
         </div>
       </div>
 
-      {/* VIEW: LEAGUE TABLE (Série A / Série B / Premier League / La Liga) */}
+      {/* VIEW: LEAGUE TABLE (Série A / Série B / Premier League / La Liga / Bundesliga / Serie A Italiana) */}
       {(viewedTab === 'A' ||
         viewedTab === 'B' ||
         viewedTab === 'PL' ||
-        viewedTab === 'LALIGA') && (
+        viewedTab === 'LALIGA' ||
+        viewedTab === 'BUNDESLIGA' ||
+        viewedTab === 'SERIE_A_IT' ||
+        viewedTab === 'LIGUE_1' ||
+        viewedTab === 'LIGA_PORTUGAL') && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-1.5">
             {(
               [
-                { id: 'ALL', label: 'Todos (20)' },
+                { id: 'ALL', label: `Todos (${activeStandings.length})` },
                 {
                   id: 'TOP4',
                   label: viewedIsEuro
@@ -539,7 +606,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
             <div className="xl:col-span-8 bg-[#14171f] border border-white/[0.07] rounded-[28px] overflow-hidden">
               <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-white/[0.07]">
                 <div className="flex items-center gap-2.5">
-                  <Trophy className="w-4 h-4 text-[#b5ff00]" />
+                  <CompetitionLogo competition={viewedDivision} size="sm" />
                   <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white">
                     Classificação — {getPlayableLeagueShortLabel(viewedDivision)}
                   </h3>
@@ -563,7 +630,11 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                     </span>
                   ) : null}
                   <span className="text-rose-400 font-semibold">
-                    {viewedIsEuro
+                    {viewedDivision === 'BUNDESLIGA' ||
+                    viewedDivision === 'LIGUE_1' ||
+                    viewedDivision === 'LIGA_PORTUGAL'
+                      ? '■ 16º–18º Rebaixamento'
+                      : viewedIsEuro
                       ? '■ 18º–20º Rebaixamento'
                       : viewedDivision === 'A'
                       ? '■ 17º–20º Rebaixamento'
@@ -707,7 +778,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-[#b5ff00]" />
                   <h3 className="font-display text-xl font-extrabold uppercase tracking-tight text-white">
-                    {selectedRound}ª Rodada ·{' '}
+                    {safeSelectedRound}ª Rodada ·{' '}
                     {getPlayableLeagueShortLabel(viewedDivision)}
                   </h3>
                 </div>
@@ -715,20 +786,20 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                 <div className="flex items-center gap-1 bg-[#0b0c10] p-1 rounded-full border border-white/[0.07]">
                   <button
                     type="button"
-                    onClick={() => setSelectedRound((r) => Math.max(1, r - 1))}
-                    disabled={selectedRound <= 1}
+                    onClick={() => setSelectedRound((r) => Math.max(1, Math.min(totalRounds, r) - 1))}
+                    disabled={safeSelectedRound <= 1}
                     aria-label="Rodada anterior"
                     className="p-1.5 rounded-full hover:bg-white/10 disabled:opacity-40 text-white transition-colors"
                   >
                     <ChevronLeft className="w-3.5 h-3.5" />
                   </button>
                   <span className="text-xs font-mono font-bold px-2 text-[#b5ff00] tabular-nums">
-                    R{selectedRound}/38
+                    R{safeSelectedRound}/{totalRounds}
                   </span>
                   <button
                     type="button"
-                    onClick={() => setSelectedRound((r) => Math.min(38, r + 1))}
-                    disabled={selectedRound >= 38}
+                    onClick={() => setSelectedRound((r) => Math.min(totalRounds, Math.max(1, r) + 1))}
+                    disabled={safeSelectedRound >= totalRounds}
                     aria-label="Próxima rodada"
                     className="p-1.5 rounded-full hover:bg-white/10 disabled:opacity-40 text-white transition-colors"
                   >
@@ -738,16 +809,16 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
               </div>
               <div className="px-4 pt-3 flex items-center justify-between gap-2 text-[11px]">
                 <span className="font-mono text-zinc-400">
-                  {selectedRound <= 19 ? '1º Turno (Ida)' : '2º Turno (Volta)'}
+                  {safeSelectedRound <= halfRounds ? '1º Turno (Ida)' : '2º Turno (Volta)'}
                 </span>
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() =>
-                      setSelectedRound((r) => (r > 19 ? r - 19 : 1))
+                      setSelectedRound((r) => (r > halfRounds ? Math.max(1, r - halfRounds) : 1))
                     }
                     className={`px-2 py-0.5 rounded-full font-mono font-bold transition-colors ${
-                      selectedRound <= 19
+                      safeSelectedRound <= halfRounds
                         ? 'bg-[#b5ff00]/15 text-[#b5ff00]'
                         : 'bg-[#0b0c10] text-zinc-400 hover:text-white'
                     }`}
@@ -757,10 +828,12 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                   <button
                     type="button"
                     onClick={() =>
-                      setSelectedRound((r) => (r <= 19 ? r + 19 : 38))
+                      setSelectedRound((r) =>
+                        r <= halfRounds ? Math.min(totalRounds, r + halfRounds) : totalRounds
+                      )
                     }
                     className={`px-2 py-0.5 rounded-full font-mono font-bold transition-colors ${
-                      selectedRound > 19
+                      safeSelectedRound > halfRounds
                         ? 'bg-[#b5ff00]/15 text-[#b5ff00]'
                         : 'bg-[#0b0c10] text-zinc-400 hover:text-white'
                     }`}
@@ -850,9 +923,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
           {/* Status / Champion Banner */}
           <div className="bg-[#14171f] border border-white/[0.08] rounded-[28px] p-5 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-[#b5ff00] text-[#090a0f] flex items-center justify-center shrink-0">
-                <Award className="w-5 h-5" />
-              </div>
+              <CompetitionLogo competition="COPA_DO_BRASIL" size="lg" />
               <div>
                 <div className="text-xs text-zinc-400 font-mono uppercase">
                   Fase Atual: {copaDoBrasil.currentStage}
@@ -926,9 +997,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
           {/* Top Sub-Navigation Bar */}
           <div className="bg-[#14171f] border border-white/[0.08] rounded-[28px] p-5 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-[#b5ff00] text-[#090a0f] flex items-center justify-center shrink-0">
-                <Globe2 className="w-5 h-5" />
-              </div>
+              <CompetitionLogo competition="LIBERTADORES" size="lg" />
               <div>
                 <div className="text-xs text-zinc-400 font-mono uppercase">
                   Fase Atual:{' '}
@@ -1254,9 +1323,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
         <div className="space-y-5">
           <div className="bg-[#14171f] border border-indigo-400/25 rounded-[28px] p-5 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-indigo-500 text-white flex items-center justify-center shrink-0">
-                <Trophy className="w-5 h-5" />
-              </div>
+              <CompetitionLogo competition="CHAMPIONS" size="lg" />
               <div>
                 <div className="text-xs text-indigo-300 font-mono uppercase">
                   Simulação Europeia · Fase Atual: {championsLeague.currentStage}
@@ -1327,9 +1394,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
         <div className="space-y-5">
           <div className="bg-[#14171f] border border-amber-400/25 rounded-[28px] p-5 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-amber-400 text-[#090a0f] flex items-center justify-center shrink-0">
-                <Trophy className="w-5 h-5" />
-              </div>
+              <CompetitionLogo competition="MUNDIAL" size="lg" />
               <div>
                 <div className="text-xs text-amber-300 font-mono uppercase">
                   Torneio Intercontinental · Dezembro {seasonYear}
@@ -1471,9 +1536,7 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
         <div className="space-y-5">
           <div className="bg-[#14171f] border border-purple-400/25 rounded-[28px] p-5 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-purple-500 text-white flex items-center justify-center shrink-0">
-                <Globe2 className="w-5 h-5" />
-              </div>
+              <CompetitionLogo competition="SUPER_MUNDIAL" size="lg" />
               <div>
                 <div className="text-xs text-purple-300 font-mono uppercase">
                   {superMundial.isActiveThisSeason
@@ -1888,7 +1951,12 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                    {entry.premierLeagueChampionName || entry.laLigaChampionName ? (
+                    {entry.premierLeagueChampionName ||
+                    entry.laLigaChampionName ||
+                    entry.bundesligaChampionName ||
+                    entry.serieAItChampionName ||
+                    entry.ligue1ChampionName ||
+                    entry.ligaPortugalChampionName ? (
                       <>
                         {entry.premierLeagueChampionName && (
                           <div className="bg-[#0b0c10] border border-[#b5ff00]/30 rounded-2xl p-3.5">
@@ -1907,6 +1975,46 @@ export const CompetitionsView: React.FC<CompetitionsViewProps> = ({
                             </div>
                             <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
                               {entry.laLigaChampionName}
+                            </div>
+                          </div>
+                        )}
+                        {entry.bundesligaChampionName && (
+                          <div className="bg-[#0b0c10] border border-[#b5ff00]/30 rounded-2xl p-3.5">
+                            <div className="text-[10px] font-mono uppercase text-[#b5ff00]">
+                              Bundesliga
+                            </div>
+                            <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                              {entry.bundesligaChampionName}
+                            </div>
+                          </div>
+                        )}
+                        {entry.serieAItChampionName && (
+                          <div className="bg-[#0b0c10] border border-sky-400/30 rounded-2xl p-3.5">
+                            <div className="text-[10px] font-mono uppercase text-sky-300">
+                              Serie A Italiana
+                            </div>
+                            <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                              {entry.serieAItChampionName}
+                            </div>
+                          </div>
+                        )}
+                        {entry.ligue1ChampionName && (
+                          <div className="bg-[#0b0c10] border border-[#b5ff00]/30 rounded-2xl p-3.5">
+                            <div className="text-[10px] font-mono uppercase text-[#b5ff00]">
+                              Ligue 1
+                            </div>
+                            <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                              {entry.ligue1ChampionName}
+                            </div>
+                          </div>
+                        )}
+                        {entry.ligaPortugalChampionName && (
+                          <div className="bg-[#0b0c10] border border-sky-400/30 rounded-2xl p-3.5">
+                            <div className="text-[10px] font-mono uppercase text-sky-300">
+                              Liga Portugal
+                            </div>
+                            <div className="font-display text-lg font-extrabold text-white mt-1 truncate">
+                              {entry.ligaPortugalChampionName}
                             </div>
                           </div>
                         )}

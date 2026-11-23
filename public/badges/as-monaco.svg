@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <clipPath id="dc-as-monaco"><path d="M30,22 L170,22 L170,110 C170,154 134,178 100,190 C66,178 30,154 30,110 Z"/></clipPath>
+  </defs>
+  <g clip-path="url(#dc-as-monaco)">
+    <rect x="20" y="16" width="160" height="180" fill="#e30613"/>
+    <polygon points="20,145 180,35 180,95 20,195" fill="#ffffff"/>
+  </g>
+  <path d="M30,22 L170,22 L170,110 C170,154 134,178 100,190 C66,178 30,154 30,110 Z" fill="none" stroke="#d4af37" stroke-width="8"/>
+  <rect x="38" y="30" width="124" height="28" fill="#e30613"/>
+  <text x="100" y="49" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="12" fill="#ffffff" letter-spacing="1.5">LIGUE 1</text>
+  <circle cx="100" cy="114" r="41" fill="#ffffff" stroke="#e30613" stroke-width="4"/>
+  <text x="100" y="125" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="32" fill="#0f172a" letter-spacing="1">ASM</text>
+  <text x="100" y="176" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="12" fill="#0f172a" letter-spacing="2">1924</text>
+</svg>

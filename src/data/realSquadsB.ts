@@ -4,7 +4,7 @@ import { RealPlayerSeed } from './squadBuilder';
 export const REAL_SQUADS_SERIE_B: Record<string, RealPlayerSeed[]> = {
   fortaleza: [
     [1, 'João Ricardo', 37, 'Brasil', 'GOL', 15.2, { agilidade: 17, posicionamento: 17 }],
-    [2, 'Tinga', 32, 'Brasil', 'LD', 14.8],
+    [22, 'Dudu', 28, 'Brasil', 'LD', 14.8],
     [13, 'Benjamín Kuscevic', 29, 'Chile', 'ZAG', 15.0],
     [23, 'Emanuel Brítez', 33, 'Argentina', 'ZAG', 14.9],
     [14, 'Eros Mancuso', 26, 'Argentina', 'LE', 14.8],

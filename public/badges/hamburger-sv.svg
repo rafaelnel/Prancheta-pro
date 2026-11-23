@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <clipPath id="shield-hamburger-sv">
+      <path d="M34,20 L166,20 L166,112 C166,154 134,178 100,190 C66,178 34,154 34,112 Z"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#shield-hamburger-sv)">
+    <rect x="20" y="16" width="160" height="180" fill="#005ca9"/>
+    <rect x="64" y="16" width="24" height="180" fill="#ffffff" fill-opacity="0.28"/>
+    <rect x="112" y="16" width="24" height="180" fill="#ffffff" fill-opacity="0.28"/>
+    <rect x="30" y="78" width="140" height="52" fill="#ffffff"/>
+  </g>
+  <path d="M34,20 L166,20 L166,112 C166,154 134,178 100,190 C66,178 34,154 34,112 Z" fill="none" stroke="#ffffff" stroke-width="8"/>
+  <text x="100" y="56" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="13" fill="#ffffff" letter-spacing="1.5">BUNDESLIGA</text>
+  <text x="100" y="115" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="34" fill="#0f172a" letter-spacing="1.5">HSV</text>
+  <text x="100" y="164" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="12" fill="#ffffff" letter-spacing="2">1887</text>
+</svg>

@@ -169,6 +169,7 @@ import { FinancesView } from './components/FinancesView';
 import { PlayerProfileModal } from './components/PlayerProfileModal';
 import { SeasonEndModal } from './components/SeasonEndModal';
 import { NewSeasonEvolutionModal } from './components/NewSeasonEvolutionModal';
+import { computeStarterMetrics } from './engine/seasonStarterOvrChart';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import {
@@ -187,9 +188,7 @@ import {
   applyPostMatchProbabilisticEvolution,
   calculateMatchGateRevenue,
   calculateOperationalCost,
-  clampTicketPriceMultiplier,
   createInitialFinanceLedger,
-  executeStadiumRenovation,
   processMidSeasonEvolution,
 } from './engine/economyAndEvolution';
 import {
@@ -449,75 +448,6 @@ export default function App() {
       `Base Sub-20 atualizada: Nível ${tierObj.label} (${focus})`,
       'cyan'
     );
-  };
-
-  const handleUpdateTicketPriceMultiplier = (nextMultiplier: number) => {
-    const clamped = clampTicketPriceMultiplier(nextMultiplier);
-    const updatedClubs = clubs.map((c) =>
-      c.id === userClubId ? { ...c, ticketPriceMultiplier: clamped } : c
-    );
-    setClubs(updatedClubs);
-    setHasUnsavedChanges(true);
-    persistCareer({ clubs: updatedClubs });
-    const pctDelta = Math.round((clamped - 1.0) * 100);
-    const label =
-      pctDelta > 0
-        ? `+${pctDelta}% acima da referência`
-        : pctDelta < 0
-        ? `${pctDelta}% (ingresso acessível)`
-        : 'Padrão de referência (100%)';
-    showActionToast(`✓ Preço de ingresso ajustado: ${label}`, 'cyan');
-  };
-
-  const handleRenovateStadium = () => {
-    const res = executeStadiumRenovation({
-      club: userClub,
-      financeLedger,
-    });
-    if (!res.success || !res.quote.nextTier) {
-      showActionToast(`✕ ${res.message}`, 'rose');
-      return;
-    }
-
-    const updatedClubs = clubs.map((c) =>
-      c.id === userClubId ? res.updatedClub : c
-    );
-    const nextLedger = res.updatedFinanceLedger || financeLedger;
-    const dateLabel = formatCalendarDate(dayOffset, currentYear);
-    const stadiumMsg: InboxMessage = {
-      id: `msg-stadium-renovation-${Date.now()}`,
-      date: `${dateLabel} · Patrimônio`,
-      sender: 'Diretoria de Infraestrutura & Patrimônio',
-      senderRole: 'Gestão do Estádio',
-      subject: `Obra Concluída em ${userClub.stadium}: ${res.quote.nextTier.name} (+${res.quote.capacityGain.toLocaleString(
-        'pt-BR'
-      )} lugares)`,
-      category: 'Diretoria',
-      priority: 'positive',
-      read: false,
-      body: [
-        res.message,
-        `Investimento realizado à vista: ${formatCompactBRL(
-          res.quote.cost
-        )}. O novo padrão estrutural reduz a desistência de torcedores em ${Math.round(
-          res.quote.nextTier.priceRetentionShield * 100
-        )}% mesmo quando o valor do ingresso é elevado.`,
-      ],
-      actionLabel: 'Ver Estádio & Finanças',
-      actionTargetTab: 'finances',
-    };
-    const updatedMessages = [stadiumMsg, ...messages].slice(0, 80);
-
-    setClubs(updatedClubs);
-    setFinanceLedger(nextLedger);
-    setMessages(updatedMessages);
-    setHasUnsavedChanges(true);
-    persistCareer({
-      clubs: updatedClubs,
-      financeLedger: nextLedger,
-      messages: updatedMessages,
-    });
-    showActionToast(`✓ ${res.message}`, 'emerald');
   };
 
   const handlePromoteYouthPlayer = (playerId: string) => {
@@ -2034,11 +1964,19 @@ export default function App() {
         80
       );
       const processedMatchState = { ...matchState, roundProcessed: true };
+      const starterMetrics = computeStarterMetrics(
+        finalSquad,
+        processedMatchState,
+        userClubId
+      );
       const newMatchRecord = createMatchHistoryRecordFromLiveMatch({
         match: processedMatchState,
         seasonYear: currentYear,
         dateLabel: formatCalendarDate(dayOffset, currentYear),
         fallbackDivision: userPlayableDivision,
+        userStarterAvgOvr: starterMetrics.userStarterAvgOvr,
+        userStarterAvgRating: starterMetrics.userStarterAvgRating,
+        userMatchAvgRating: starterMetrics.userMatchAvgRating,
       });
       const updatedMatchHistory = [
         newMatchRecord,
@@ -2680,6 +2618,7 @@ export default function App() {
             championsLeague: withSummary.championsLeague,
             mundial: withSummary.mundial,
             superMundial: withSummary.superMundial,
+            matchHistory: withSummary.matchHistory,
           })
         : null;
 
@@ -3124,6 +3063,7 @@ export default function App() {
         championsLeague,
         mundial,
         superMundial,
+        matchHistory,
       });
     setSeasonEndReport(report);
     setIsSeasonEndModalOpen(true);
@@ -3142,6 +3082,7 @@ export default function App() {
     championsLeague,
     mundial,
     superMundial,
+    matchHistory,
     persistCareer,
   ]);
 
@@ -3164,6 +3105,7 @@ export default function App() {
       accumulatedUclChampions,
       accumulatedLibChampions,
       seasonHistory,
+      matchHistory,
       managerName,
       youthAcademy,
     });
@@ -3252,6 +3194,8 @@ export default function App() {
     }
 
     let nextIdx = Math.min(SEASON_CALENDAR.length - 1, seasonStepIndex + 1);
+    let nextSecondaryFixtures = secondaryFixtures;
+    let nextSecondaryStandings = secondaryStandings;
     let nextCdb = copaDoBrasil;
     let nextLib = libertadores;
     let nextUcl = championsLeague;
@@ -3263,12 +3207,65 @@ export default function App() {
     const skippedAiHomeMatchesAll: HomeGateSettlementItem[] = [];
     let seasonEndedDuringSkip = false;
 
-    // Auto-simulate any cup/European rounds where user does not participate or was eliminated
+    // Auto-simulate any cup/European rounds or secondary league rounds (e.g. rounds 35-38 in 34-round Bundesliga) where user has no fixture
     while (nextIdx < SEASON_CALENDAR.length) {
       const candidateStep = SEASON_CALENDAR[nextIdx];
       if (candidateStep.leagueRound) {
-        nextLeagueRound = candidateStep.leagueRound;
-        break;
+        const userLeagueFix = fixtures.find(
+          (f) => f.roundNumber === candidateStep.leagueRound && f.isUserMatch
+        );
+        if (userLeagueFix) {
+          nextLeagueRound = candidateStep.leagueRound;
+          break;
+        }
+        // Liga do usuário já concluiu (ex: Bundesliga 34 rodadas) — simula rodada da liga secundária (ex: Serie A Italiana R35-38)
+        const secRoundNum = candidateStep.leagueRound;
+        const hasUnplayedSec = nextSecondaryFixtures.some(
+          (f) => f.roundNumber === secRoundNum && !f.played
+        );
+        if (hasUnplayedSec) {
+          nextSecondaryFixtures = simulateRoundFixtures(
+            nextSecondaryFixtures,
+            secRoundNum,
+            {
+              fixtureId: '__none__',
+              homeGoals: 0,
+              awayGoals: 0,
+              homeXG: 0,
+              awayXG: 0,
+            },
+            clubs
+          );
+          const secCompleted = nextSecondaryFixtures.filter(
+            (f) => f.roundNumber === secRoundNum
+          );
+          nextSecondaryStandings = updateStandingsWithRound(
+            nextSecondaryStandings,
+            secCompleted
+          );
+          nextAiSquads = attributeAiRoundPlayerStats(
+            nextAiSquads,
+            secCompleted,
+            userClubId
+          );
+          for (const fx of secCompleted) {
+            const rankIdx = nextSecondaryStandings.findIndex(
+              (s) => s.clubId === fx.homeClubId
+            );
+            skippedAiHomeMatchesAll.push({
+              clubId: fx.homeClubId,
+              rank: rankIdx >= 0 ? rankIdx + 1 : 10,
+              totalTeams: nextSecondaryStandings.length || 20,
+              competition: 'BRASILEIRAO',
+            });
+          }
+        }
+        if (nextIdx >= SEASON_CALENDAR.length - 1) {
+          seasonEndedDuringSkip = true;
+          break;
+        }
+        nextIdx += 1;
+        continue;
       }
 
       if (
@@ -3720,12 +3717,13 @@ export default function App() {
           userSquad: finalSquad,
           aiSquads: finalAiSquads,
           standings,
-          secondaryStandings,
+          secondaryStandings: nextSecondaryStandings,
           copaDoBrasil: nextCdb,
           libertadores: nextLib,
           championsLeague: nextUcl,
           mundial: nextMundial,
           superMundial: nextSuperMundial,
+          matchHistory,
         })
       : null;
 
@@ -3734,6 +3732,10 @@ export default function App() {
     setYouthAcademy(updatedYouthAcademy);
     setSquad(finalSquad);
     setAiSquads(finalAiSquads);
+    if (nextSecondaryFixtures !== secondaryFixtures) {
+      setSecondaryFixtures(nextSecondaryFixtures);
+      setSecondaryStandings(nextSecondaryStandings);
+    }
     setCopaDoBrasil(nextCdb);
     setLibertadores(nextLib);
     setChampionsLeague(nextUcl);
@@ -3757,6 +3759,8 @@ export default function App() {
       youthAcademy: updatedYouthAcademy,
       squad: finalSquad,
       aiSquads: finalAiSquads,
+      secondaryFixtures: nextSecondaryFixtures,
+      secondaryStandings: nextSecondaryStandings,
       copaDoBrasil: nextCdb,
       libertadores: nextLib,
       championsLeague: nextUcl,
@@ -5694,9 +5698,6 @@ export default function App() {
               loanedOutPlayers={loanedOutPlayers}
               financeLedger={financeLedger}
               seasonYear={currentYear}
-              userRank={userRank}
-              onUpdateTicketPriceMultiplier={handleUpdateTicketPriceMultiplier}
-              onRenovateStadium={handleRenovateStadium}
             />
           )}
         </main>
@@ -5836,6 +5837,8 @@ export default function App() {
         report={seasonEndReport}
         userClub={userClub}
         clubs={clubs}
+        userSquad={squad}
+        matchHistory={matchHistory}
         expiringContracts={squad.filter(
           (p) =>
             p.contractType !== 'EMPRESTADO' &&

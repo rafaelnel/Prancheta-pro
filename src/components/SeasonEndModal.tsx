@@ -13,20 +13,25 @@ import {
   Star,
   Zap,
 } from 'lucide-react';
-import { Club, SeasonEndReport } from '../types/football';
+import { Club, MatchHistoryRecord, Player, SeasonEndReport } from '../types/football';
 import {
+  getLeagueTotalRounds,
   getPlayableLeagueShortLabel,
   isEuropeanPlayableDivision,
 } from '../data/initialDatabase';
+import { buildStarterOvrEvolutionSeries } from '../engine/seasonStarterOvrChart';
 import { formatCompactBRL } from '../utils/formatters';
 import { ClubBadge } from './ClubBadge';
+import { StarterOvrEvolutionChart } from './StarterOvrEvolutionChart';
 
 interface SeasonEndModalProps {
   isOpen: boolean;
   report: SeasonEndReport | null;
   userClub: Club;
   clubs: Club[];
-  expiringContracts?: import('../types/football').Player[];
+  userSquad?: Player[];
+  matchHistory?: MatchHistoryRecord[];
+  expiringContracts?: Player[];
   onGoToContracts?: () => void;
   onClose: () => void;
   onStartNextSeason: () => void;
@@ -37,12 +42,27 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
   report,
   userClub,
   clubs,
+  userSquad = [],
+  matchHistory = [],
   expiringContracts = [],
   onGoToContracts,
   onClose,
   onStartNextSeason,
 }) => {
   if (!isOpen || !report) return null;
+
+  const starterOvrPoints =
+    report.starterOvrHistory && report.starterOvrHistory.length > 0
+      ? report.starterOvrHistory
+      : userSquad.length > 0
+      ? buildStarterOvrEvolutionSeries({
+          seasonYear: report.seasonYear,
+          userClubId: userClub.id,
+          userSquad,
+          matchHistory,
+          userEvolutionHighlights: report.userEvolutionHighlights,
+        })
+      : [];
 
   const clubMap = new Map(clubs.map((c) => [c.id, c]));
   const nextYear = report.seasonYear + 1;
@@ -73,6 +93,50 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
                 club: getClub(report.laLigaChampionId),
                 fallbackName: report.laLigaChampionName,
                 accent: 'bg-amber-400 text-[#090a0f]',
+                Icon: Award,
+              },
+            ]
+          : []),
+        ...(report.bundesligaChampionName
+          ? [
+              {
+                competition: `Bundesliga ${report.seasonYear}`,
+                club: getClub(report.bundesligaChampionId),
+                fallbackName: report.bundesligaChampionName,
+                accent: 'bg-[#b5ff00] text-[#090a0f]',
+                Icon: Trophy,
+              },
+            ]
+          : []),
+        ...(report.serieAItChampionName
+          ? [
+              {
+                competition: `Serie A Italiana ${report.seasonYear}`,
+                club: getClub(report.serieAItChampionId),
+                fallbackName: report.serieAItChampionName,
+                accent: 'bg-sky-400 text-[#090a0f]',
+                Icon: Award,
+              },
+            ]
+          : []),
+        ...(report.ligue1ChampionName
+          ? [
+              {
+                competition: `Ligue 1 ${report.seasonYear}`,
+                club: getClub(report.ligue1ChampionId),
+                fallbackName: report.ligue1ChampionName,
+                accent: 'bg-[#b5ff00] text-[#090a0f]',
+                Icon: Trophy,
+              },
+            ]
+          : []),
+        ...(report.ligaPortugalChampionName
+          ? [
+              {
+                competition: `Liga Portugal ${report.seasonYear}`,
+                club: getClub(report.ligaPortugalChampionId),
+                fallbackName: report.ligaPortugalChampionName,
+                accent: 'bg-sky-400 text-[#090a0f]',
                 Icon: Award,
               },
             ]
@@ -294,6 +358,13 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
               </div>
             </div>
           </div>
+
+          {/* 1.5. Starting XI Average OVR Evolution Bar Chart (from player rating history) */}
+          <StarterOvrEvolutionChart
+            seasonYear={report.seasonYear}
+            points={starterOvrPoints}
+            clubShortName={userClub.shortName}
+          />
 
           {/* 2. 4 Official Champions */}
           <div className="space-y-2.5">
@@ -691,7 +762,8 @@ export const SeasonEndModal: React.FC<SeasonEndModalProps> = ({
         <div className="px-5 sm:px-7 py-4 bg-[#0b0c10] border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="text-xs text-zinc-400">
             A virada de ano atualiza idades (+1), contratos/empréstimos, evolução,
-            safra da base Sub-20, patrocínios e tabela de 38 rodadas.
+            safra da base Sub-20, patrocínios e tabela de{' '}
+            {getLeagueTotalRounds(report.userFinalDivision)} rodadas.
           </div>
 
           <div className="flex items-center gap-2.5 ml-auto">

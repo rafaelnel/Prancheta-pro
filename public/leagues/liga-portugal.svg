@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="lpBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b3b2e"/>
+      <stop offset="55%" stop-color="#0a2334"/>
+      <stop offset="100%" stop-color="#7c0c1f"/>
+    </linearGradient>
+    <linearGradient id="lpGold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffd54f"/>
+      <stop offset="100%" stop-color="#e5a100"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" fill="url(#lpBg)"/>
+  <path d="M64 14 L100 30 V63 C100 84 85 98 64 106 C43 98 28 84 28 63 V30 Z" fill="#0b1522" stroke="url(#lpGold)" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M64 22 L92 35 V61 C92 78 80 89 64 96 V22 Z" fill="#c8102e" fill-opacity="0.9"/>
+  <path d="M64 22 L36 35 V61 C36 78 48 89 64 96 V22 Z" fill="#007a3d" fill-opacity="0.92"/>
+  <circle cx="64" cy="57" r="20" fill="#0b1522" stroke="#ffffff" stroke-width="2.5"/>
+  <text x="64" y="65" text-anchor="middle" font-family="Arial Black, Impact, sans-serif" font-weight="900" font-size="22" fill="#ffffff" letter-spacing="-1">LP</text>
+  <text x="64" y="121" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-weight="800" font-size="10.5" letter-spacing="1.1" fill="#ffffff">LIGA PORTUGAL</text>
+</svg>

@@ -253,8 +253,27 @@ export type SuperMundialKnockoutStage = 'Quartas' | 'Semifinal' | 'Final';
 
 export type SuperMundialStage = 'Grupos' | SuperMundialKnockoutStage;
 
-export type ClubDivision = 'A' | 'B' | 'LIB' | 'UCL' | 'PL' | 'LALIGA' | 'WORLD';
-export type PlayableDivision = 'A' | 'B' | 'PL' | 'LALIGA';
+export type ClubDivision =
+  | 'A'
+  | 'B'
+  | 'LIB'
+  | 'UCL'
+  | 'PL'
+  | 'LALIGA'
+  | 'BUNDESLIGA'
+  | 'SERIE_A_IT'
+  | 'LIGUE_1'
+  | 'LIGA_PORTUGAL'
+  | 'WORLD';
+export type PlayableDivision =
+  | 'A'
+  | 'B'
+  | 'PL'
+  | 'LALIGA'
+  | 'BUNDESLIGA'
+  | 'SERIE_A_IT'
+  | 'LIGUE_1'
+  | 'LIGA_PORTUGAL';
 
 export interface Club {
   id: string;
@@ -874,6 +893,14 @@ export interface SeasonEndReport {
   premierLeagueChampionName?: string | null;
   laLigaChampionId?: string | null;
   laLigaChampionName?: string | null;
+  bundesligaChampionId?: string | null;
+  bundesligaChampionName?: string | null;
+  serieAItChampionId?: string | null;
+  serieAItChampionName?: string | null;
+  ligue1ChampionId?: string | null;
+  ligue1ChampionName?: string | null;
+  ligaPortugalChampionId?: string | null;
+  ligaPortugalChampionName?: string | null;
   userFinalDivision: PlayableDivision;
   userFinalRank: number;
   userFinalPoints: number;
@@ -893,6 +920,17 @@ export interface SeasonEndReport {
   returnedLoanNames?: string[];
   retiredPlayers?: RetiredPlayerReportItem[];
   thinkingRetirementNames?: string[];
+  starterOvrHistory?: SeasonStarterOvrPoint[];
+}
+
+export interface SeasonStarterOvrPoint {
+  id: string;
+  label: string;
+  periodTitle: string;
+  starterAvgOvr: number;
+  avgRating: number;
+  deltaOvr: number;
+  matchesCount: number;
 }
 
 export interface SeasonArchiveEntry {
@@ -924,6 +962,14 @@ export interface SeasonArchiveEntry {
   premierLeagueChampionName?: string | null;
   laLigaChampionId?: string | null;
   laLigaChampionName?: string | null;
+  bundesligaChampionId?: string | null;
+  bundesligaChampionName?: string | null;
+  serieAItChampionId?: string | null;
+  serieAItChampionName?: string | null;
+  ligue1ChampionId?: string | null;
+  ligue1ChampionName?: string | null;
+  ligaPortugalChampionId?: string | null;
+  ligaPortugalChampionName?: string | null;
   userClubName: string;
   userDivision: PlayableDivision;
   userRank: number;
@@ -946,6 +992,9 @@ export interface MatchHistoryRecord {
   awayPenalties?: number | null;
   winnerClubId?: string | null;
   isKnockout?: boolean;
+  userStarterAvgOvr?: number;
+  userStarterAvgRating?: number;
+  userMatchAvgRating?: number;
 }
 
 export type CareerSlotIndex = 1 | 2 | 3 | 4;

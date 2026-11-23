@@ -4,6 +4,7 @@ import {
   LIBERTADORES_BR_CLUB_IDS,
   generateLeagueSchedule,
   getInitialStandingsForDivision,
+  getLeagueTotalRounds,
   getPlayableDivisionForClub,
   getPlayableLeagueLabel,
   getPlayableLeagueShortLabel,
@@ -158,7 +159,7 @@ export function createInitialInboxForCareer(
       bulletPoints: [
         boardGoalBullet,
         isEuro
-          ? `Folha mensal: ${formatCompactBRL(club.wageBudget)} · 20 clubes na ${fullLeagueLabel} (38 rodadas).`
+          ? `Folha mensal: ${formatCompactBRL(club.wageBudget)} · ${standings.length} clubes na ${fullLeagueLabel} (${getLeagueTotalRounds(playableDiv)} rodadas).`
           : `Folha mensal: ${formatCompactBRL(club.wageBudget)} · ${CONMEBOL_FOREIGN_CLUBS.length + LIBERTADORES_BR_CLUB_IDS.length} clubes na Libertadores.`,
       ],
       actionLabel: 'Ver Finanças',

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <clipPath id="dc-cd-tondela"><path d="M30,22 L170,22 L170,110 C170,154 134,178 100,190 C66,178 30,154 30,110 Z"/></clipPath>
+  </defs>
+  <g clip-path="url(#dc-cd-tondela)">
+    <rect x="20" y="16" width="160" height="180" fill="#facc15"/>
+    <polygon points="20,145 180,35 180,95 20,195" fill="#15803d"/>
+  </g>
+  <path d="M30,22 L170,22 L170,110 C170,154 134,178 100,190 C66,178 30,154 30,110 Z" fill="none" stroke="#ffffff" stroke-width="8"/>
+  <rect x="38" y="30" width="124" height="28" fill="#facc15"/>
+  <text x="100" y="49" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="12" fill="#0f172a" letter-spacing="1.5">PORTUGAL</text>
+  <circle cx="100" cy="114" r="41" fill="#ffffff" stroke="#facc15" stroke-width="4"/>
+  <text x="100" y="125" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="32" fill="#0f172a" letter-spacing="1">CDT</text>
+  <text x="100" y="176" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="12" fill="#ffffff" letter-spacing="2">1933</text>
+</svg>

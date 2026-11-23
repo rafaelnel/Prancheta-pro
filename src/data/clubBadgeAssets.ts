@@ -1,5 +1,12 @@
-export const REAL_BADGE_CLUB_IDS = new Set<string>([
-  // Série A 2026 (20 clubes)
+/**
+ * Clubes que possuem escudo real (PNG/SVG) em `public/badges/<clubId>.(png|svg)`.
+ * Todos os 154 clubes jogáveis (Brasileirão Série A/B, Premier League, La Liga,
+ * Bundesliga, Serie A Italiana, Ligue 1 e Liga Portugal) utilizam escudos reais em `.png`
+ * extraídos das folhas oficiais 2026/2027, enquanto clubes CONMEBOL e Globais do Mundial
+ * utilizam `.svg`.
+ */
+export const REAL_BADGE_CLUB_IDS: ReadonlySet<string> = new Set([
+  // Série A & B (40)
   'flamengo',
   'palmeiras',
   'botafogo',
@@ -20,7 +27,6 @@ export const REAL_BADGE_CLUB_IDS = new Set<string>([
   'mirassol',
   'chapecoense',
   'remo',
-  // Série B 2026 (20 clubes)
   'fortaleza',
   'sport',
   'ceara',
@@ -41,24 +47,164 @@ export const REAL_BADGE_CLUB_IDS = new Set<string>([
   'crb',
   'botafogo-sp',
   'athletic-mg',
-  // UEFA Champions League (16 clubes)
+  // CONMEBOL Libertadores (24)
+  'river-plate',
+  'boca-juniors',
+  'racing-club',
+  'estudiantes-lp',
+  'rosario-central',
+  'penarol',
+  'nacional-uru',
+  'atletico-nacional',
+  'santa-fe',
+  'junior-barranquilla',
+  'ldu-quito',
+  'ind-del-valle',
+  'barcelona-sc',
+  'cerro-porteno',
+  'libertad',
+  'olimpia',
+  'colo-colo',
+  'u-de-chile',
+  'universitario',
+  'alianza-lima',
+  'bolivar',
+  'the-strongest',
+  'dep-tachira',
+  'carabobo',
+  // UEFA Champions League Elite (16)
   'real-madrid',
-  'man-city',
   'barcelona',
-  'bayern',
-  'psg',
+  'atletico-madrid',
+  'man-city',
   'liverpool',
   'arsenal',
-  'inter-milan',
   'chelsea',
-  'atletico-madrid',
+  'psg',
+  'bayern',
   'borussia-dortmund',
+  'bayer-leverkusen',
+  'inter-milan',
   'ac-milan',
   'juventus',
-  'bayer-leverkusen',
   'benfica',
   'sporting',
-  // CONMEBOL Libertadores (24 clubes estrangeiros)
+  // Premier League 2026/27 Extra (16)
+  'aston-villa',
+  'newcastle',
+  'tottenham',
+  'birmingham-city',
+  'nottingham-forest',
+  'brighton',
+  'coventry-city',
+  'bournemouth',
+  'fulham',
+  'brentford',
+  'hull-city',
+  'everton',
+  'ipswich-town',
+  'leeds-united',
+  'middlesbrough',
+  'stoke-city',
+  // La Liga 2026/27 Extra (17)
+  'athletic-bilbao',
+  'villarreal',
+  'real-betis',
+  'real-sociedad',
+  'celta-vigo',
+  'deportivo-la-coruna',
+  'sevilla',
+  'valencia',
+  'osasuna',
+  'malaga',
+  'rayo-vallecano',
+  'getafe',
+  'espanyol',
+  'alaves',
+  'levante',
+  'elche',
+  'racing-santander',
+  // Bundesliga 2026/27 Extra (15)
+  'rb-leipzig',
+  'eintracht-frankfurt',
+  'vfb-stuttgart',
+  'sc-freiburg',
+  'mainz-05',
+  'borussia-monchengladbach',
+  'werder-bremen',
+  'schalke-04',
+  'fc-augsburg',
+  'union-berlin',
+  'hoffenheim',
+  'sc-paderborn',
+  'sv-elversberg',
+  'fc-koln',
+  'hamburger-sv',
+  // Serie A Italiana 2026/27 Extra (17)
+  'napoli',
+  'atalanta',
+  'as-roma',
+  'lazio',
+  'bologna',
+  'fiorentina',
+  'como',
+  'torino',
+  'udinese',
+  'genoa',
+  'cagliari',
+  'frosinone',
+  'parma',
+  'lecce',
+  'sassuolo',
+  'monza',
+  'venezia',
+  // Ligue 1 2026/27 Extra (17)
+  'olympique-marseille',
+  'as-monaco',
+  'lille-osc',
+  'olympique-lyonnais',
+  'ogc-nice',
+  'rc-strasbourg',
+  'rc-lens',
+  'stade-rennais',
+  'stade-brestois',
+  'toulouse-fc',
+  'paris-fc',
+  'fc-nantes',
+  'aj-auxerre',
+  'angers-sco',
+  'fc-lorient',
+  'le-havre-ac',
+  'fc-metz',
+  // Liga Portugal 2026/27 Extra (16)
+  'fc-porto',
+  'sc-braga',
+  'vitoria-sc',
+  'belenenses',
+  'maritimo',
+  'pacos-ferreira',
+  'estoril-praia',
+  'moreirense',
+  'rio-ave',
+  'vitoria-setubal',
+  'cd-aves',
+  'boavista',
+  'portimonense',
+  'feirense',
+  'cd-tondela',
+  'gd-chaves',
+  // Clubes Globais (Mundial & Super Mundial) (4)
+  'al-hilal',
+  'inter-miami',
+  'monterrey',
+  'al-ahly',
+]);
+
+/**
+ * Clubes cujo arquivo de escudo é `.svg` (em vez de `.png`).
+ * Os 154 clubes jogáveis (Brasil + 6 Ligas Europeias 2026/27) usam `.png`.
+ */
+const SVG_BADGE_CLUB_IDS: ReadonlySet<string> = new Set([
   'river-plate',
   'boca-juniors',
   'racing-club',
@@ -83,139 +229,34 @@ export const REAL_BADGE_CLUB_IDS = new Set<string>([
   'the-strongest',
   'dep-tachira',
   'carabobo',
-  // Mundial / Super Mundial (4 clubes globais)
   'al-hilal',
   'inter-miami',
   'monterrey',
   'al-ahly',
-  // Premier League (16 clubes adicionais — +4 já em UCL = 20 clubes)
-  'aston-villa',
-  'newcastle',
-  'tottenham',
-  'man-united',
-  'nottingham-forest',
-  'brighton',
-  'crystal-palace',
-  'bournemouth',
-  'fulham',
-  'brentford',
-  'west-ham',
-  'everton',
-  'wolves',
-  'leeds-united',
-  'burnley',
-  'sunderland',
-  // La Liga (17 clubes adicionais — +3 já em UCL = 20 clubes)
-  'athletic-bilbao',
-  'villarreal',
-  'real-betis',
-  'real-sociedad',
-  'celta-vigo',
-  'girona',
-  'sevilla',
-  'valencia',
-  'osasuna',
-  'mallorca',
-  'rayo-vallecano',
-  'getafe',
-  'espanyol',
-  'alaves',
-  'levante',
-  'elche',
-  'real-oviedo',
 ]);
 
-export const SVG_BADGE_CLUB_IDS = new Set<string>([
-  'chelsea',
-  'ac-milan',
-  'juventus',
-  'bayer-leverkusen',
-  'benfica',
-  'river-plate',
-  'boca-juniors',
-  'racing-club',
-  'estudiantes-lp',
-  'rosario-central',
-  'penarol',
-  'nacional-uru',
-  'atletico-nacional',
-  'santa-fe',
-  'junior-barranquilla',
-  'ldu-quito',
-  'ind-del-valle',
-  'barcelona-sc',
-  'cerro-porteno',
-  'libertad',
-  'olimpia',
-  'colo-colo',
-  'u-de-chile',
-  'universitario',
-  'alianza-lima',
-  'bolivar',
-  'the-strongest',
-  'dep-tachira',
-  'carabobo',
-  'al-hilal',
-  'inter-miami',
-  'monterrey',
-  'al-ahly',
-  // Premier League (16 adicionais)
-  'aston-villa',
-  'newcastle',
-  'tottenham',
-  'man-united',
-  'nottingham-forest',
-  'brighton',
-  'crystal-palace',
-  'bournemouth',
-  'fulham',
-  'brentford',
-  'west-ham',
-  'everton',
-  'wolves',
-  'leeds-united',
-  'burnley',
-  'sunderland',
-  // La Liga (17 adicionais)
-  'athletic-bilbao',
-  'villarreal',
-  'real-betis',
-  'real-sociedad',
-  'celta-vigo',
-  'girona',
-  'sevilla',
-  'valencia',
-  'osasuna',
-  'mallorca',
-  'rayo-vallecano',
-  'getafe',
-  'espanyol',
-  'alaves',
-  'levante',
-  'elche',
-  'real-oviedo',
-]);
-
-export function normalizeBaseUrl(baseUrl: string = './'): string {
-  if (!baseUrl) return './';
-  return baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+export function normalizeBaseUrl(baseUrl: string = '/'): string {
+  const trimmed = baseUrl.trim() || '/';
+  return trimmed.endsWith('/') ? trimmed : `${trimmed}/`;
 }
 
 export function getClubBadgeUrl(
   clubId: string,
-  baseUrl: string = './'
+  baseUrl: string = import.meta.env?.BASE_URL || '/'
 ): string | null {
   if (!REAL_BADGE_CLUB_IDS.has(clubId)) return null;
+  const normalizedBase = normalizeBaseUrl(baseUrl);
   const ext = SVG_BADGE_CLUB_IDS.has(clubId) ? 'svg' : 'png';
-  return `${normalizeBaseUrl(baseUrl)}badges/${clubId}.${ext}`;
+  return `${normalizedBase}badges/${clubId}.${ext}`;
 }
 
-export function getAllClubBadgeUrls(baseUrl: string = './'): string[] {
-  const prefix = normalizeBaseUrl(baseUrl);
+export function getAllClubBadgeUrls(
+  baseUrl: string = import.meta.env?.BASE_URL || '/'
+): string[] {
   const urls: string[] = [];
   for (const clubId of REAL_BADGE_CLUB_IDS) {
-    const ext = SVG_BADGE_CLUB_IDS.has(clubId) ? 'svg' : 'png';
-    urls.push(`${prefix}badges/${clubId}.${ext}`);
+    const url = getClubBadgeUrl(clubId, baseUrl);
+    if (url) urls.push(url);
   }
   return urls;
 }

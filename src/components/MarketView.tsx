@@ -149,6 +149,10 @@ type IntlScopeFilter =
   | 'ALL'
   | 'PREMIER_LEAGUE'
   | 'LA_LIGA'
+  | 'BUNDESLIGA'
+  | 'SERIE_A_IT'
+  | 'LIGUE_1'
+  | 'LIGA_PORTUGAL'
   | 'CHAMPIONS'
   | 'MUNDIAL_OUTROS';
 type ClubListingFilter = 'ALL' | 'LISTED_ANY' | 'LISTED_BUY' | 'LISTED_LOAN';
@@ -504,12 +508,34 @@ export const MarketView: React.FC<MarketViewProps> = ({
         const isLaLigaClub =
           league.startsWith('La Liga') ||
           (isChampionsClub && country === 'Espanha');
+        const isBundesligaClub =
+          league.startsWith('Bundesliga') ||
+          (isChampionsClub && country === 'Alemanha');
+        const isSerieAItClub =
+          league.startsWith('Serie A Italiana') ||
+          (isChampionsClub && country === 'Itália');
+        const isLigue1Club =
+          league.startsWith('Ligue 1') ||
+          (isChampionsClub && country === 'França');
+        const isLigaPortugalClub =
+          league.startsWith('Liga Portugal') ||
+          (isChampionsClub && country === 'Portugal');
         if (intlScope === 'PREMIER_LEAGUE' && !isPremierLeagueClub) continue;
         if (intlScope === 'LA_LIGA' && !isLaLigaClub) continue;
+        if (intlScope === 'BUNDESLIGA' && !isBundesligaClub) continue;
+        if (intlScope === 'SERIE_A_IT' && !isSerieAItClub) continue;
+        if (intlScope === 'LIGUE_1' && !isLigue1Club) continue;
+        if (intlScope === 'LIGA_PORTUGAL' && !isLigaPortugalClub) continue;
         if (intlScope === 'CHAMPIONS' && !isChampionsClub) continue;
         if (
           intlScope === 'MUNDIAL_OUTROS' &&
-          (isChampionsClub || isPremierLeagueClub || isLaLigaClub)
+          (isChampionsClub ||
+            isPremierLeagueClub ||
+            isLaLigaClub ||
+            isBundesligaClub ||
+            isSerieAItClub ||
+            isLigue1Club ||
+            isLigaPortugalClub)
         ) {
           continue;
         }
@@ -761,12 +787,34 @@ export const MarketView: React.FC<MarketViewProps> = ({
           const isLaLigaClub =
             league.startsWith('La Liga') ||
             (isChampionsClub && country === 'Espanha');
+          const isBundesligaClub =
+            league.startsWith('Bundesliga') ||
+            (isChampionsClub && country === 'Alemanha');
+          const isSerieAItClub =
+            league.startsWith('Serie A Italiana') ||
+            (isChampionsClub && country === 'Itália');
+          const isLigue1Club =
+            league.startsWith('Ligue 1') ||
+            (isChampionsClub && country === 'França');
+          const isLigaPortugalClub =
+            league.startsWith('Liga Portugal') ||
+            (isChampionsClub && country === 'Portugal');
           if (intlScope === 'PREMIER_LEAGUE' && !isPremierLeagueClub) return false;
           if (intlScope === 'LA_LIGA' && !isLaLigaClub) return false;
+          if (intlScope === 'BUNDESLIGA' && !isBundesligaClub) return false;
+          if (intlScope === 'SERIE_A_IT' && !isSerieAItClub) return false;
+          if (intlScope === 'LIGUE_1' && !isLigue1Club) return false;
+          if (intlScope === 'LIGA_PORTUGAL' && !isLigaPortugalClub) return false;
           if (intlScope === 'CHAMPIONS' && !isChampionsClub) return false;
           if (
             intlScope === 'MUNDIAL_OUTROS' &&
-            (isChampionsClub || isPremierLeagueClub || isLaLigaClub)
+            (isChampionsClub ||
+              isPremierLeagueClub ||
+              isLaLigaClub ||
+              isBundesligaClub ||
+              isSerieAItClub ||
+              isLigue1Club ||
+              isLigaPortugalClub)
           ) {
             return false;
           }
@@ -3687,6 +3735,10 @@ export const MarketView: React.FC<MarketViewProps> = ({
                     <option value="ALL">Todas Internacionais</option>
                     <option value="PREMIER_LEAGUE">Premier League (20)</option>
                     <option value="LA_LIGA">La Liga (20)</option>
+                    <option value="BUNDESLIGA">Bundesliga (18)</option>
+                    <option value="SERIE_A_IT">Serie A Italiana (20)</option>
+                    <option value="LIGUE_1">Ligue 1 (18)</option>
+                    <option value="LIGA_PORTUGAL">Liga Portugal (18)</option>
                     <option value="CHAMPIONS">Champions League (16)</option>
                     <option value="MUNDIAL_OUTROS">Mundial & Outros</option>
                   </select>
@@ -3930,6 +3982,10 @@ export const MarketView: React.FC<MarketViewProps> = ({
                           club.division === 'UCL' ||
                           club.division === 'PL' ||
                           club.division === 'LALIGA' ||
+                          club.division === 'BUNDESLIGA' ||
+                          club.division === 'SERIE_A_IT' ||
+                          club.division === 'LIGUE_1' ||
+                          club.division === 'LIGA_PORTUGAL' ||
                           club.division === 'WORLD'
                         ) {
                           return false;
@@ -3948,6 +4004,10 @@ export const MarketView: React.FC<MarketViewProps> = ({
                           club.division !== 'UCL' &&
                           club.division !== 'PL' &&
                           club.division !== 'LALIGA' &&
+                          club.division !== 'BUNDESLIGA' &&
+                          club.division !== 'SERIE_A_IT' &&
+                          club.division !== 'LIGUE_1' &&
+                          club.division !== 'LIGA_PORTUGAL' &&
                           club.division !== 'WORLD'
                         ) {
                           return false;
@@ -3958,9 +4018,29 @@ export const MarketView: React.FC<MarketViewProps> = ({
                         const isLaLigaClub =
                           club.division === 'LALIGA' ||
                           (club.division === 'UCL' && club.countryCode === 'ESP');
+                        const isBundesligaClub =
+                          club.division === 'BUNDESLIGA' ||
+                          (club.division === 'UCL' && club.countryCode === 'ALE');
+                        const isSerieAItClub =
+                          club.division === 'SERIE_A_IT' ||
+                          (club.division === 'UCL' && club.countryCode === 'ITA');
+                        const isLigue1Club =
+                          club.division === 'LIGUE_1' ||
+                          (club.division === 'UCL' && club.countryCode === 'FRA');
+                        const isLigaPortugalClub =
+                          club.division === 'LIGA_PORTUGAL' ||
+                          (club.division === 'UCL' && club.countryCode === 'POR');
                         if (intlScope === 'PREMIER_LEAGUE' && !isPlClub)
                           return false;
                         if (intlScope === 'LA_LIGA' && !isLaLigaClub)
+                          return false;
+                        if (intlScope === 'BUNDESLIGA' && !isBundesligaClub)
+                          return false;
+                        if (intlScope === 'SERIE_A_IT' && !isSerieAItClub)
+                          return false;
+                        if (intlScope === 'LIGUE_1' && !isLigue1Club)
+                          return false;
+                        if (intlScope === 'LIGA_PORTUGAL' && !isLigaPortugalClub)
                           return false;
                         if (intlScope === 'CHAMPIONS' && club.division !== 'UCL')
                           return false;

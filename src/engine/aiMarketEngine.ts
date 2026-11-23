@@ -68,6 +68,10 @@ const ESTIMATED_ANNUAL_PRIZE_AND_TV_BY_DIVISION: Record<Club['division'], number
   A: 32_000_000,
   LIB: 38_000_000,
   LALIGA: 135_000_000,
+  BUNDESLIGA: 135_000_000,
+  SERIE_A_IT: 125_000_000,
+  LIGUE_1: 95_000_000,
+  LIGA_PORTUGAL: 60_000_000,
   PL: 220_000_000,
   UCL: 380_000_000,
   WORLD: 180_000_000,
@@ -793,7 +797,11 @@ export function simulateAiTransferWindowTick(params: {
         (item.club.reputation <= buyer.reputation + 10 ||
           ((item.club.division === 'UCL' ||
             item.club.division === 'PL' ||
-            item.club.division === 'LALIGA') &&
+            item.club.division === 'LALIGA' ||
+            item.club.division === 'BUNDESLIGA' ||
+            item.club.division === 'SERIE_A_IT' ||
+            item.club.division === 'LIGUE_1' ||
+            item.club.division === 'LIGA_PORTUGAL') &&
             buyer.reputation >= 76 &&
             workingSquads[item.club.id].some(
               (p) => p.isLoanListed || p.isTransferListed
@@ -1246,7 +1254,13 @@ export function maybeGenerateIncomingOfferForUser(params: {
   const maxRepAllowed = isEuropeanTarget ? 100 : Math.min(89, picked.ovr + 14);
 
   const isEuroLeagueDivision = (div: Club['division']) =>
-    div === 'UCL' || div === 'PL' || div === 'LALIGA';
+    div === 'UCL' ||
+    div === 'PL' ||
+    div === 'LALIGA' ||
+    div === 'BUNDESLIGA' ||
+    div === 'SERIE_A_IT' ||
+    div === 'LIGUE_1' ||
+    div === 'LIGA_PORTUGAL';
 
   const meetsClubTier = (c: Club): boolean => {
     if (c.id === userClub.id) return false;

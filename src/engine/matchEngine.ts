@@ -519,6 +519,22 @@ export function createInitialMatchState(
         homeClub.division === 'LALIGA' ||
         (homeClub.division === 'UCL' && homeClub.countryCode === 'ESP')
       ? 'La Liga'
+      : fixture.division === 'BUNDESLIGA' ||
+        homeClub.division === 'BUNDESLIGA' ||
+        (homeClub.division === 'UCL' && homeClub.countryCode === 'ALE')
+      ? 'Bundesliga'
+      : fixture.division === 'SERIE_A_IT' ||
+        homeClub.division === 'SERIE_A_IT' ||
+        (homeClub.division === 'UCL' && homeClub.countryCode === 'ITA')
+      ? 'Serie A Italiana'
+      : fixture.division === 'LIGUE_1' ||
+        homeClub.division === 'LIGUE_1' ||
+        (homeClub.division === 'UCL' && homeClub.countryCode === 'FRA')
+      ? 'Ligue 1'
+      : fixture.division === 'LIGA_PORTUGAL' ||
+        homeClub.division === 'LIGA_PORTUGAL' ||
+        (homeClub.division === 'UCL' && homeClub.countryCode === 'POR')
+      ? 'Liga Portugal'
       : fixture.division === 'B' || homeClub.division === 'B'
       ? 'Brasileirão Série B'
       : 'Brasileirão Série A';

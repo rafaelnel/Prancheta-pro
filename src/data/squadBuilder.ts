@@ -26,7 +26,7 @@ export type RealPlayerSeed = [
   Partial<PlayerAttributes>?, // signature attribute overrides
 ];
 
-const SECTOR_BY_POSITION: Record<NaturalPosition, PositionSector> = {
+export const SECTOR_BY_POSITION: Record<NaturalPosition, PositionSector> = {
   GOL: 'GOL',
   ZAG: 'DEF',
   LD: 'DEF',
@@ -38,6 +38,10 @@ const SECTOR_BY_POSITION: Record<NaturalPosition, PositionSector> = {
   PE: 'ATA',
   ATA: 'ATA',
 };
+
+export function getSectorForPosition(position: NaturalPosition): PositionSector {
+  return SECTOR_BY_POSITION[position] || 'MEI';
+}
 
 function hashSeed(input: string): number {
   let hash = 2166136261;
@@ -121,13 +125,27 @@ export function buildPlayersFromSeeds(
 
   return seeds.map((seed, idx) => {
     const [number, name, age, nationality, position, overall, overrides] = seed;
+    const matchedStar = (club.starPlayers || []).find(
+      (sp) =>
+        name.toLowerCase() === sp.name.toLowerCase() ||
+        name.toLowerCase().includes(sp.name.toLowerCase()) ||
+        sp.name.toLowerCase().includes(name.toLowerCase())
+    );
     const isExactOvrSeed = overall >= 60;
-    const targetExactOvr = isExactOvrSeed
-      ? Math.max(60, Math.min(95, Math.round(overall)))
-      : null;
-    const effectiveSeedStrength = isExactOvrSeed
-      ? Math.max(10.5, Math.min(18.8, 12.2 + ((targetExactOvr! - 60) / 35) * 6.5))
-      : overall;
+    const rawTargetOvr = matchedStar
+      ? matchedStar.overall
+      : isExactOvrSeed
+      ? Math.round(overall)
+      : club.division === 'UCL' || club.division === 'WORLD'
+      ? Math.round(60 + (overall - 12.8) * 5.75)
+      : club.division === 'B'
+      ? Math.round(overall * 5 + 2.2)
+      : Math.min(89, Math.round(overall * 5 + 1.3));
+    const targetExactOvr = Math.max(60, Math.min(95, rawTargetOvr));
+    const effectiveSeedStrength = Math.max(
+      10.5,
+      Math.min(18.8, 12.2 + ((targetExactOvr - 60) / 35) * 6.5)
+    );
 
     const isStarter = idx < 11;
     const slotDef = isStarter ? formationSlots[idx] : null;
@@ -145,14 +163,12 @@ export function buildPlayersFromSeeds(
       rng,
       overrides
     );
-    if (targetExactOvr !== null) {
-      attributes = calibrateAttributesToTargetOvr(
-        attributes,
-        position,
-        targetExactOvr,
-        targetExactOvr
-      );
-    }
+    attributes = calibrateAttributesToTargetOvr(
+      attributes,
+      position,
+      targetExactOvr,
+      targetExactOvr
+    );
     let ovr6099 = calculatePlayerOverall(attributes, position);
     const playerId = `${club.id}-p${idx + 1}`;
     const potentialStars = assignPotentialStars(

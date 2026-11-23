@@ -25,12 +25,32 @@ import {
   LALIGA_EXTRA_CLUBS,
   LALIGA_EXTRA_CLUB_IDS,
 } from './laLigaClubs';
+import {
+  BUNDESLIGA_EXTRA_CLUBS,
+  BUNDESLIGA_EXTRA_CLUB_IDS,
+} from './bundesligaClubs';
+import {
+  SERIE_A_IT_EXTRA_CLUBS,
+  SERIE_A_IT_EXTRA_CLUB_IDS,
+} from './serieAItaliaClubs';
+import {
+  LIGUE_1_EXTRA_CLUBS,
+  LIGUE_1_EXTRA_CLUB_IDS,
+} from './ligue1Clubs';
+import {
+  LIGA_PORTUGAL_EXTRA_CLUBS,
+  LIGA_PORTUGAL_EXTRA_CLUB_IDS,
+} from './ligaPortugalClubs';
 import { REAL_SQUADS_SERIE_A } from './realSquadsA';
 import { REAL_SQUADS_SERIE_B } from './realSquadsB';
 import { REAL_SQUADS_LIBERTADORES } from './realSquadsLibertadores';
 import { REAL_SQUADS_CHAMPIONS } from './realSquadsChampions';
 import { REAL_SQUADS_PREMIER_LEAGUE } from './realSquadsPremierLeague';
 import { REAL_SQUADS_LALIGA } from './realSquadsLaLiga';
+import { REAL_SQUADS_BUNDESLIGA } from './realSquadsBundesliga';
+import { REAL_SQUADS_SERIE_A_IT } from './realSquadsSerieAItalia';
+import { REAL_SQUADS_LIGUE_1 } from './realSquadsLigue1';
+import { REAL_SQUADS_LIGA_PORTUGAL } from './realSquadsLigaPortugal';
 import { buildPlayersFromSeeds, RealPlayerSeed } from './squadBuilder';
 
 export const PREMIER_LEAGUE_CLUBS: Club[] = [
@@ -43,17 +63,51 @@ export const LALIGA_CLUBS: Club[] = [
   ...LALIGA_EXTRA_CLUBS,
 ];
 
+export const BUNDESLIGA_CLUBS: Club[] = [
+  ...UCL_CLUBS.filter((c) => c.countryCode === 'ALE'),
+  ...BUNDESLIGA_EXTRA_CLUBS,
+];
+
+export const SERIE_A_IT_CLUBS: Club[] = [
+  ...UCL_CLUBS.filter((c) => c.countryCode === 'ITA'),
+  ...SERIE_A_IT_EXTRA_CLUBS,
+];
+
+export const LIGUE_1_CLUBS: Club[] = [
+  ...UCL_CLUBS.filter((c) => c.countryCode === 'FRA'),
+  ...LIGUE_1_EXTRA_CLUBS,
+];
+
+export const LIGA_PORTUGAL_CLUBS: Club[] = [
+  ...UCL_CLUBS.filter((c) => c.countryCode === 'POR'),
+  ...LIGA_PORTUGAL_EXTRA_CLUBS,
+];
+
 export const PREMIER_LEAGUE_CLUB_IDS: string[] = PREMIER_LEAGUE_CLUBS.map(
   (c) => c.id
 );
 
 export const LALIGA_CLUB_IDS: string[] = LALIGA_CLUBS.map((c) => c.id);
 
+export const BUNDESLIGA_CLUB_IDS: string[] = BUNDESLIGA_CLUBS.map((c) => c.id);
+
+export const SERIE_A_IT_CLUB_IDS: string[] = SERIE_A_IT_CLUBS.map((c) => c.id);
+
+export const LIGUE_1_CLUB_IDS: string[] = LIGUE_1_CLUBS.map((c) => c.id);
+
+export const LIGA_PORTUGAL_CLUB_IDS: string[] = LIGA_PORTUGAL_CLUBS.map(
+  (c) => c.id
+);
+
 export const ALL_PLAYABLE_CLUBS: Club[] = [
   ...SERIE_A_CLUBS,
   ...SERIE_B_CLUBS,
   ...PREMIER_LEAGUE_CLUBS,
   ...LALIGA_CLUBS,
+  ...BUNDESLIGA_CLUBS,
+  ...SERIE_A_IT_CLUBS,
+  ...LIGUE_1_CLUBS,
+  ...LIGA_PORTUGAL_CLUBS,
 ];
 
 export function getPlayableDivisionForClub(
@@ -67,13 +121,32 @@ export function getPlayableDivisionForClub(
   if (club.division === 'LALIGA' || (club.division === 'UCL' && club.countryCode === 'ESP')) {
     return 'LALIGA';
   }
+  if (club.division === 'BUNDESLIGA' || (club.division === 'UCL' && club.countryCode === 'ALE')) {
+    return 'BUNDESLIGA';
+  }
+  if (club.division === 'SERIE_A_IT' || (club.division === 'UCL' && club.countryCode === 'ITA')) {
+    return 'SERIE_A_IT';
+  }
+  if (club.division === 'LIGUE_1' || (club.division === 'UCL' && club.countryCode === 'FRA')) {
+    return 'LIGUE_1';
+  }
+  if (club.division === 'LIGA_PORTUGAL' || (club.division === 'UCL' && club.countryCode === 'POR')) {
+    return 'LIGA_PORTUGAL';
+  }
   return 'A';
 }
 
 export function isEuropeanPlayableDivision(
   division: PlayableDivision
 ): boolean {
-  return division === 'PL' || division === 'LALIGA';
+  return (
+    division === 'PL' ||
+    division === 'LALIGA' ||
+    division === 'BUNDESLIGA' ||
+    division === 'SERIE_A_IT' ||
+    division === 'LIGUE_1' ||
+    division === 'LIGA_PORTUGAL'
+  );
 }
 
 export function getSecondaryPlayableDivision(
@@ -82,7 +155,19 @@ export function getSecondaryPlayableDivision(
   if (division === 'A') return 'B';
   if (division === 'B') return 'A';
   if (division === 'PL') return 'LALIGA';
-  return 'PL';
+  if (division === 'LALIGA') return 'PL';
+  if (division === 'BUNDESLIGA') return 'SERIE_A_IT';
+  if (division === 'SERIE_A_IT') return 'BUNDESLIGA';
+  if (division === 'LIGUE_1') return 'LIGA_PORTUGAL';
+  return 'LIGUE_1';
+}
+
+export function getLeagueTotalRounds(division: PlayableDivision): number {
+  return division === 'BUNDESLIGA' ||
+    division === 'LIGUE_1' ||
+    division === 'LIGA_PORTUGAL'
+    ? 34
+    : 38;
 }
 
 export function getPlayableLeagueLabel(division: PlayableDivision): string {
@@ -95,6 +180,14 @@ export function getPlayableLeagueLabel(division: PlayableDivision): string {
       return 'Premier League';
     case 'LALIGA':
       return 'La Liga';
+    case 'BUNDESLIGA':
+      return 'Bundesliga';
+    case 'SERIE_A_IT':
+      return 'Serie A Italiana';
+    case 'LIGUE_1':
+      return 'Ligue 1';
+    case 'LIGA_PORTUGAL':
+      return 'Liga Portugal';
   }
 }
 
@@ -108,6 +201,14 @@ export function getPlayableLeagueShortLabel(division: PlayableDivision): string 
       return 'Premier League';
     case 'LALIGA':
       return 'La Liga';
+    case 'BUNDESLIGA':
+      return 'Bundesliga';
+    case 'SERIE_A_IT':
+      return 'Serie A Italiana';
+    case 'LIGUE_1':
+      return 'Ligue 1';
+    case 'LIGA_PORTUGAL':
+      return 'Liga Portugal';
   }
 }
 
@@ -130,10 +231,34 @@ export function getClubsForPlayableDivision(
     );
     return found.length >= 20 ? found : PREMIER_LEAGUE_CLUBS;
   }
+  if (division === 'LALIGA') {
+    const found = source.filter(
+      (c) => c.division === 'LALIGA' || (c.division === 'UCL' && c.countryCode === 'ESP')
+    );
+    return found.length >= 20 ? found : LALIGA_CLUBS;
+  }
+  if (division === 'BUNDESLIGA') {
+    const found = source.filter(
+      (c) => c.division === 'BUNDESLIGA' || (c.division === 'UCL' && c.countryCode === 'ALE')
+    );
+    return found.length >= 18 ? found : BUNDESLIGA_CLUBS;
+  }
+  if (division === 'SERIE_A_IT') {
+    const found = source.filter(
+      (c) => c.division === 'SERIE_A_IT' || (c.division === 'UCL' && c.countryCode === 'ITA')
+    );
+    return found.length >= 20 ? found : SERIE_A_IT_CLUBS;
+  }
+  if (division === 'LIGUE_1') {
+    const found = source.filter(
+      (c) => c.division === 'LIGUE_1' || (c.division === 'UCL' && c.countryCode === 'FRA')
+    );
+    return found.length >= 18 ? found : LIGUE_1_CLUBS;
+  }
   const found = source.filter(
-    (c) => c.division === 'LALIGA' || (c.division === 'UCL' && c.countryCode === 'ESP')
+    (c) => c.division === 'LIGA_PORTUGAL' || (c.division === 'UCL' && c.countryCode === 'POR')
   );
-  return found.length >= 20 ? found : LALIGA_CLUBS;
+  return found.length >= 18 ? found : LIGA_PORTUGAL_CLUBS;
 }
 
 export {
@@ -149,6 +274,14 @@ export {
   PREMIER_LEAGUE_EXTRA_CLUB_IDS,
   LALIGA_EXTRA_CLUBS,
   LALIGA_EXTRA_CLUB_IDS,
+  BUNDESLIGA_EXTRA_CLUBS,
+  BUNDESLIGA_EXTRA_CLUB_IDS,
+  SERIE_A_IT_EXTRA_CLUBS,
+  SERIE_A_IT_EXTRA_CLUB_IDS,
+  LIGUE_1_EXTRA_CLUBS,
+  LIGUE_1_EXTRA_CLUB_IDS,
+  LIGA_PORTUGAL_EXTRA_CLUBS,
+  LIGA_PORTUGAL_EXTRA_CLUB_IDS,
 };
 
 export const USER_CLUB_ID = 'flamengo';
@@ -160,6 +293,10 @@ export const ALL_WORLD_CLUBS: Club[] = [
   ...UCL_CLUBS,
   ...PREMIER_LEAGUE_EXTRA_CLUBS,
   ...LALIGA_EXTRA_CLUBS,
+  ...BUNDESLIGA_EXTRA_CLUBS,
+  ...SERIE_A_IT_EXTRA_CLUBS,
+  ...LIGUE_1_EXTRA_CLUBS,
+  ...LIGA_PORTUGAL_EXTRA_CLUBS,
   ...GLOBAL_WORLD_CLUBS,
 ];
 
@@ -170,6 +307,10 @@ export const REAL_SQUAD_SEEDS: Record<string, RealPlayerSeed[]> = {
   ...REAL_SQUADS_CHAMPIONS,
   ...REAL_SQUADS_PREMIER_LEAGUE,
   ...REAL_SQUADS_LALIGA,
+  ...REAL_SQUADS_BUNDESLIGA,
+  ...REAL_SQUADS_SERIE_A_IT,
+  ...REAL_SQUADS_LIGUE_1,
+  ...REAL_SQUADS_LIGA_PORTUGAL,
 };
 
 export function getRealSquadForClub(club: Club): Player[] {
@@ -216,6 +357,22 @@ export const INITIAL_STANDINGS_PL: StandingsRow[] =
 export const INITIAL_STANDINGS_LALIGA: StandingsRow[] =
   buildEmptyStandings(LALIGA_CLUBS);
 
+// Classificação inicial — Bundesliga 2025/26 (18 clubes reais)
+export const INITIAL_STANDINGS_BUNDESLIGA: StandingsRow[] =
+  buildEmptyStandings(BUNDESLIGA_CLUBS);
+
+// Classificação inicial — Serie A Italiana 2025/26 (20 clubes reais)
+export const INITIAL_STANDINGS_SERIE_A_IT: StandingsRow[] =
+  buildEmptyStandings(SERIE_A_IT_CLUBS);
+
+// Classificação inicial — Ligue 1 2025/26 (18 clubes reais)
+export const INITIAL_STANDINGS_LIGUE_1: StandingsRow[] =
+  buildEmptyStandings(LIGUE_1_CLUBS);
+
+// Classificação inicial — Liga Portugal 2025/26 (18 clubes reais)
+export const INITIAL_STANDINGS_LIGA_PORTUGAL: StandingsRow[] =
+  buildEmptyStandings(LIGA_PORTUGAL_CLUBS);
+
 export const INITIAL_STANDINGS: StandingsRow[] = INITIAL_STANDINGS_A;
 
 export function getInitialStandingsForDivision(
@@ -235,6 +392,14 @@ export function getInitialStandingsForDivision(
       ? INITIAL_STANDINGS_PL
       : division === 'LALIGA'
       ? INITIAL_STANDINGS_LALIGA
+      : division === 'BUNDESLIGA'
+      ? INITIAL_STANDINGS_BUNDESLIGA
+      : division === 'SERIE_A_IT'
+      ? INITIAL_STANDINGS_SERIE_A_IT
+      : division === 'LIGUE_1'
+      ? INITIAL_STANDINGS_LIGUE_1
+      : division === 'LIGA_PORTUGAL'
+      ? INITIAL_STANDINGS_LIGA_PORTUGAL
       : INITIAL_STANDINGS_A;
   return source.map((row) => ({ ...row, form: [...row.form] }));
 }
@@ -253,7 +418,9 @@ const OFFICIAL_SERIE_A_ROUND_1_PAIRS: Array<[string, string]> = [
   ['chapecoense', 'santos'],
 ];
 
-// Generate deterministic 38-round schedule (19 home/away 1º turno + 19 reversed 2º turno)
+// Generate deterministic double round-robin schedule:
+// 18 clubs (Bundesliga) -> 34 rounds (17 + 17, 9 matches/round = 306 fixtures)
+// 20 clubs (other leagues) -> 38 rounds (19 + 19, 10 matches/round = 380 fixtures)
 export function generateLeagueSchedule(
   userClubId: string = USER_CLUB_ID,
   division?: PlayableDivision,
@@ -266,7 +433,13 @@ export function generateLeagueSchedule(
     division ?? getPlayableDivisionForClub(userClub);
   const divisionClubs = getClubsForPlayableDivision(resolvedDivision, sourcePool);
 
-  const clubIds = divisionClubs.slice(0, 20).map((c) => c.id);
+  const expectedClubs =
+    resolvedDivision === 'BUNDESLIGA' ||
+    resolvedDivision === 'LIGUE_1' ||
+    resolvedDivision === 'LIGA_PORTUGAL'
+      ? 18
+      : 20;
+  const clubIds = divisionClubs.slice(0, expectedClubs).map((c) => c.id);
 
   const clubIdSet = new Set(clubIds);
   const canUseOfficialRound1 =
@@ -278,10 +451,11 @@ export function generateLeagueSchedule(
   const firstHalfFixtures: RoundFixture[] = [];
 
   const n = clubIds.length;
+  const halfRounds = n - 1;
   const fixed = clubIds[0];
   const rotating = clubIds.slice(1);
 
-  for (let round = 1; round <= 19; round++) {
+  for (let round = 1; round <= halfRounds; round++) {
     if (canUseOfficialRound1 && round === 1) {
       OFFICIAL_SERIE_A_ROUND_1_PAIRS.forEach(([homeClubId, awayClubId], idx) => {
         const isUserMatch =
@@ -301,7 +475,7 @@ export function generateLeagueSchedule(
       continue;
     }
 
-    const shift = (round - 1) % (n - 1);
+    const shift = (round - 1) % halfRounds;
     const rotated = [
       ...rotating.slice(shift),
       ...rotating.slice(0, shift),
@@ -331,9 +505,9 @@ export function generateLeagueSchedule(
     }
   }
 
-  // 2º Turno (Rodadas 20..38): espelha 1..19 com mando de campo invertido
+  // 2º Turno: espelha 1..halfRounds com mando de campo invertido
   const secondHalfFixtures: RoundFixture[] = firstHalfFixtures.map((fix, idx) => {
-    const returnRound = fix.roundNumber + 19;
+    const returnRound = fix.roundNumber + halfRounds;
     const matchSlot = (idx % (n / 2)) + 1;
     const homeClubId = fix.awayClubId;
     const awayClubId = fix.homeClubId;

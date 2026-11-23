@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Play,
   Plus,
@@ -11,11 +11,11 @@ import {
   Trophy,
   Wallet,
   Search,
-  Check,
   AlertTriangle,
   MapPin,
   Cloud,
   UserCheck,
+  X,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import {
@@ -32,6 +32,7 @@ import {
 import { formatCompactBRL } from '../utils/formatters';
 import { CurrencyToggle, useCurrency } from '../utils/CurrencyContext';
 import { ClubBadge } from './ClubBadge';
+import { CompetitionLogo } from './CompetitionLogo';
 import { PWAInstallButton } from './PWAInstallButton';
 import {
   CAREER_SLOTS,
@@ -41,7 +42,16 @@ import {
 } from '../utils/saveManager';
 
 type HubViewMode = 'landing' | 'saves' | 'new_game';
-type DivisionFilter = 'A' | 'B' | 'PL' | 'LALIGA' | 'ALL';
+type DivisionFilter =
+  | 'A'
+  | 'B'
+  | 'PL'
+  | 'LALIGA'
+  | 'BUNDESLIGA'
+  | 'SERIE_A_IT'
+  | 'LIGUE_1'
+  | 'LIGA_PORTUGAL'
+  | 'ALL';
 
 interface CareerHubScreenProps {
   slots: Array<CareerSaveData | null>;
@@ -102,12 +112,26 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
   const [confirmDeleteSlot, setConfirmDeleteSlot] =
     useState<CareerSlotIndex | null>(null);
   const [confirmOverwrite, setConfirmOverwrite] = useState<boolean>(false);
+  const [confirmClubModalOpen, setConfirmClubModalOpen] =
+    useState<boolean>(false);
   const [importFeedback, setImportFeedback] = useState<{
     type: 'ok' | 'error';
     text: string;
   } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!confirmClubModalOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setConfirmClubModalOpen(false);
+        setConfirmOverwrite(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [confirmClubModalOpen]);
 
   const selectedClub = useMemo(
     () =>
@@ -147,6 +171,7 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
     const target = slotIdx ?? firstEmptySlot;
     setSelectedSlot(target);
     setConfirmOverwrite(false);
+    setConfirmClubModalOpen(false);
     setViewMode('new_game');
   };
 
@@ -193,6 +218,7 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
       setConfirmOverwrite(true);
       return;
     }
+    setConfirmClubModalOpen(false);
     onStartNewCareer(selectedSlot, selectedClub.id, managerName);
   };
 
@@ -246,7 +272,8 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
               size="md"
             />
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <CompetitionLogo competition={save.division} size="xs" />
                 <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#b5ff00]">
                   Slot 0{slotIdx} · {getPlayableLeagueShortLabel(save.division)} ·{' '}
                   {save.currentYear || 2026}
@@ -365,7 +392,7 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
               Prancheta Pro
             </div>
             <div className="hidden sm:block text-[11px] text-[#b5ff00] font-mono mt-0.5 leading-none">
-              Brasileirão · Premier League · La Liga · 2026
+              Brasileirão · Premier League · La Liga · Bundesliga · Serie A · Ligue 1 · Liga Portugal · 2026
             </div>
           </div>
         </div>
@@ -465,10 +492,14 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
             <section className="rounded-[28px] border border-white/10 bg-[#14171f] overflow-hidden shadow-2xl">
               <div className="grid grid-cols-1 lg:grid-cols-12">
                 {/* Left Hero Actions */}
-                <div className="lg:col-span-7 p-6 sm:p-9 flex flex-col justify-between gap-6">
+                <div
+                  className={`${
+                    latestSave ? 'lg:col-span-7' : 'lg:col-span-12'
+                  } p-6 sm:p-9 flex flex-col justify-between gap-6`}
+                >
                   <div className="space-y-2.5">
                     <span className="block text-xs font-mono font-bold uppercase tracking-wider text-[#b5ff00]">
-                      4 Ligas Jogáveis · 80 Clubes · Elencos Reais
+                      8 Ligas Jogáveis · 154 Clubes · Elencos Reais
                     </span>
                     <h1 className="font-display text-4xl sm:text-6xl font-extrabold uppercase tracking-tight text-white leading-[0.94]">
                       TEMPORADA 2026
@@ -481,7 +512,7 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
                       <button
                         type="button"
                         onClick={() => setViewMode('saves')}
-                        className="px-6 py-3.5 rounded-full text-sm font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-2 shadow-lg"
+                        className="px-6 py-3.5 rounded-full text-sm font-extrabold bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f] transition-colors flex items-center gap-2 shadow-lg cursor-pointer"
                       >
                         <FolderOpen className="w-4 h-4" />
                         <span>
@@ -493,7 +524,7 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
                     <button
                       type="button"
                       onClick={() => openNewGameForSlot(firstEmptySlot)}
-                      className={`px-6 py-3.5 rounded-full text-sm font-extrabold transition-colors flex items-center gap-2 shadow-lg ${
+                      className={`px-6 py-3.5 rounded-full text-sm font-extrabold transition-colors flex items-center gap-2 shadow-lg cursor-pointer ${
                         savedCareers.length > 0
                           ? 'bg-white hover:bg-zinc-200 text-[#090a0f]'
                           : 'bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f]'
@@ -507,109 +538,75 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
                   </div>
                 </div>
 
-                {/* Right Highlight Card: Latest Save Resume OR Compact KPI Strip */}
-                <div className="lg:col-span-5 bg-gradient-to-br from-[#b5ff00] to-[#8fd400] text-[#090a0f] p-6 sm:p-8 flex flex-col justify-between gap-5">
-                  {latestSave ? (
-                    <>
-                      <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase opacity-80">
+                {/* Right Highlight Card: Only rendered when a saved career exists */}
+                {latestSave && (
+                  <div className="lg:col-span-5 bg-gradient-to-br from-[#b5ff00] to-[#8fd400] text-[#090a0f] p-6 sm:p-8 flex flex-col justify-between gap-5">
+                    <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase opacity-80">
+                      <span className="inline-flex items-center gap-1.5">
+                        <CompetitionLogo
+                          competition={latestSave.division}
+                          size="xs"
+                        />
                         <span>
                           Slot 0{latestSave.slotIndex} ·{' '}
                           {getPlayableLeagueShortLabel(latestSave.division)}
                         </span>
-                        <span>{formatSavedTimestamp(latestSave.savedAt)}</span>
-                      </div>
+                      </span>
+                      <span>{formatSavedTimestamp(latestSave.savedAt)}</span>
+                    </div>
 
-                      <div className="flex items-center gap-4">
-                        <ClubBadge
-                          clubId={latestSave.userClubId}
-                          abbr={latestSave.clubAbbr}
-                          name={latestSave.clubName}
-                          primaryColor={latestSave.clubPrimaryColor}
-                          size="lg"
-                          surface="light"
-                        />
-                        <div className="min-w-0">
-                          <h2 className="font-display text-3xl font-extrabold uppercase tracking-tight leading-none truncate">
-                            {latestSave.clubName}
-                          </h2>
-                          <div className="text-xs font-bold opacity-80 mt-1">
-                            {latestSave.managerName}
-                          </div>
+                    <div className="flex items-center gap-4">
+                      <ClubBadge
+                        clubId={latestSave.userClubId}
+                        abbr={latestSave.clubAbbr}
+                        name={latestSave.clubName}
+                        primaryColor={latestSave.clubPrimaryColor}
+                        size="lg"
+                        surface="light"
+                      />
+                      <div className="min-w-0">
+                        <h2 className="font-display text-3xl font-extrabold uppercase tracking-tight leading-none truncate">
+                          {latestSave.clubName}
+                        </h2>
+                        <div className="text-xs font-bold opacity-80 mt-1">
+                          {latestSave.managerName}
                         </div>
                       </div>
+                    </div>
 
-                      <div className="grid grid-cols-3 gap-2 bg-[#0b0c10] text-white rounded-2xl p-3">
-                        <div>
-                          <div className="text-[10px] text-zinc-400">Rodada</div>
-                          <div className="font-mono font-bold text-sm tabular-nums">
-                            {latestSave.currentRound}ª
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-[10px] text-zinc-400">Tabela</div>
-                          <div className="font-mono font-bold text-sm text-[#b5ff00] tabular-nums">
-                            {latestSave.userRank}º
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-[10px] text-zinc-400">
-                            Confiança
-                          </div>
-                          <div className="font-mono font-bold text-sm tabular-nums">
-                            {latestSave.boardConfidence}%
-                          </div>
+                    <div className="grid grid-cols-3 gap-2 bg-[#0b0c10] text-white rounded-2xl p-3">
+                      <div>
+                        <div className="text-[10px] text-zinc-400">Rodada</div>
+                        <div className="font-mono font-bold text-sm tabular-nums">
+                          {latestSave.currentRound}ª
                         </div>
                       </div>
+                      <div>
+                        <div className="text-[10px] text-zinc-400">Tabela</div>
+                        <div className="font-mono font-bold text-sm text-[#b5ff00] tabular-nums">
+                          {latestSave.userRank}º
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-zinc-400">
+                          Confiança
+                        </div>
+                        <div className="font-mono font-bold text-sm tabular-nums">
+                          {latestSave.boardConfidence}%
+                        </div>
+                      </div>
+                    </div>
 
-                      <button
-                        type="button"
-                        onClick={() => onLoadCareer(latestSave.slotIndex)}
-                        className="w-full py-3 px-5 rounded-full text-sm font-extrabold bg-[#090a0f] hover:bg-zinc-900 text-[#b5ff00] transition-colors flex items-center justify-center gap-2 shadow-xl"
-                      >
-                        <Play className="w-4 h-4 fill-current" />
-                        <span>Retomar {latestSave.clubShortName}</span>
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase opacity-80">
-                        <span>Temporada 2026</span>
-                        <span>BR · ING · ESP</span>
-                      </div>
-
-                      <div className="font-display text-3xl sm:text-4xl font-extrabold uppercase tracking-tight leading-none">
-                        80 CLUBES JOGÁVEIS
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-2 bg-[#0b0c10] text-white rounded-2xl p-3.5 text-center">
-                        <div>
-                          <div className="font-display text-2xl font-extrabold text-[#b5ff00]">
-                            4
-                          </div>
-                          <div className="text-[10px] text-zinc-400">
-                            Ligas Reais
-                          </div>
-                        </div>
-                        <div>
-                          <div className="font-display text-2xl font-extrabold text-white">
-                            80
-                          </div>
-                          <div className="text-[10px] text-zinc-400">
-                            Clubes Jogáveis
-                          </div>
-                        </div>
-                        <div>
-                          <div className="font-display text-2xl font-extrabold text-[#b5ff00]">
-                            4
-                          </div>
-                          <div className="text-[10px] text-zinc-400">
-                            Slots Save
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => onLoadCareer(latestSave.slotIndex)}
+                      className="w-full py-3 px-5 rounded-full text-sm font-extrabold bg-[#090a0f] hover:bg-zinc-900 text-[#b5ff00] transition-colors flex items-center justify-center gap-2 shadow-xl cursor-pointer"
+                    >
+                      <Play className="w-4 h-4 fill-current" />
+                      <span>Retomar {latestSave.clubShortName}</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </section>
 
@@ -671,15 +668,18 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
           </div>
         )}
 
-        {/* VIEW 3: CONFIGURAR NOVA CARREIRA (SLOT + TÉCNICO + SÉRIE A/B) */}
+        {/* VIEW 3: CONFIGURAR NOVA CARREIRA (TÉCNICO + SLOT + GRID 4x CLUBES + MODAL CONFIRMAÇÃO) */}
         {viewMode === 'new_game' && (
-          <div className="space-y-6">
+          <div className="space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-white/[0.07]">
               <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setViewMode('landing')}
-                  className="p-2.5 rounded-full bg-[#14171f] border border-white/10 hover:bg-white/[0.08] text-white transition-colors"
+                  onClick={() => {
+                    setConfirmClubModalOpen(false);
+                    setViewMode('landing');
+                  }}
+                  className="p-2.5 rounded-full bg-[#14171f] border border-white/10 hover:bg-white/[0.08] text-white transition-colors cursor-pointer"
                   aria-label="Voltar à tela inicial"
                 >
                   <ArrowLeft className="w-4 h-4" />
@@ -690,90 +690,221 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-              {/* Left Column: Manager Setup, Target Slot & Selected Club Summary */}
-              <div className="xl:col-span-5 space-y-5">
-                <div className="rounded-[28px] border border-white/10 bg-[#14171f] p-5 space-y-4">
-                  <div>
-                    <label
-                      htmlFor="manager-name-input"
-                      className="block text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5"
-                    >
-                      Técnico
-                    </label>
-                    <input
-                      id="manager-name-input"
-                      type="text"
-                      maxLength={32}
-                      value={managerName}
-                      onChange={(e) => setManagerName(e.target.value)}
-                      placeholder="Nome do técnico..."
-                      className="w-full px-4 py-2.5 rounded-2xl bg-[#0b0c10] border border-white/10 focus:border-[#b5ff00] focus:outline-none text-sm font-semibold text-white"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">
-                      <span>Slot Destino</span>
-                      <span className="font-mono text-[#b5ff00]">
-                        Slot 0{selectedSlot}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-4 gap-2">
-                      {CAREER_SLOTS.map((slotIdx) => {
-                        const existing = slots[slotIdx - 1];
-                        const isChosen = selectedSlot === slotIdx;
-                        return (
-                          <button
-                            key={slotIdx}
-                            type="button"
-                            onClick={() => {
-                              setSelectedSlot(slotIdx);
-                              setConfirmOverwrite(false);
-                            }}
-                            className={`py-2 px-2 rounded-2xl text-xs font-bold border transition-all flex flex-col items-center gap-0.5 ${
-                              isChosen
-                                ? 'bg-[#b5ff00] text-[#090a0f] border-[#b5ff00]'
-                                : 'bg-[#0b0c10] text-zinc-300 border-white/10 hover:border-white/25'
-                            }`}
-                          >
-                            <span className="font-mono">Slot {slotIdx}</span>
-                            <span
-                              className={`text-[10px] truncate max-w-full ${
-                                isChosen ? 'text-[#090a0f]/80' : 'text-zinc-500'
-                              }`}
-                            >
-                              {existing ? existing.clubAbbr : 'Livre'}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {slotCurrentlyOccupied && (
-                      <div className="mt-2.5 rounded-2xl bg-amber-500/10 border border-amber-400/30 p-2.5 flex items-center gap-2 text-xs text-amber-200">
-                        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                        <span>
-                          Substituir save de{' '}
-                          <strong>{slots[selectedSlot - 1]?.clubShortName}</strong>
-                        </span>
-                      </div>
-                    )}
-                  </div>
+            {/* Compact Top Bar: Manager Name + Target Save Slot */}
+            <div className="rounded-[24px] border border-white/10 bg-[#14171f] p-4 sm:p-5">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
+                <div className="lg:col-span-5">
+                  <label
+                    htmlFor="manager-name-input"
+                    className="block text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5"
+                  >
+                    Técnico
+                  </label>
+                  <input
+                    id="manager-name-input"
+                    type="text"
+                    maxLength={32}
+                    value={managerName}
+                    onChange={(e) => setManagerName(e.target.value)}
+                    placeholder="Nome do técnico..."
+                    className="w-full px-4 py-2.5 rounded-2xl bg-[#0b0c10] border border-white/10 focus:border-[#b5ff00] focus:outline-none text-sm font-semibold text-white"
+                  />
                 </div>
 
-                {/* Selected Club Ticket Preview */}
-                <div className="rounded-[28px] overflow-hidden border border-white/10 bg-[#14171f] shadow-2xl">
+                <div className="lg:col-span-7">
+                  <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">
+                    <span>Slot Destino</span>
+                    <span className="font-mono text-[#b5ff00]">
+                      Slot 0{selectedSlot}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {CAREER_SLOTS.map((slotIdx) => {
+                      const existing = slots[slotIdx - 1];
+                      const isChosen = selectedSlot === slotIdx;
+                      return (
+                        <button
+                          key={slotIdx}
+                          type="button"
+                          onClick={() => {
+                            setSelectedSlot(slotIdx);
+                            setConfirmOverwrite(false);
+                          }}
+                          className={`py-2 px-2 rounded-2xl text-xs font-bold border transition-all flex flex-col items-center gap-0.5 cursor-pointer ${
+                            isChosen
+                              ? 'bg-[#b5ff00] text-[#090a0f] border-[#b5ff00]'
+                              : 'bg-[#0b0c10] text-zinc-300 border-white/10 hover:border-white/25'
+                          }`}
+                        >
+                          <span className="font-mono">Slot {slotIdx}</span>
+                          <span
+                            className={`text-[10px] truncate max-w-full ${
+                              isChosen ? 'text-[#090a0f]/80' : 'text-zinc-500'
+                            }`}
+                          >
+                            {existing ? existing.clubAbbr : 'Livre'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {slotCurrentlyOccupied && (
+                <div className="mt-3 rounded-2xl bg-amber-500/10 border border-amber-400/30 px-3 py-2 flex items-center gap-2 text-xs text-amber-200">
+                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>
+                    Slot 0{selectedSlot} ocupado por{' '}
+                    <strong>{slots[selectedSlot - 1]?.clubShortName}</strong> —
+                    ao confirmar um clube ele será substituído.
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Full-Width Club Selector Grid (4 per row: Badge + Name + OVR only) */}
+            <div className="rounded-[28px] border border-white/10 bg-[#14171f] p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h3 className="font-display text-2xl font-extrabold uppercase tracking-tight text-white">
+                    Clubes ({filteredClubs.length})
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    Clique em um clube para ver detalhes e confirmar sua escolha
+                  </p>
+                </div>
+
+                <div className="relative sm:w-64">
+                  <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={clubSearch}
+                    onChange={(e) => setClubSearch(e.target.value)}
+                    placeholder="Buscar clube..."
+                    className="w-full pl-9 pr-3.5 py-2 rounded-full bg-[#0b0c10] border border-white/10 focus:border-[#b5ff00] focus:outline-none text-xs text-white"
+                  />
+                </div>
+              </div>
+
+              {/* Division Filter Buttons with Official Competition Logos */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(
+                  [
+                    { id: 'A', label: 'Série A (20)' },
+                    { id: 'B', label: 'Série B (20)' },
+                    { id: 'PL', label: 'Premier League (20)' },
+                    { id: 'LALIGA', label: 'La Liga (20)' },
+                    { id: 'BUNDESLIGA', label: 'Bundesliga (18)' },
+                    { id: 'SERIE_A_IT', label: 'Serie A Italiana (20)' },
+                    { id: 'LIGUE_1', label: 'Ligue 1 (18)' },
+                    { id: 'LIGA_PORTUGAL', label: 'Liga Portugal (18)' },
+                    { id: 'ALL', label: 'Todos (154)' },
+                  ] as const
+                ).map((pill) => (
+                  <button
+                    key={pill.id}
+                    type="button"
+                    onClick={() => setDivisionFilter(pill.id)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                      divisionFilter === pill.id
+                        ? 'bg-[#b5ff00] text-[#090a0f]'
+                        : 'bg-[#0b0c10] text-zinc-300 hover:text-white border border-white/[0.08]'
+                    }`}
+                  >
+                    {pill.id !== 'ALL' && (
+                      <CompetitionLogo competition={pill.id} size="xs" />
+                    )}
+                    <span>{pill.label}</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* 4-Column Club Grid: Badge, Short Name, and OVR only */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-h-[620px] overflow-y-auto pr-1">
+                {filteredClubs.map((club: Club) => {
+                  const avgOvr = Math.round(
+                    (club.overallAttack +
+                      club.overallMidfield +
+                      club.overallDefense) /
+                      3
+                  );
+
+                  return (
+                    <button
+                      key={club.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedClubId(club.id);
+                        setConfirmOverwrite(false);
+                        setConfirmClubModalOpen(true);
+                      }}
+                      className="rounded-2xl p-4 bg-[#0b0c10] border border-white/[0.07] hover:border-[#b5ff00]/75 hover:bg-[#b5ff00]/[0.05] transition-all flex flex-col items-center justify-center text-center gap-2.5 cursor-pointer group"
+                    >
+                      <ClubBadge
+                        clubId={club.id}
+                        abbr={club.abbr}
+                        name={club.name}
+                        primaryColor={club.primaryColor}
+                        size="lg"
+                      />
+                      <div className="font-display font-extrabold text-sm sm:text-base uppercase tracking-tight text-white group-hover:text-[#b5ff00] transition-colors truncate max-w-full">
+                        {club.shortName}
+                      </div>
+                      <div className="font-mono font-bold text-xs text-[#b5ff00] tabular-nums">
+                        OVR {avgOvr}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Club Confirmation Modal */}
+            {confirmClubModalOpen && (
+              <div
+                className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4"
+                onClick={() => {
+                  setConfirmClubModalOpen(false);
+                  setConfirmOverwrite(false);
+                }}
+              >
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="confirm-club-modal-title"
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full max-w-md rounded-[28px] overflow-hidden border border-white/15 bg-[#14171f] shadow-2xl"
+                >
                   <div className="bg-gradient-to-b from-[#b5ff00] to-[#8fd400] p-5 text-[#090a0f]">
-                    <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase opacity-75 mb-2.5">
-                      <span>
-                        {getPlayableLeagueShortLabel(
-                          getPlayableDivisionForClub(selectedClub)
-                        )}
+                    <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase mb-3 gap-2">
+                      <span className="inline-flex items-center gap-1.5 opacity-85 truncate">
+                        <CompetitionLogo
+                          competition={getPlayableDivisionForClub(selectedClub)}
+                          size="xs"
+                        />
+                        <span className="truncate">
+                          {getPlayableLeagueShortLabel(
+                            getPlayableDivisionForClub(selectedClub)
+                          )}
+                        </span>
                       </span>
-                      <span>
-                        {selectedClub.city} · {selectedClub.state}
-                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="opacity-80">
+                          {selectedClub.city} · {selectedClub.state}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConfirmClubModalOpen(false);
+                            setConfirmOverwrite(false);
+                          }}
+                          aria-label="Fechar janela de confirmação"
+                          className="w-7 h-7 rounded-full bg-[#090a0f]/15 hover:bg-[#090a0f]/25 text-[#090a0f] flex items-center justify-center transition-colors cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-4">
@@ -786,12 +917,15 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
                         surface="light"
                       />
                       <div className="min-w-0">
-                        <h2 className="font-display text-2xl sm:text-3xl font-extrabold uppercase tracking-tight leading-none truncate">
+                        <h2
+                          id="confirm-club-modal-title"
+                          className="font-display text-2xl sm:text-3xl font-extrabold uppercase tracking-tight leading-none truncate"
+                        >
                           {selectedClub.name}
                         </h2>
                         <div className="text-xs font-semibold opacity-80 mt-1 flex items-center gap-1">
-                          <MapPin className="w-3.5 h-3.5" />
-                          <span>{selectedClub.stadium}</span>
+                          <MapPin className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">{selectedClub.stadium}</span>
                         </div>
                       </div>
                     </div>
@@ -872,139 +1006,51 @@ export const CareerHubScreen: React.FC<CareerHubScreenProps> = ({
                       </div>
                     )}
 
-                    <button
-                      type="button"
-                      onClick={handleCreateSubmit}
-                      className={`w-full py-3.5 px-5 rounded-full text-sm font-extrabold transition-colors flex items-center justify-center gap-2 shadow-lg ${
-                        slotCurrentlyOccupied && confirmOverwrite
-                          ? 'bg-amber-400 hover:bg-amber-300 text-[#090a0f]'
-                          : 'bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f]'
-                      }`}
-                    >
-                      <Play className="w-4 h-4 fill-current" />
-                      <span>
-                        {slotCurrentlyOccupied && confirmOverwrite
-                          ? `Confirmar Slot 0${selectedSlot}`
-                          : `Iniciar com ${selectedClub.shortName}`}
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              </div>
+                    {slotCurrentlyOccupied && (
+                      <div className="rounded-2xl bg-amber-500/10 border border-amber-400/30 p-2.5 flex items-center gap-2 text-xs text-amber-200">
+                        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>
+                          Substituir save do Slot 0{selectedSlot} (
+                          <strong>
+                            {slots[selectedSlot - 1]?.clubShortName}
+                          </strong>
+                          )
+                        </span>
+                      </div>
+                    )}
 
-              {/* Right Column: All 40 Série A & Série B Clubs */}
-              <div className="xl:col-span-7 rounded-[28px] border border-white/10 bg-[#14171f] p-5 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <h3 className="font-display text-2xl font-extrabold uppercase tracking-tight text-white">
-                    Clubes ({filteredClubs.length})
-                  </h3>
-
-                  <div className="relative sm:w-56">
-                    <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={clubSearch}
-                      onChange={(e) => setClubSearch(e.target.value)}
-                      placeholder="Buscar clube..."
-                      className="w-full pl-9 pr-3.5 py-2 rounded-full bg-[#0b0c10] border border-white/10 focus:border-[#b5ff00] focus:outline-none text-xs text-white"
-                    />
-                  </div>
-                </div>
-
-                {/* Division Filter Pills: Série A, Série B, Premier League, La Liga, Todos */}
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {(
-                    [
-                      { id: 'A', label: 'Série A (20)' },
-                      { id: 'B', label: 'Série B (20)' },
-                      { id: 'PL', label: 'Premier League (20)' },
-                      { id: 'LALIGA', label: 'La Liga (20)' },
-                      { id: 'ALL', label: 'Todos (80)' },
-                    ] as const
-                  ).map((pill) => (
-                    <button
-                      key={pill.id}
-                      type="button"
-                      onClick={() => setDivisionFilter(pill.id)}
-                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${
-                        divisionFilter === pill.id
-                          ? 'bg-[#b5ff00] text-[#090a0f]'
-                          : 'bg-[#0b0c10] text-zinc-400 hover:text-white border border-white/[0.07]'
-                      }`}
-                    >
-                      {pill.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Clubs Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[600px] overflow-y-auto pr-1">
-                  {filteredClubs.map((club: Club) => {
-                    const isSelected = club.id === selectedClub.id;
-                    const avgOvr = Math.round(
-                      (club.overallAttack +
-                        club.overallMidfield +
-                        club.overallDefense) /
-                        3
-                    );
-                    const clubRank = getClubInitialRank(club);
-
-                    return (
+                    <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 pt-1">
                       <button
-                        key={club.id}
                         type="button"
                         onClick={() => {
-                          setSelectedClubId(club.id);
+                          setConfirmClubModalOpen(false);
                           setConfirmOverwrite(false);
                         }}
-                        className={`text-left rounded-2xl p-3.5 border transition-all flex items-center justify-between gap-3 ${
-                          isSelected
-                            ? 'bg-[#b5ff00]/12 border-[#b5ff00] shadow-md'
-                            : 'bg-[#0b0c10] border-white/[0.06] hover:border-white/20'
+                        className="sm:col-span-2 py-3 px-4 rounded-full text-xs sm:text-sm font-bold bg-white/[0.08] hover:bg-white/[0.14] text-zinc-200 hover:text-white transition-colors cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCreateSubmit}
+                        className={`sm:col-span-3 py-3 px-4 rounded-full text-xs sm:text-sm font-extrabold transition-colors flex items-center justify-center gap-2 shadow-lg cursor-pointer ${
+                          slotCurrentlyOccupied && confirmOverwrite
+                            ? 'bg-amber-400 hover:bg-amber-300 text-[#090a0f]'
+                            : 'bg-[#b5ff00] hover:bg-[#c8ff33] text-[#090a0f]'
                         }`}
                       >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <ClubBadge
-                            clubId={club.id}
-                            abbr={club.abbr}
-                            name={club.name}
-                            primaryColor={club.primaryColor}
-                            size="md"
-                          />
-                          <div className="min-w-0">
-                            <div className="font-display font-extrabold text-base uppercase tracking-tight text-white truncate">
-                              {club.shortName}
-                            </div>
-                            <div className="text-[11px] text-zinc-400 truncate">
-                              {getPlayableLeagueShortLabel(
-                                getPlayableDivisionForClub(club)
-                              )}{' '}
-                              · {club.city}/{club.state} · {clubRank}º
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="text-right shrink-0 flex items-center gap-2">
-                          <div>
-                            <div className="font-mono font-bold text-xs text-[#b5ff00] tabular-nums">
-                              OVR {avgOvr}
-                            </div>
-                            <div className="font-mono text-[10px] text-zinc-400 tabular-nums">
-                              {formatCompactBRL(club.cashBalance)}
-                            </div>
-                          </div>
-                          {isSelected && (
-                            <span className="w-5 h-5 rounded-full bg-[#b5ff00] text-[#090a0f] flex items-center justify-center">
-                              <Check className="w-3 h-3 stroke-[3]" />
-                            </span>
-                          )}
-                        </div>
+                        <Play className="w-4 h-4 fill-current shrink-0" />
+                        <span className="truncate">
+                          {slotCurrentlyOccupied && confirmOverwrite
+                            ? `Confirmar Slot 0${selectedSlot}`
+                            : `Iniciar com ${selectedClub.shortName}`}
+                        </span>
                       </button>
-                    );
-                  })}
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         )}
       </main>

@@ -57,9 +57,9 @@ export const UCL_CLUBS: Club[] = [
     stadium: 'Spotify Camp Nou',
     capacity: 99354,
     reputation: 95,
-    overallAttack: 90,
-    overallMidfield: 89,
-    overallDefense: 85,
+    overallAttack: 89,
+    overallMidfield: 90,
+    overallDefense: 86,
     cashBalance: 1_450_000_000,
     wageBudget: 185_000_000,
     boardConfidence: 89,
@@ -71,9 +71,9 @@ export const UCL_CLUBS: Club[] = [
       passingStyle: 'Curto e Apoiado',
     },
     starPlayers: [
+      { name: 'Rodri', position: 'VOL', overall: 91, highlightAttribute: 'Decisões 20' },
       { name: 'Lamine Yamal', position: 'PD', overall: 89, highlightAttribute: 'Drible 20' },
       { name: 'Pedri', position: 'MC', overall: 89, highlightAttribute: 'Visão de Jogo 20' },
-      { name: 'Raphinha', position: 'PE', overall: 88, highlightAttribute: 'Aceleração 19' },
     ],
   },
   {
@@ -91,8 +91,8 @@ export const UCL_CLUBS: Club[] = [
     stadium: 'Etihad Stadium',
     capacity: 53400,
     reputation: 96,
-    overallAttack: 90,
-    overallMidfield: 90,
+    overallAttack: 89,
+    overallMidfield: 89,
     overallDefense: 87,
     cashBalance: 2_250_000_000,
     wageBudget: 230_000_000,
@@ -106,7 +106,7 @@ export const UCL_CLUBS: Club[] = [
     },
     starPlayers: [
       { name: 'Erling Haaland', position: 'ATA', overall: 91, highlightAttribute: 'Finalização 20' },
-      { name: 'Rodri', position: 'VOL', overall: 91, highlightAttribute: 'Decisões 20' },
+      { name: 'Enzo Fernández', position: 'MC', overall: 88, highlightAttribute: 'Passe 19' },
       { name: 'Phil Foden', position: 'MEI', overall: 88, highlightAttribute: 'Primeiro Toque 19' },
     ],
   },
@@ -125,9 +125,9 @@ export const UCL_CLUBS: Club[] = [
     stadium: 'Anfield',
     capacity: 61276,
     reputation: 95,
-    overallAttack: 90,
+    overallAttack: 89,
     overallMidfield: 88,
-    overallDefense: 88,
+    overallDefense: 86,
     cashBalance: 1_850_000_000,
     wageBudget: 195_000_000,
     boardConfidence: 90,
@@ -139,9 +139,9 @@ export const UCL_CLUBS: Club[] = [
       passingStyle: 'Misto',
     },
     starPlayers: [
-      { name: 'Mohamed Salah', position: 'PD', overall: 90, highlightAttribute: 'Finalização 19' },
       { name: 'Virgil van Dijk', position: 'ZAG', overall: 89, highlightAttribute: 'Posicionamento 20' },
       { name: 'Florian Wirtz', position: 'MEI', overall: 89, highlightAttribute: 'Visão de Jogo 19' },
+      { name: 'Bradley Barcola', position: 'PD', overall: 88, highlightAttribute: 'Velocidade 19' },
     ],
   },
   {
@@ -175,7 +175,7 @@ export const UCL_CLUBS: Club[] = [
     starPlayers: [
       { name: 'Bukayo Saka', position: 'PD', overall: 88, highlightAttribute: 'Drible 19' },
       { name: 'William Saliba', position: 'ZAG', overall: 88, highlightAttribute: 'Desarme 19' },
-      { name: 'Declan Rice', position: 'VOL', overall: 87, highlightAttribute: 'Resistência 19' },
+      { name: 'Bruno Guimarães', position: 'MC', overall: 87, highlightAttribute: 'Passe 19' },
     ],
   },
   {
@@ -296,8 +296,8 @@ export const UCL_CLUBS: Club[] = [
     capacity: 70460,
     reputation: 91,
     overallAttack: 86,
-    overallMidfield: 85,
-    overallDefense: 86,
+    overallMidfield: 86,
+    overallDefense: 87,
     cashBalance: 1_260_000_000,
     wageBudget: 150_000_000,
     boardConfidence: 87,
@@ -311,7 +311,7 @@ export const UCL_CLUBS: Club[] = [
     starPlayers: [
       { name: 'Julián Álvarez', position: 'ATA', overall: 88, highlightAttribute: 'Sem Bola 19' },
       { name: 'Jan Oblak', position: 'GOL', overall: 88, highlightAttribute: 'Posicionamento 19' },
-      { name: 'Antoine Griezmann', position: 'ATA', overall: 86, highlightAttribute: 'Visão de Jogo 19' },
+      { name: 'Cristian Romero', position: 'ZAG', overall: 87, highlightAttribute: 'Desarme 19' },
     ],
   },
   {
@@ -345,7 +345,7 @@ export const UCL_CLUBS: Club[] = [
     starPlayers: [
       { name: 'Cole Palmer', position: 'MEI', overall: 88, highlightAttribute: 'Compostura 19' },
       { name: 'Moisés Caicedo', position: 'VOL', overall: 87, highlightAttribute: 'Desarme 19' },
-      { name: 'Enzo Fernández', position: 'MC', overall: 85, highlightAttribute: 'Passe 18' },
+      { name: 'Morgan Rogers', position: 'PE', overall: 86, highlightAttribute: 'Drible 18' },
     ],
   },
   {
@@ -467,7 +467,7 @@ export const UCL_CLUBS: Club[] = [
     reputation: 88,
     overallAttack: 84,
     overallMidfield: 84,
-    overallDefense: 84,
+    overallDefense: 82,
     cashBalance: 1_040_000_000,
     wageBudget: 118_000_000,
     boardConfidence: 87,
@@ -479,9 +479,9 @@ export const UCL_CLUBS: Club[] = [
       passingStyle: 'Curto e Apoiado',
     },
     starPlayers: [
-      { name: 'Alejandro Grimaldo', position: 'LE', overall: 86, highlightAttribute: 'Cruzamento 19' },
       { name: 'Edmond Tapsoba', position: 'ZAG', overall: 85, highlightAttribute: 'Desarme 18' },
-      { name: 'Patrik Schick', position: 'ATA', overall: 84, highlightAttribute: 'Finalização 18' },
+      { name: 'Exequiel Palacios', position: 'MC', overall: 85, highlightAttribute: 'Passe 18' },
+      { name: 'Patrik Schick', position: 'ATA', overall: 85, highlightAttribute: 'Finalização 18' },
     ],
   },
   {
@@ -535,7 +535,7 @@ export const UCL_CLUBS: Club[] = [
     reputation: 87,
     overallAttack: 83,
     overallMidfield: 83,
-    overallDefense: 82,
+    overallDefense: 81,
     cashBalance: 880_000_000,
     wageBudget: 90_000_000,
     boardConfidence: 87,
@@ -547,9 +547,9 @@ export const UCL_CLUBS: Club[] = [
       passingStyle: 'Misto',
     },
     starPlayers: [
-      { name: 'Morten Hjulmand', position: 'VOL', overall: 85, highlightAttribute: 'Desarme 18' },
-      { name: 'Pedro Gonçalves', position: 'MEI', overall: 84, highlightAttribute: 'Visão de Jogo 18' },
-      { name: 'Francisco Trincão', position: 'PD', overall: 84, highlightAttribute: 'Drible 18' },
+      { name: 'Pedro Gonçalves', position: 'MEI', overall: 85, highlightAttribute: 'Visão de Jogo 18' },
+      { name: 'Francisco Trincão', position: 'PD', overall: 85, highlightAttribute: 'Drible 18' },
+      { name: 'Gonçalo Inácio', position: 'ZAG', overall: 85, highlightAttribute: 'Passe 18' },
     ],
   },
 ];

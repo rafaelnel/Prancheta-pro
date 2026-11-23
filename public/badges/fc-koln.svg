@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <circle cx="100" cy="100" r="88" fill="#ed1c24" stroke="#ffffff" stroke-width="10"/>
+  <circle cx="100" cy="100" r="70" fill="none" stroke="#ffffff" stroke-width="3" stroke-opacity="0.85"/>
+  <rect x="24" y="76" width="152" height="48" rx="8" fill="#ffffff"/>
+  <text x="100" y="111" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="34" fill="#0f172a" letter-spacing="1.5">KOE</text>
+  <text x="100" y="58" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="12" fill="#ffffff" letter-spacing="1.5">BUNDESLIGA</text>
+  <text x="100" y="154" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="13" fill="#ffffff" letter-spacing="2">1948</text>
+</svg>

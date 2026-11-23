@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { SEASON_CALENDAR } from '../data/cupFactory';
 import {
+  getLeagueTotalRounds,
   getPlayableDivisionForClub,
   getPlayableLeagueShortLabel,
   isEuropeanPlayableDivision,
@@ -43,6 +44,8 @@ import {
   SuperMundialState,
 } from '../types/football';
 import { ClubBadge } from './ClubBadge';
+import { CompetitionLogo } from './CompetitionLogo';
+import { getCompetitionLogoKeyFromContext } from '../data/competitionLogoAssets';
 
 interface AnnualCalendarViewProps {
   userClub: Club;
@@ -185,11 +188,19 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
   const userPlayableDiv = getPlayableDivisionForClub(userClub);
   const userIsEuro = isEuropeanPlayableDivision(userPlayableDiv);
   const userLeagueShort = getPlayableLeagueShortLabel(userPlayableDiv);
+  const userTotalLeagueRounds = getLeagueTotalRounds(userPlayableDiv);
 
   const activeCalendarSteps = useMemo(
     () =>
       SEASON_CALENDAR.filter((step) => {
         if (step.competition === 'SUPER_MUNDIAL' && !isSuperMundialActive) {
+          return false;
+        }
+        if (
+          step.competition === 'BRASILEIRAO' &&
+          step.leagueRound &&
+          step.leagueRound > userTotalLeagueRounds
+        ) {
           return false;
         }
         if (
@@ -201,7 +212,7 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
         }
         return true;
       }),
-    [isSuperMundialActive, userIsEuro]
+    [isSuperMundialActive, userIsEuro, userTotalLeagueRounds]
   );
 
   const entries: CalendarEntry[] = useMemo(() => {
@@ -641,6 +652,14 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
           ? 'PREMIER'
           : userPlayableDiv === 'LALIGA'
           ? 'LA LIGA'
+          : userPlayableDiv === 'BUNDESLIGA'
+          ? 'BUNDESLIGA'
+          : userPlayableDiv === 'SERIE_A_IT'
+          ? 'SERIE A IT'
+          : userPlayableDiv === 'LIGUE_1'
+          ? 'LIGUE 1'
+          : userPlayableDiv === 'LIGA_PORTUGAL'
+          ? 'LIGA POR'
           : userPlayableDiv === 'B'
           ? 'SÉRIE B'
           : 'SÉRIE A',
@@ -675,7 +694,7 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
               { id: 'ALL', label: `Todos (${activeCalendarSteps.length})` },
               {
                 id: 'BRASILEIRAO',
-                label: `${userIsEuro ? userLeagueShort : 'Brasileirão'} (38)`,
+                label: `${userIsEuro ? userLeagueShort : 'Brasileirão'} (${userTotalLeagueRounds})`,
               },
               ...(!userIsEuro
                 ? [
@@ -694,13 +713,22 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
               key={f.id}
               type="button"
               onClick={() => setCompFilter(f.id)}
-              className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap ${
+              className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap inline-flex items-center gap-1.5 cursor-pointer ${
                 compFilter === f.id
                   ? 'bg-[#b5ff00] text-[#090a0f] shadow'
                   : 'text-zinc-400 hover:text-white'
               }`}
             >
-              {f.label}
+              {f.id !== 'ALL' && (
+                <CompetitionLogo
+                  competition={getCompetitionLogoKeyFromContext(
+                    f.id,
+                    userPlayableDiv
+                  )}
+                  size="xs"
+                />
+              )}
+              <span>{f.label}</span>
             </button>
           ))}
         </div>
@@ -1304,7 +1332,6 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
             ) : (
               visibleEntries.map((entry) => {
                 const badge = getCompBadge(entry.step.competition);
-                const CompIcon = badge.Icon;
                 const isNext = entry.status === 'NEXT';
                 const dateTag = `${String(entry.dayOfMonth).padStart(2, '0')} ${
                   MONTH_SHORT[entry.monthIndex]
@@ -1339,13 +1366,19 @@ export const AnnualCalendarView: React.FC<AnnualCalendarViewProps> = ({
                       <div className="min-w-0 space-y-1">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
                               isNext
                                 ? 'bg-[#090a0f]/15 text-[#090a0f] border-[#090a0f]/25'
                                 : badge.pillClass
                             }`}
                           >
-                            <CompIcon className="w-3 h-3" />
+                            <CompetitionLogo
+                              competition={getCompetitionLogoKeyFromContext(
+                                entry.step.competition,
+                                userPlayableDiv
+                              )}
+                              size="xs"
+                            />
                             <span>{badge.label}</span>
                           </span>
                           <span

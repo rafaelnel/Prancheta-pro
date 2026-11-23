@@ -72,7 +72,12 @@ export const PreloadScreen: React.FC<PreloadScreenProps> = ({
         {/* Clean Unboxed League Metadata */}
         <p className="mt-2.5 text-xs sm:text-[13px] text-zinc-400 tracking-wide text-center">
           Brasileirão <span aria-hidden="true">·</span> Premier League{' '}
-          <span aria-hidden="true">·</span> La Liga <span aria-hidden="true">·</span> 2026
+          <span aria-hidden="true">·</span> La Liga{' '}
+          <span aria-hidden="true">·</span> Bundesliga{' '}
+          <span aria-hidden="true">·</span> Serie A{' '}
+          <span aria-hidden="true">·</span> Ligue 1{' '}
+          <span aria-hidden="true">·</span> Liga Portugal{' '}
+          <span aria-hidden="true">·</span> 2026
         </p>
 
         {/* Progress Bar Track + Real-Time Status OR Clean Recovery Prompt */}
@@ -128,7 +133,7 @@ export const PreloadScreen: React.FC<PreloadScreenProps> = ({
 
       {/* Subtle Bottom Attribution Line */}
       <div className="relative z-10 mt-14 text-[11px] text-zinc-500 tracking-wide">
-        80 clubes jogáveis <span aria-hidden="true">·</span> Elencos reais{' '}
+        154 clubes jogáveis <span aria-hidden="true">·</span> Elencos reais{' '}
         <span aria-hidden="true">·</span> Motor tático 2D
       </div>
     </div>

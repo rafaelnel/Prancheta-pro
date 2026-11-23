@@ -34,6 +34,8 @@ import {
   getPlayableLeagueShortLabel,
 } from '../data/initialDatabase';
 import { ClubBadge } from './ClubBadge';
+import { CompetitionLogo } from './CompetitionLogo';
+import { getCompetitionLogoKeyFromContext } from '../data/competitionLogoAssets';
 import { PlayerOvrBadge } from './PlayerJersey';
 
 interface DashboardInboxProps {
@@ -154,6 +156,10 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
   const userPlayableDiv = getPlayableDivisionForClub(userClub);
   const userLeagueLabel = getPlayableLeagueLabel(userPlayableDiv);
   const userLeagueShort = getPlayableLeagueShortLabel(userPlayableDiv);
+  const activeCompLogoKey = getCompetitionLogoKeyFromContext(
+    activeCompetition,
+    userPlayableDiv
+  );
 
   const resolvedCompLabel =
     competitionLabel || `${userLeagueLabel} · ${currentRound}ª Rodada`;
@@ -263,7 +269,10 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
               {/* Upper Half: Electric Lime Gradient Header with Club Badges & Black VS Circle */}
               <div className="bg-gradient-to-b from-[#b5ff00] to-[#8fd400] px-5 pt-5 pb-6 text-[#090a0f] relative">
                 <div className="flex items-center justify-between text-[11px] font-mono font-bold uppercase tracking-wider text-[#090a0f]/75 mb-3">
-                  <span className="truncate pr-2">{resolvedCompLabel}</span>
+                  <span className="inline-flex items-center gap-1.5 min-w-0 pr-2">
+                    <CompetitionLogo competition={activeCompLogoKey} size="xs" />
+                    <span className="truncate">{resolvedCompLabel}</span>
+                  </span>
                   <span className="shrink-0">
                     {isMatchDay ? 'HOJE · DIA DE JOGO' : 'PRÓXIMO CONFRONTO'}
                   </span>
@@ -331,12 +340,15 @@ export const DashboardInbox: React.FC<DashboardInboxProps> = ({
 
               {/* Lower Half: Crisp Light Ticket Stub with Kickoff Time & Metadata */}
               <div className="bg-gradient-to-b from-white to-zinc-200 px-5 py-3.5 text-[#090a0f] flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-semibold">
-                    Competição
-                  </div>
-                  <div className="font-display font-extrabold text-sm sm:text-base uppercase tracking-tight text-[#090a0f]">
-                    {shortCompLabel}
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <CompetitionLogo competition={activeCompLogoKey} size="sm" />
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 font-semibold">
+                      Competição
+                    </div>
+                    <div className="font-display font-extrabold text-sm sm:text-base uppercase tracking-tight text-[#090a0f] truncate">
+                      {shortCompLabel}
+                    </div>
                   </div>
                 </div>
 

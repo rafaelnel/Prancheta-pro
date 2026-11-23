@@ -48,6 +48,7 @@ import {
 import { getEffectivePayroll, isTransferWindowOpen } from './transferEngine';
 import { attributeAiRoundPlayerStats } from './seasonLifecycle';
 import { createMatchHistoryRecordFromLiveMatch } from './headToHead';
+import { computeStarterMetrics } from './seasonStarterOvrChart';
 import {
   advanceSquadRecoveryByDays,
   applyInjuryToPlayer,
@@ -522,7 +523,13 @@ function isStepAlreadyPlayedForUser(
     const fix = snapshot.fixtures.find(
       (f) => f.roundNumber === step.leagueRound && f.isUserMatch
     );
-    return Boolean(fix?.played);
+    if (!fix) {
+      const secRound = snapshot.secondaryFixtures.filter(
+        (f) => f.roundNumber === step.leagueRound
+      );
+      return secRound.length === 0 || secRound.every((f) => f.played);
+    }
+    return Boolean(fix.played);
   }
 
   if (step.competition === 'COPA_DO_BRASIL' && step.copaStage) {
@@ -846,8 +853,10 @@ export function simulateNextAutoStep(
     working.championsLeague
   );
 
-  // Case A: CPU-only cup round (Champions League em background, ou copa onde usuário foi eliminado/não participa)
+  // Case A: CPU-only round (Champions League em background, copa sem o usuário, ou rodadas 35–38 da liga secundária quando usuário está na Bundesliga de 34 rodadas)
   if (!userFixture) {
+    let nextSecondaryFixtures = working.secondaryFixtures;
+    let nextSecondaryStandings = working.secondaryStandings;
     let nextCdb = working.copaDoBrasil;
     let nextLib = working.libertadores;
     let nextUcl = working.championsLeague;
@@ -859,7 +868,52 @@ export function simulateNextAutoStep(
       'Sem compromisso do clube nesta fase (demais chaves simuladas).';
     const byeAiHomeMatches: HomeGateSettlementItem[] = [];
 
-    if (targetStep.competition === 'COPA_DO_BRASIL' && targetStep.copaStage) {
+    if (targetStep.competition === 'BRASILEIRAO' && targetStep.leagueRound) {
+      const byeRoundNum = targetStep.leagueRound;
+      const hasUnplayedSec = working.secondaryFixtures.some(
+        (f) => f.roundNumber === byeRoundNum && !f.played
+      );
+      if (hasUnplayedSec) {
+        nextSecondaryFixtures = simulateRoundFixtures(
+          working.secondaryFixtures,
+          byeRoundNum,
+          {
+            fixtureId: '__none__',
+            homeGoals: 0,
+            awayGoals: 0,
+            homeXG: 0,
+            awayXG: 0,
+          },
+          working.clubs,
+          rng
+        );
+        const secCompleted = nextSecondaryFixtures.filter(
+          (f) => f.roundNumber === byeRoundNum
+        );
+        nextSecondaryStandings = updateStandingsWithRound(
+          working.secondaryStandings,
+          secCompleted
+        );
+        nextAiSquads = attributeAiRoundPlayerStats(
+          nextAiSquads,
+          secCompleted,
+          working.userClubId,
+          rng
+        );
+        for (const fx of secCompleted) {
+          const rankIdx = nextSecondaryStandings.findIndex(
+            (s) => s.clubId === fx.homeClubId
+          );
+          byeAiHomeMatches.push({
+            clubId: fx.homeClubId,
+            rank: rankIdx >= 0 ? rankIdx + 1 : 10,
+            totalTeams: nextSecondaryStandings.length || 20,
+            competition: 'BRASILEIRAO',
+          });
+        }
+        byeSummaryNote = `Liga nacional já encerrada (34 rodadas); Rodada ${byeRoundNum} da liga europeia paralela simulada.`;
+      }
+    } else if (targetStep.competition === 'COPA_DO_BRASIL' && targetStep.copaStage) {
       nextCdb = advanceCopaDoBrasilStage(
         working.copaDoBrasil,
         targetStep.copaStage,
@@ -1283,6 +1337,8 @@ export function simulateNextAutoStep(
         ...working,
         clubs: byeClubs,
         aiSquads: nextAiSquads,
+        secondaryFixtures: nextSecondaryFixtures,
+        secondaryStandings: nextSecondaryStandings,
         copaDoBrasil: nextCdb,
         libertadores: nextLib,
         championsLeague: nextUcl,
@@ -2169,11 +2225,19 @@ export function simulateNextAutoStep(
     goalScorers,
   };
 
+  const starterSnapshotMetrics = computeStarterMetrics(
+    finalSquadAfterMatch,
+    processedMatch,
+    working.userClubId
+  );
   const newHistoryRecord = createMatchHistoryRecordFromLiveMatch({
     match: processedMatch,
     seasonYear,
     dateLabel,
     fallbackDivision: userPlayableDiv,
+    userStarterAvgOvr: starterSnapshotMetrics.userStarterAvgOvr,
+    userStarterAvgRating: starterSnapshotMetrics.userStarterAvgRating,
+    userMatchAvgRating: starterSnapshotMetrics.userMatchAvgRating,
   });
   const nextMatchHistory = [
     newHistoryRecord,

@@ -49,18 +49,6 @@ function createRng(seedStr: string): () => number {
 
 export const INTERNATIONAL_MARKET_CLUBS: MarketClubProfile[] = [
   {
-    id: 'intl-porto',
-    name: 'FC Porto',
-    shortName: 'Porto',
-    abbr: 'FCP',
-    country: 'Portugal',
-    leagueName: 'Liga Portugal',
-    scope: 'INTERNACIONAL',
-    primaryColor: '#0284c7',
-    reputation: 84,
-    avgStrength: 80,
-  },
-  {
     id: 'intl-shaktar',
     name: 'Shakhtar Donetsk',
     shortName: 'Shakhtar',
@@ -91,17 +79,11 @@ type IntlSeed = [
 ];
 
 /**
- * Catálogo Internacional complementar (clubes fora da Champions, Premier League, La Liga e Mundial):
- * - Os 16 clubes da Champions League, todos os 20 da Premier League, todos os 20 de La Liga
- *   e os 4 clubes do Mundial já estão integrados com elencos completos de 18 atletas em ALL_WORLD_CLUBS (sem duplicidade).
+ * Catálogo Internacional complementar (clubes fora das ligas jogáveis, Champions e Mundial):
+ * - Todos os clubes da Premier League, La Liga, Bundesliga, Serie A Italiana, Ligue 1,
+ *   Liga Portugal, Champions League e Mundial já estão integrados com elencos completos em ALL_WORLD_CLUBS.
  */
 const INTERNATIONAL_PLAYER_SEEDS: IntlSeed[] = [
-  // Porto
-  ['intl-porto', 11, 'Pepê', 29, 'Brasil', 'PD', 16.2, true, 'NONE', 4.0, { drible: 17, velocidade: 17 }],
-  ['intl-porto', 22, 'Alan Varela', 24, 'Argentina', 'VOL', 16.1, true, 'NONE', 4.0, { desarme: 17, passe: 16 }],
-  ['intl-porto', 4, 'Otávio Ataíde', 23, 'Brasil', 'ZAG', 15.3, false, 'LOAN', 3.5],
-  ['intl-porto', 19, 'Danny Namaso', 25, 'Inglaterra', 'ATA', 15.1, false, 'TRANSFER', 3.5],
-
   // Shakhtar
   ['intl-shaktar', 7, 'Eguinaldo', 21, 'Brasil', 'ATA', 14.9, false, 'LOAN', 3.5, { velocidade: 17 }],
   ['intl-shaktar', 11, 'Kevin', 23, 'Brasil', 'PE', 15.4, true, 'NONE', 4.0, { drible: 17, aceleracao: 17 }],

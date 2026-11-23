@@ -46,8 +46,19 @@ export function createMatchHistoryRecordFromLiveMatch(params: {
   seasonYear: number;
   dateLabel: string;
   fallbackDivision?: PlayableDivision;
+  userStarterAvgOvr?: number;
+  userStarterAvgRating?: number;
+  userMatchAvgRating?: number;
 }): MatchHistoryRecord {
-  const { match, seasonYear, dateLabel, fallbackDivision = 'A' } = params;
+  const {
+    match,
+    seasonYear,
+    dateLabel,
+    fallbackDivision = 'A',
+    userStarterAvgOvr,
+    userStarterAvgRating,
+    userMatchAvgRating,
+  } = params;
   const comp: CompetitionType = match.competition || 'BRASILEIRAO';
   const compLabel =
     match.competitionLabel ||
@@ -69,6 +80,9 @@ export function createMatchHistoryRecordFromLiveMatch(params: {
     awayPenalties: match.awayPenalties ?? null,
     winnerClubId: match.winnerClubId ?? null,
     isKnockout: Boolean(match.isKnockout),
+    ...(userStarterAvgOvr !== undefined ? { userStarterAvgOvr } : {}),
+    ...(userStarterAvgRating !== undefined ? { userStarterAvgRating } : {}),
+    ...(userMatchAvgRating !== undefined ? { userMatchAvgRating } : {}),
   };
 }
 
@@ -103,6 +117,14 @@ function formatFixtureCompetitionLabel(
       ? 'Premier League'
       : fix.division === 'LALIGA'
       ? 'La Liga'
+      : fix.division === 'BUNDESLIGA'
+      ? 'Bundesliga'
+      : fix.division === 'SERIE_A_IT'
+      ? 'Serie A Italiana'
+      : fix.division === 'LIGUE_1'
+      ? 'Ligue 1'
+      : fix.division === 'LIGA_PORTUGAL'
+      ? 'Liga Portugal'
       : fix.division === 'B'
       ? 'Série B'
       : 'Série A';

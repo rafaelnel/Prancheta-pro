@@ -18,8 +18,13 @@ import {
   getDynamicPotentialProfile,
   getPotentialCeilingOvr,
 } from './economyAndEvolution';
-import { generateAttributesFromSeed } from '../data/squadBuilder';
+import { generateAttributesFromSeed, getSectorForPosition } from '../data/squadBuilder';
 import { getDefaultFormationRoleForPosition } from '../data/transferCatalog';
+import {
+  REAL_YOUTH_ACADEMY_SEEDS,
+  RealYouthProspectSeed,
+  getYouthPoolForClub,
+} from '../data/realYouthAcademies';
 
 export interface YouthStarProbabilities {
   star1_2_5: number; // % chance of 1–2,5★
@@ -280,6 +285,7 @@ function buildSingleYouthProspect(params: {
   potentialStars: PotentialStars;
   usedNames: Set<string>;
   rng: () => number;
+  realSeed?: RealYouthProspectSeed;
 }): { player: Player; reportItem: YouthRegenReportItem } {
   const {
     clubId,
@@ -287,33 +293,45 @@ function buildSingleYouthProspect(params: {
     division,
     seasonYear,
     index,
-    chosenSector,
-    age,
-    minOvr,
-    maxOvr,
-    potentialStars,
     usedNames,
     rng,
+    realSeed,
   } = params;
 
-  const possiblePos = POSITIONS_BY_SECTOR[chosenSector];
-  const position = possiblePos[Math.floor(rng() * possiblePos.length)];
+  const countryPool = getYouthPoolForClub(clubId, division);
+  const firstPool = countryPool.firstNames.length > 0 ? countryPool.firstNames : FIRST_NAMES;
+  const lastPool = countryPool.lastNames.length > 0 ? countryPool.lastNames : LAST_NAMES;
 
-  let name = '';
-  for (let attempt = 0; attempt < 12; attempt++) {
-    const first = FIRST_NAMES[Math.floor(rng() * FIRST_NAMES.length)];
-    const last = LAST_NAMES[Math.floor(rng() * LAST_NAMES.length)];
-    const candidate = `${first} ${last}`;
-    if (!usedNames.has(candidate)) {
-      name = candidate;
-      usedNames.add(candidate);
-      break;
+  const potentialStars: PotentialStars = realSeed ? realSeed[5] : params.potentialStars;
+  const age: number = realSeed ? realSeed[1] : params.age;
+  const nationality: string = realSeed ? realSeed[2] : countryPool.nationality;
+  const possiblePos = POSITIONS_BY_SECTOR[params.chosenSector];
+  const position: NaturalPosition = realSeed
+    ? realSeed[3]
+    : possiblePos[Math.floor(rng() * possiblePos.length)];
+  const chosenSector: PositionSector = realSeed
+    ? getSectorForPosition(realSeed[3])
+    : params.chosenSector;
+
+  let name = realSeed ? realSeed[0] : '';
+  if (name) {
+    usedNames.add(name);
+  } else {
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const first = firstPool[Math.floor(rng() * firstPool.length)];
+      const last = lastPool[Math.floor(rng() * lastPool.length)];
+      const candidate = `${first} ${last}`;
+      if (!usedNames.has(candidate)) {
+        name = candidate;
+        usedNames.add(candidate);
+        break;
+      }
     }
-  }
-  if (!name) {
-    name = `${FIRST_NAMES[index % FIRST_NAMES.length]} ${
-      LAST_NAMES[(index * 3) % LAST_NAMES.length]
-    }`;
+    if (!name) {
+      name = `${firstPool[index % firstPool.length]} ${
+        lastPool[(index * 3) % lastPool.length]
+      }`;
+    }
   }
 
   // OVR inicial na base é determinado pela faixa de potencial em estrelas:
@@ -350,8 +368,9 @@ function buildSingleYouthProspect(params: {
   }
 
   const ageBonus = Math.max(0, (age - 15) * 0.45);
-  const rawTargetOvr =
-    subMin + rng() * Math.max(1, subMax - subMin) + ageBonus * 0.35;
+  const rawTargetOvr = realSeed
+    ? realSeed[4]
+    : subMin + rng() * Math.max(1, subMax - subMin) + ageBonus * 0.35;
   const clampedTargetOvr = Math.max(
     starOvrBounds.minOvr,
     Math.min(starOvrBounds.maxOvr, Math.round(rawTargetOvr))
@@ -382,9 +401,11 @@ function buildSingleYouthProspect(params: {
   }
   const roleDefaults = getDefaultFormationRoleForPosition(position);
 
-  const playerId = `regen-${clubId}-${seasonYear}-${index + 1}-${Math.round(
-    rng() * 8999 + 1000
-  )}`;
+  const playerId = realSeed
+    ? `youth-real-${clubId}-${index + 1}`
+    : `regen-${clubId}-${seasonYear}-${index + 1}-${Math.round(
+        rng() * 8999 + 1000
+      )}`;
   const { marketValue, salary } = calculateBalancedValuationAndWage({
     ovr,
     age: Math.max(16, age),
@@ -419,7 +440,7 @@ function buildSingleYouthProspect(params: {
     number: 40 + index,
     name,
     age,
-    nationality: 'Brasil',
+    nationality,
     position,
     sector: chosenSector,
     condition: 98,
@@ -477,40 +498,47 @@ export function createInitialYouthAcademy(
   seasonYear: number = 2026
 ): YouthAcademyState {
   const defaultTier: YouthInvestmentTier =
-    division === 'B' && clubReputation < 72 ? 'BASICO' : 'ESTRUTURADO';
+    clubReputation >= 88
+      ? 'AVANCADO'
+      : division === 'B' && clubReputation < 72
+      ? 'BASICO'
+      : 'ESTRUTURADO';
   const tierConfig =
     YOUTH_TIERS.find((t) => t.tier === defaultTier) || YOUTH_TIERS[1];
 
   const rng = createSeededRng(`init-youth-${clubId}-${seasonYear}`);
+  const realSeeds = REAL_YOUTH_ACADEMY_SEEDS[clubId];
   const sectors: PositionSector[] = ['ATA', 'MEI', 'DEF', 'MEI', 'GOL'];
-  // Include 15-year-olds (Sub-17, waiting to turn 16) and 16-18 year-olds (ready for promotion)
-  const initialAges = [17, 16, 16, 15, 15];
-  const initialStars: PotentialStars[] = [
-    clubReputation >= 84 ? 3.5 : 3,
-    3,
-    2.5,
-    2.5,
-    2,
-  ];
+  // Rising academy prospects aged 16-19
+  const initialAges = [18, 18, 17, 17, 16];
+  const initialStars: PotentialStars[] =
+    clubReputation >= 84
+      ? [4.5, 4.0, 4.0, 4.0, 3.5]
+      : clubReputation >= 76
+      ? [4.0, 4.0, 3.5, 3.5, 3.5]
+      : [3.5, 3.5, 3.5, 3.0, 3.0];
 
   const usedNames = new Set<string>();
   const youthRoster: Player[] = [];
   const lastGraduatedRegens: YouthRegenReportItem[] = [];
 
-  for (let i = 0; i < 5; i++) {
+  const totalCount = realSeeds && realSeeds.length > 0 ? realSeeds.length : 5;
+  for (let i = 0; i < totalCount; i++) {
+    const seed = realSeeds?.[i];
     const built = buildSingleYouthProspect({
       clubId,
       clubReputation,
       division,
       seasonYear,
       index: i,
-      chosenSector: sectors[i],
-      age: initialAges[i],
+      chosenSector: sectors[i % sectors.length],
+      age: initialAges[i % initialAges.length],
       minOvr: tierConfig.minOvr,
       maxOvr: tierConfig.maxOvr,
-      potentialStars: initialStars[i],
+      potentialStars: initialStars[i % initialStars.length],
       usedNames,
       rng,
+      realSeed: seed,
     });
     youthRoster.push(built.player);
     lastGraduatedRegens.push(built.reportItem);

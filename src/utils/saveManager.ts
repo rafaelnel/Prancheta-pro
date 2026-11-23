@@ -1,10 +1,14 @@
 import { CareerSaveData, CareerSlotIndex, Player } from '../types/football';
 import {
+  BUNDESLIGA_EXTRA_CLUBS,
   CONMEBOL_FOREIGN_CLUBS,
   GLOBAL_WORLD_CLUBS,
   INITIAL_CLUBS,
   LALIGA_EXTRA_CLUBS,
+  LIGA_PORTUGAL_EXTRA_CLUBS,
+  LIGUE_1_EXTRA_CLUBS,
   PREMIER_LEAGUE_EXTRA_CLUBS,
+  SERIE_A_IT_EXTRA_CLUBS,
   UCL_CLUBS,
   getPlayableDivisionForClub,
   isEuropeanPlayableDivision,
@@ -64,7 +68,11 @@ function isValidCareerSave(candidate: unknown): candidate is CareerSaveData {
     (obj.division === 'A' ||
       obj.division === 'B' ||
       obj.division === 'PL' ||
-      obj.division === 'LALIGA') &&
+      obj.division === 'LALIGA' ||
+      obj.division === 'BUNDESLIGA' ||
+      obj.division === 'SERIE_A_IT' ||
+      obj.division === 'LIGUE_1' ||
+      obj.division === 'LIGA_PORTUGAL') &&
     typeof obj.clubName === 'string' &&
     Array.isArray(obj.clubs) &&
     obj.clubs.length >= 40 &&
@@ -112,6 +120,10 @@ export function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
     ...UCL_CLUBS,
     ...PREMIER_LEAGUE_EXTRA_CLUBS,
     ...LALIGA_EXTRA_CLUBS,
+    ...BUNDESLIGA_EXTRA_CLUBS,
+    ...SERIE_A_IT_EXTRA_CLUBS,
+    ...LIGUE_1_EXTRA_CLUBS,
+    ...LIGA_PORTUGAL_EXTRA_CLUBS,
     ...GLOBAL_WORLD_CLUBS,
   ]
     .filter((c) => !existingIds.has(c.id))
@@ -130,6 +142,10 @@ export function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
       ...UCL_CLUBS,
       ...PREMIER_LEAGUE_EXTRA_CLUBS,
       ...LALIGA_EXTRA_CLUBS,
+      ...BUNDESLIGA_EXTRA_CLUBS,
+      ...SERIE_A_IT_EXTRA_CLUBS,
+      ...LIGUE_1_EXTRA_CLUBS,
+      ...LIGA_PORTUGAL_EXTRA_CLUBS,
       ...GLOBAL_WORLD_CLUBS,
     ].map((c) => [c.id, c])
   );
@@ -142,7 +158,13 @@ export function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
         const ref = baseClubRefMap.get(c.id);
         const targetCash = ref
           ? Math.max(c.cashBalance, ref.cashBalance)
-          : c.division === 'UCL' || c.division === 'PL' || c.division === 'LALIGA'
+          : c.division === 'UCL' ||
+            c.division === 'PL' ||
+            c.division === 'LALIGA' ||
+            c.division === 'BUNDESLIGA' ||
+            c.division === 'SERIE_A_IT' ||
+            c.division === 'LIGUE_1' ||
+            c.division === 'LIGA_PORTUGAL'
           ? Math.round(c.cashBalance * 2.2)
           : Math.round(c.cashBalance * 2.0);
         const targetWage = ref
@@ -249,8 +271,19 @@ export function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
       const tierDef =
         YOUTH_TIERS.find((t) => t.tier === save.youthAcademy?.investmentTier) ||
         YOUTH_TIERS[1];
+      const hasOnlyLegacyGenericInitRegens =
+        save.youthAcademy.youthRoster &&
+        save.youthAcademy.youthRoster.length > 0 &&
+        save.youthAcademy.youthRoster.every((yp) =>
+          yp.id.startsWith(`regen-${migratedUserClub.id}-2026-`)
+        ) &&
+        (fallback.youthRoster || []).some((fp) =>
+          fp.id.startsWith(`youth-real-${migratedUserClub.id}-`)
+        );
       const rawRoster =
-        save.youthAcademy.youthRoster && save.youthAcademy.youthRoster.length > 0
+        save.youthAcademy.youthRoster &&
+        save.youthAcademy.youthRoster.length > 0 &&
+        !hasOnlyLegacyGenericInitRegens
           ? save.youthAcademy.youthRoster
           : fallback.youthRoster || [];
       const sanitizedRoster = rawRoster.map((yp) =>
@@ -264,6 +297,9 @@ export function hydrateCareerSave(save: CareerSaveData): CareerSaveData {
         ...save.youthAcademy,
         monthlyCost: tierDef.monthlyCost,
         youthRoster: sanitizedRoster,
+        lastGraduatedRegens: hasOnlyLegacyGenericInitRegens
+          ? fallback.lastGraduatedRegens
+          : save.youthAcademy.lastGraduatedRegens,
       };
     })(),
   };

@@ -933,7 +933,18 @@ export function getCupPrizeMoney(
   isFinalWinner: boolean,
   options?: {
     isUserHome?: boolean;
-    clubDivision?: 'A' | 'B' | 'LIB' | 'UCL' | 'PL' | 'LALIGA' | 'WORLD';
+    clubDivision?:
+      | 'A'
+      | 'B'
+      | 'LIB'
+      | 'UCL'
+      | 'PL'
+      | 'LALIGA'
+      | 'BUNDESLIGA'
+      | 'SERIE_A_IT'
+      | 'LIGUE_1'
+      | 'LIGA_PORTUGAL'
+      | 'WORLD';
   }
 ): number {
   if (competition === 'COPA_DO_BRASIL') {

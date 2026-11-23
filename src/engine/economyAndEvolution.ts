@@ -225,25 +225,30 @@ export function calibrateAttributesToTargetOvr(
   const posKeys = priorityByPos[position];
   let guard = 0;
 
-  const maxAttrAllowed = targetOvr >= 88 ? 20 : 19;
+  const maxAttrAllowed = targetOvr >= 86 ? 20 : 19;
 
-  while (guard < 90) {
+  while (guard < 120) {
     guard++;
     const current = calculatePlayerOverall(next, position);
     if (current > maxOvr) {
       const k = posKeys[guard % posKeys.length];
       if (next[k] > 5) next[k] -= 1;
       else {
-        const anyKey = allKeys[guard % allKeys.length];
-        if (next[anyKey] > 5) next[anyKey] -= 1;
+        const anyKey = allKeys.find((ak) => next[ak] > 5);
+        if (anyKey) next[anyKey] -= 1;
       }
     } else if (current < targetOvr) {
       const k = posKeys[guard % posKeys.length];
       if (next[k] < maxAttrAllowed) {
         next[k] += 1;
       } else {
-        const anyKey = allKeys[guard % allKeys.length];
-        if (next[anyKey] < maxAttrAllowed) next[anyKey] += 1;
+        const altPosKey = posKeys.find((pk) => next[pk] < maxAttrAllowed);
+        if (altPosKey) {
+          next[altPosKey] += 1;
+        } else {
+          const anyKey = allKeys.find((ak) => next[ak] < maxAttrAllowed);
+          if (anyKey) next[anyKey] += 1;
+        }
       }
     } else {
       break;
@@ -435,7 +440,13 @@ export function calculateBalancedValuationAndWage(params: {
 
   // 6. Club relevance & division market multiplier
   const isEuropean =
-    division === 'UCL' || division === 'PL' || division === 'LALIGA';
+    division === 'UCL' ||
+    division === 'PL' ||
+    division === 'LALIGA' ||
+    division === 'BUNDESLIGA' ||
+    division === 'SERIE_A_IT' ||
+    division === 'LIGUE_1' ||
+    division === 'LIGA_PORTUGAL';
   const isGlobal = division === 'WORLD';
   const divMult =
     division === 'B'
@@ -448,6 +459,14 @@ export function calculateBalancedValuationAndWage(params: {
       ? 1.18
       : division === 'LALIGA'
       ? 1.12
+      : division === 'BUNDESLIGA'
+      ? 1.12
+      : division === 'SERIE_A_IT'
+      ? 1.10
+      : division === 'LIGUE_1'
+      ? 1.04
+      : division === 'LIGA_PORTUGAL'
+      ? 0.96
       : isGlobal
       ? 1.10
       : 1.0;
@@ -499,6 +518,14 @@ export function calculateBalancedValuationAndWage(params: {
       ? 2.55
       : division === 'LALIGA'
       ? 2.05
+      : division === 'BUNDESLIGA'
+      ? 2.00
+      : division === 'SERIE_A_IT'
+      ? 1.95
+      : division === 'LIGUE_1'
+      ? 1.65
+      : division === 'LIGA_PORTUGAL'
+      ? 1.25
       : isGlobal
       ? 1.85
       : 1.05;
@@ -721,7 +748,7 @@ export function recalibratePlayerForGlobalScale(
     player.name
   );
   const preservedStars =
-    player.exceededExpectations && (player.potentialStars ?? 0) > nextStars
+    (player.exceededExpectations || player.isRegen) && (player.potentialStars ?? 0) > nextStars
       ? player.potentialStars!
       : nextStars;
   const dynProfile = getDynamicPotentialProfile(preservedStars, () => 0.5, ovr, player.age);
@@ -893,16 +920,39 @@ export function calculateDynamicSponsorship(
   if (
     club.division === 'PL' ||
     club.division === 'LALIGA' ||
+    club.division === 'BUNDESLIGA' ||
+    club.division === 'SERIE_A_IT' ||
+    club.division === 'LIGUE_1' ||
+    club.division === 'LIGA_PORTUGAL' ||
     club.division === 'UCL'
   ) {
     const isEngland = club.division === 'PL' || club.countryCode === 'ING';
+    const isGermany = club.division === 'BUNDESLIGA' || club.countryCode === 'ALE';
+    const isFrance = club.division === 'LIGUE_1' || club.countryCode === 'FRA';
+    const isPortugal = club.division === 'LIGA_PORTUGAL' || club.countryCode === 'POR';
     const repNorm = Math.min(1, Math.max(0, (club.reputation - 73) / 22));
     const fanNorm = Math.min(1, Math.max(0, (fanbaseScore - 20) / 80));
     const ovrNorm = Math.min(1, Math.max(0, (squadAvgOvr - 72) / 16));
     const weighted = Math.pow(repNorm * 0.55 + fanNorm * 0.25 + ovrNorm * 0.2, 1.3);
     const titleMultiplier = 1 + Math.min(0.22, titlesCount * 0.05);
-    const baseMin = isEngland ? 185_000_000 : 88_000_000;
-    const baseSpan = isEngland ? 540_000_000 : 510_000_000;
+    const baseMin = isEngland
+      ? 185_000_000
+      : isGermany
+      ? 95_000_000
+      : isPortugal
+      ? 38_000_000
+      : isFrance
+      ? 62_000_000
+      : 88_000_000;
+    const baseSpan = isEngland
+      ? 540_000_000
+      : isGermany
+      ? 500_000_000
+      : isPortugal
+      ? 220_000_000
+      : isFrance
+      ? 380_000_000
+      : 490_000_000;
     const rawEuro = (baseMin + weighted * baseSpan) * titleMultiplier;
     annualValue = Math.min(
       840_000_000,
@@ -1065,6 +1115,10 @@ export function getBaseReferenceTicketPrice(
   const isEuropeanClub =
     club.division === 'PL' ||
     club.division === 'LALIGA' ||
+    club.division === 'BUNDESLIGA' ||
+    club.division === 'SERIE_A_IT' ||
+    club.division === 'LIGUE_1' ||
+    club.division === 'LIGA_PORTUGAL' ||
     club.division === 'UCL';
   let competitionMult =
     club.division === 'B' ? 0.72 : isEuropeanClub ? 1.45 : 1.0;
@@ -1157,6 +1211,10 @@ export function getNextStadiumRenovationQuote(
   const isEuropean =
     club.division === 'PL' ||
     club.division === 'LALIGA' ||
+    club.division === 'BUNDESLIGA' ||
+    club.division === 'SERIE_A_IT' ||
+    club.division === 'LIGUE_1' ||
+    club.division === 'LIGA_PORTUGAL' ||
     club.division === 'UCL';
   const divisionScale =
     club.division === 'B'
@@ -1284,6 +1342,10 @@ export function calculateMatchGateRevenue(params: {
   const isEuropeanClub =
     club.division === 'PL' ||
     club.division === 'LALIGA' ||
+    club.division === 'BUNDESLIGA' ||
+    club.division === 'SERIE_A_IT' ||
+    club.division === 'LIGUE_1' ||
+    club.division === 'LIGA_PORTUGAL' ||
     club.division === 'UCL';
 
   const repOccupancy = Math.min(
@@ -1608,7 +1670,11 @@ export function applyAntiInflationSeasonMaintenance(
   const isEuropean =
     club.division === 'UCL' ||
     club.division === 'PL' ||
-    club.division === 'LALIGA';
+    club.division === 'LALIGA' ||
+    club.division === 'BUNDESLIGA' ||
+    club.division === 'SERIE_A_IT' ||
+    club.division === 'LIGUE_1' ||
+    club.division === 'LIGA_PORTUGAL';
   const isGlobal = club.division === 'WORLD';
   const avgSquadOvrForSponsor =
     squad.length > 0
@@ -1628,10 +1694,20 @@ export function applyAntiInflationSeasonMaintenance(
       ? club.reputation >= 86
         ? 1_650_000_000
         : 1_050_000_000
-      : club.division === 'LALIGA'
+      : club.division === 'LALIGA' ||
+        club.division === 'BUNDESLIGA' ||
+        club.division === 'SERIE_A_IT'
       ? club.reputation >= 84
         ? 1_150_000_000
         : 780_000_000
+      : club.division === 'LIGUE_1'
+      ? club.reputation >= 84
+        ? 980_000_000
+        : 640_000_000
+      : club.division === 'LIGA_PORTUGAL'
+      ? club.reputation >= 84
+        ? 860_000_000
+        : 450_000_000
       : isGlobal
       ? 1_100_000_000
       : club.division === 'B'
@@ -1644,8 +1720,14 @@ export function applyAntiInflationSeasonMaintenance(
       ? 350_000_000
       : club.division === 'PL'
       ? 240_000_000
-      : club.division === 'LALIGA'
+      : club.division === 'LALIGA' ||
+        club.division === 'BUNDESLIGA' ||
+        club.division === 'SERIE_A_IT'
       ? 160_000_000
+      : club.division === 'LIGUE_1'
+      ? 125_000_000
+      : club.division === 'LIGA_PORTUGAL'
+      ? 85_000_000
       : isGlobal
       ? 110_000_000
       : club.division === 'B'
@@ -1658,8 +1740,14 @@ export function applyAntiInflationSeasonMaintenance(
       ? Math.round((club.reputation * 3_100_000) / 500_000) * 500_000
       : club.division === 'PL'
       ? Math.round((club.reputation * 2_450_000) / 500_000) * 500_000
-      : club.division === 'LALIGA'
+      : club.division === 'LALIGA' || club.division === 'BUNDESLIGA'
       ? Math.round((club.reputation * 1_750_000) / 500_000) * 500_000
+      : club.division === 'SERIE_A_IT'
+      ? Math.round((club.reputation * 1_650_000) / 500_000) * 500_000
+      : club.division === 'LIGUE_1'
+      ? Math.round((club.reputation * 1_350_000) / 500_000) * 500_000
+      : club.division === 'LIGA_PORTUGAL'
+      ? Math.round((club.reputation * 920_000) / 500_000) * 500_000
       : isGlobal
       ? 95_000_000
       : 0;

@@ -36,6 +36,7 @@ import {
   processSeasonEndContracts,
 } from './contractEngine';
 import { createInitialMatchState } from './matchEngine';
+import { buildStarterOvrEvolutionSeries } from './seasonStarterOvrChart';
 import { formatCompactBRL } from '../utils/formatters';
 import {
   ChampionsLeagueState,
@@ -45,6 +46,7 @@ import {
   InboxMessage,
   LibertadoresState,
   LiveMatchState,
+  MatchHistoryRecord,
   MundialState,
   NewSeasonEvolutionReport,
   PlayableDivision,
@@ -301,6 +303,8 @@ export function buildSeasonAwardsSummary(params: {
       c.division === 'UCL' ||
       c.division === 'PL' ||
       c.division === 'LALIGA' ||
+      c.division === 'BUNDESLIGA' ||
+      c.division === 'SERIE_A_IT' ||
       c.division === 'WORLD'
     ) {
       continue;
@@ -417,6 +421,25 @@ export function getLeagueEndPrizeMoney(
     const raw = 320_000_000 - (safeRank - 1) * 11_800_000;
     return Math.max(95_000_000, Math.round(raw / 100_000) * 100_000);
   }
+  if (division === 'BUNDESLIGA') {
+    const clampedBuLiRank = Math.max(1, Math.min(18, Math.round(rank)));
+    const raw = 230_000_000 - (clampedBuLiRank - 1) * 9_700_000;
+    return Math.max(65_000_000, Math.round(raw / 100_000) * 100_000);
+  }
+  if (division === 'SERIE_A_IT') {
+    const raw = 215_000_000 - (safeRank - 1) * 8_600_000;
+    return Math.max(50_000_000, Math.round(raw / 100_000) * 100_000);
+  }
+  if (division === 'LIGUE_1') {
+    const clampedRank = Math.max(1, Math.min(18, Math.round(rank)));
+    const raw = 175_000_000 - (clampedRank - 1) * 8_200_000;
+    return Math.max(35_000_000, Math.round(raw / 100_000) * 100_000);
+  }
+  if (division === 'LIGA_PORTUGAL') {
+    const clampedRank = Math.max(1, Math.min(18, Math.round(rank)));
+    const raw = 110_000_000 - (clampedRank - 1) * 5_400_000;
+    return Math.max(18_000_000, Math.round(raw / 100_000) * 100_000);
+  }
   // LALIGA
   const raw = 240_000_000 - (safeRank - 1) * 9_700_000;
   return Math.max(55_000_000, Math.round(raw / 100_000) * 100_000);
@@ -435,6 +458,7 @@ export function buildSeasonEndSummary(params: {
   championsLeague?: ChampionsLeagueState;
   mundial?: MundialState;
   superMundial?: SuperMundialState;
+  matchHistory?: MatchHistoryRecord[];
   previewEvolutionHighlights?: PlayerEvolutionReportItem[];
 }): SeasonEndReport {
   const {
@@ -450,6 +474,7 @@ export function buildSeasonEndSummary(params: {
     championsLeague,
     mundial,
     superMundial,
+    matchHistory = [],
     previewEvolutionHighlights = [],
   } = params;
 
@@ -457,6 +482,8 @@ export function buildSeasonEndSummary(params: {
   const userClub = clubMap.get(userClubId) || clubs[0];
   const userDiv: PlayableDivision = getPlayableDivisionForClub(userClub);
   const userIsEuro = isEuropeanPlayableDivision(userDiv);
+
+  const otherDiv: PlayableDivision = getSecondaryPlayableDivision(userDiv);
 
   const serieAStandings = !userIsEuro
     ? userDiv === 'A'
@@ -468,21 +495,51 @@ export function buildSeasonEndSummary(params: {
       ? standings
       : secondaryStandings
     : [];
-  const plStandings = userIsEuro
-    ? userDiv === 'PL'
+  const plStandings =
+    userDiv === 'PL'
       ? standings
-      : secondaryStandings
-    : [];
-  const laLigaStandings = userIsEuro
-    ? userDiv === 'LALIGA'
+      : otherDiv === 'PL'
+      ? secondaryStandings
+      : [];
+  const laLigaStandings =
+    userDiv === 'LALIGA'
       ? standings
-      : secondaryStandings
-    : [];
+      : otherDiv === 'LALIGA'
+      ? secondaryStandings
+      : [];
+  const bundesligaStandings =
+    userDiv === 'BUNDESLIGA'
+      ? standings
+      : otherDiv === 'BUNDESLIGA'
+      ? secondaryStandings
+      : [];
+  const serieAItStandings =
+    userDiv === 'SERIE_A_IT'
+      ? standings
+      : otherDiv === 'SERIE_A_IT'
+      ? secondaryStandings
+      : [];
+  const ligue1Standings =
+    userDiv === 'LIGUE_1'
+      ? standings
+      : otherDiv === 'LIGUE_1'
+      ? secondaryStandings
+      : [];
+  const ligaPortugalStandings =
+    userDiv === 'LIGA_PORTUGAL'
+      ? standings
+      : otherDiv === 'LIGA_PORTUGAL'
+      ? secondaryStandings
+      : [];
 
   const serieAChampionId = serieAStandings[0]?.clubId || '';
   const serieBChampionId = serieBStandings[0]?.clubId || '';
   const premierLeagueChampionId = plStandings[0]?.clubId || null;
   const laLigaChampionId = laLigaStandings[0]?.clubId || null;
+  const bundesligaChampionId = bundesligaStandings[0]?.clubId || null;
+  const serieAItChampionId = serieAItStandings[0]?.clubId || null;
+  const ligue1ChampionId = ligue1Standings[0]?.clubId || null;
+  const ligaPortugalChampionId = ligaPortugalStandings[0]?.clubId || null;
   const cdbChampionId = copaDoBrasil.championClubId;
   const libChampionId = libertadores.championClubId;
   const uclChampionId = championsLeague?.championClubId ?? null;
@@ -551,6 +608,22 @@ export function buildSeasonEndSummary(params: {
     laLigaChampionName: laLigaChampionId
       ? clubMap.get(laLigaChampionId)?.shortName || laLigaChampionId
       : null,
+    bundesligaChampionId,
+    bundesligaChampionName: bundesligaChampionId
+      ? clubMap.get(bundesligaChampionId)?.shortName || bundesligaChampionId
+      : null,
+    serieAItChampionId,
+    serieAItChampionName: serieAItChampionId
+      ? clubMap.get(serieAItChampionId)?.shortName || serieAItChampionId
+      : null,
+    ligue1ChampionId,
+    ligue1ChampionName: ligue1ChampionId
+      ? clubMap.get(ligue1ChampionId)?.shortName || ligue1ChampionId
+      : null,
+    ligaPortugalChampionId,
+    ligaPortugalChampionName: ligaPortugalChampionId
+      ? clubMap.get(ligaPortugalChampionId)?.shortName || ligaPortugalChampionId
+      : null,
     cdbChampionId,
     cdbChampionName: cdbChampionId
       ? clubMap.get(cdbChampionId)?.shortName || cdbChampionId
@@ -587,6 +660,13 @@ export function buildSeasonEndSummary(params: {
     thinkingRetirementNames: userSquad
       .filter((p) => evaluatePlayerRetirementProbability(p).isConsideringRetirement)
       .map((p) => `${p.name} (${p.position}, ${p.age}a)`),
+    starterOvrHistory: buildStarterOvrEvolutionSeries({
+      seasonYear,
+      userClubId,
+      userSquad,
+      matchHistory,
+      userEvolutionHighlights: previewEvolutionHighlights,
+    }),
   };
 }
 
@@ -616,6 +696,7 @@ export function executeNewSeasonRollover(params: {
   accumulatedUclChampions?: string[];
   accumulatedLibChampions?: string[];
   seasonHistory: SeasonArchiveEntry[];
+  matchHistory?: MatchHistoryRecord[];
   managerName: string;
   youthAcademy?: import('../types/football').YouthAcademyState;
   rng?: () => number;
@@ -664,6 +745,7 @@ export function executeNewSeasonRollover(params: {
     accumulatedUclChampions = [],
     accumulatedLibChampions = [],
     seasonHistory,
+    matchHistory = [],
     managerName,
     youthAcademy = {
       investmentTier: 'ESTRUTURADO',
@@ -690,6 +772,7 @@ export function executeNewSeasonRollover(params: {
     championsLeague,
     mundial,
     superMundial,
+    matchHistory,
   });
 
   // 1. Apply promotion/relegation, titles, and reputation updates before evolution/sponsorship
@@ -723,6 +806,22 @@ export function executeNewSeasonRollover(params: {
     }
     if (c.id === baseReport.laLigaChampionId) {
       titles.push(`La Liga ${currentYear}`);
+      repDelta += 2;
+    }
+    if (c.id === baseReport.bundesligaChampionId) {
+      titles.push(`Bundesliga ${currentYear}`);
+      repDelta += 2;
+    }
+    if (c.id === baseReport.serieAItChampionId) {
+      titles.push(`Serie A Italiana ${currentYear}`);
+      repDelta += 2;
+    }
+    if (c.id === baseReport.ligue1ChampionId) {
+      titles.push(`Ligue 1 ${currentYear}`);
+      repDelta += 2;
+    }
+    if (c.id === baseReport.ligaPortugalChampionId) {
+      titles.push(`Liga Portugal ${currentYear}`);
       repDelta += 2;
     }
     if (c.id === baseReport.cdbChampionId) {
@@ -826,7 +925,17 @@ export function executeNewSeasonRollover(params: {
       ? isEuropeanPlayableDivision(cPlayableDiv) &&
         (c.division === 'PL' ||
           c.division === 'LALIGA' ||
-          (c.division === 'UCL' && (c.countryCode === 'ING' || c.countryCode === 'ESP')))
+          c.division === 'BUNDESLIGA' ||
+          c.division === 'SERIE_A_IT' ||
+          c.division === 'LIGUE_1' ||
+          c.division === 'LIGA_PORTUGAL' ||
+          (c.division === 'UCL' &&
+            (c.countryCode === 'ING' ||
+              c.countryCode === 'ESP' ||
+              c.countryCode === 'ALE' ||
+              c.countryCode === 'ITA' ||
+              c.countryCode === 'FRA' ||
+              c.countryCode === 'POR')))
       : c.division === 'A' || c.division === 'B';
     if (shouldCreditSponsor) {
       const sq = contractRollover.updatedAiSquads[c.id] || [];
@@ -905,23 +1014,24 @@ export function executeNewSeasonRollover(params: {
     ? Array.from(new Set([baseReport.libChampionId, ...baseAccLib])).slice(0, 6)
     : [...baseAccLib];
 
-  // Para carreiras europeias, classifica Top 4 da Premier League + Top 4 da La Liga + Campeão da UCL
+  // Para carreiras europeias, classifica Top 4 da liga principal + Top 4 da liga secundária pareada + Campeão da UCL
+  const activeEuroCountries =
+    nextDivision === 'PL' || nextDivision === 'LALIGA'
+      ? new Set(['ING', 'ESP'])
+      : nextDivision === 'BUNDESLIGA' || nextDivision === 'SERIE_A_IT'
+      ? new Set(['ALE', 'ITA'])
+      : new Set(['FRA', 'POR']);
   const nextUclQualifiedIds = nextIsEuro
     ? Array.from(
         new Set([
           ...(baseReport.uclChampionId ? [baseReport.uclChampionId] : []),
-          ...(nextDivision === 'PL' ? standings : secondaryStandings)
-            .slice(0, 4)
-            .map((r) => r.clubId),
-          ...(nextDivision === 'LALIGA' ? standings : secondaryStandings)
-            .slice(0, 4)
-            .map((r) => r.clubId),
+          ...standings.slice(0, 4).map((r) => r.clubId),
+          ...secondaryStandings.slice(0, 4).map((r) => r.clubId),
           ...clubsAfterSponsor
             .filter(
               (c) =>
                 c.division === 'UCL' &&
-                c.countryCode !== 'ING' &&
-                c.countryCode !== 'ESP'
+                !activeEuroCountries.has(c.countryCode || '')
             )
             .map((c) => c.id),
         ])
@@ -1058,6 +1168,14 @@ export function executeNewSeasonRollover(params: {
     premierLeagueChampionName: baseReport.premierLeagueChampionName ?? null,
     laLigaChampionId: baseReport.laLigaChampionId ?? null,
     laLigaChampionName: baseReport.laLigaChampionName ?? null,
+    bundesligaChampionId: baseReport.bundesligaChampionId ?? null,
+    bundesligaChampionName: baseReport.bundesligaChampionName ?? null,
+    serieAItChampionId: baseReport.serieAItChampionId ?? null,
+    serieAItChampionName: baseReport.serieAItChampionName ?? null,
+    ligue1ChampionId: baseReport.ligue1ChampionId ?? null,
+    ligue1ChampionName: baseReport.ligue1ChampionName ?? null,
+    ligaPortugalChampionId: baseReport.ligaPortugalChampionId ?? null,
+    ligaPortugalChampionName: baseReport.ligaPortugalChampionName ?? null,
     cdbChampionId: baseReport.cdbChampionId,
     cdbChampionName: baseReport.cdbChampionName,
     libChampionId: baseReport.libChampionId,
@@ -1196,7 +1314,11 @@ export function executeNewSeasonRollover(params: {
       ],
       bulletPoints: nextIsEuro
         ? [
-            `Campeão Premier League ${currentYear}: ${baseReport.premierLeagueChampionName || '—'} · Campeão La Liga ${currentYear}: ${baseReport.laLigaChampionName || '—'}`,
+            nextDivision === 'BUNDESLIGA' || nextDivision === 'SERIE_A_IT'
+              ? `Campeão Bundesliga ${currentYear}: ${baseReport.bundesligaChampionName || '—'} · Campeão Serie A Italiana ${currentYear}: ${baseReport.serieAItChampionName || '—'}`
+              : nextDivision === 'LIGUE_1' || nextDivision === 'LIGA_PORTUGAL'
+              ? `Campeão Ligue 1 ${currentYear}: ${baseReport.ligue1ChampionName || '—'} · Campeão Liga Portugal ${currentYear}: ${baseReport.ligaPortugalChampionName || '—'}`
+              : `Campeão Premier League ${currentYear}: ${baseReport.premierLeagueChampionName || '—'} · Campeão La Liga ${currentYear}: ${baseReport.laLigaChampionName || '—'}`,
             baseReport.userQualifiedChampionsLeague
               ? `${finalUserClub.shortName} classificado para a UEFA Champions League ${nextYear}!`
               : `Foco total no G-4 da ${getPlayableLeagueShortLabel(nextDivision)} ${nextYear}.`,

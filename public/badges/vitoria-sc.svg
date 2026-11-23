@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <path d="M30,22 L170,22 L170,110 C170,154 134,178 100,190 C66,178 30,154 30,110 Z" fill="#111827" stroke="#ffffff" stroke-width="8"/>
+  <path d="M38,30 L162,30 L162,60 L38,60 Z" fill="#ffffff"/>
+  <text x="100" y="50" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="12" fill="#0f172a" letter-spacing="1.5">PORTUGAL</text>
+  <circle cx="100" cy="116" r="42" fill="#ffffff" stroke="#d4af37" stroke-width="3"/>
+  <text x="100" y="127" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="32" fill="#0f172a" letter-spacing="1">VSC</text>
+  <text x="100" y="176" text-anchor="middle" font-family="Arial Black, sans-serif" font-weight="900" font-size="12" fill="#ffffff" letter-spacing="2">1922</text>
+</svg>

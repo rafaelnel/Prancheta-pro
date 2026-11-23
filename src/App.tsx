@@ -187,7 +187,9 @@ import {
   applyPostMatchProbabilisticEvolution,
   calculateMatchGateRevenue,
   calculateOperationalCost,
+  clampTicketPriceMultiplier,
   createInitialFinanceLedger,
+  executeStadiumRenovation,
   processMidSeasonEvolution,
 } from './engine/economyAndEvolution';
 import {
@@ -447,6 +449,75 @@ export default function App() {
       `Base Sub-20 atualizada: Nível ${tierObj.label} (${focus})`,
       'cyan'
     );
+  };
+
+  const handleUpdateTicketPriceMultiplier = (nextMultiplier: number) => {
+    const clamped = clampTicketPriceMultiplier(nextMultiplier);
+    const updatedClubs = clubs.map((c) =>
+      c.id === userClubId ? { ...c, ticketPriceMultiplier: clamped } : c
+    );
+    setClubs(updatedClubs);
+    setHasUnsavedChanges(true);
+    persistCareer({ clubs: updatedClubs });
+    const pctDelta = Math.round((clamped - 1.0) * 100);
+    const label =
+      pctDelta > 0
+        ? `+${pctDelta}% acima da referência`
+        : pctDelta < 0
+        ? `${pctDelta}% (ingresso acessível)`
+        : 'Padrão de referência (100%)';
+    showActionToast(`✓ Preço de ingresso ajustado: ${label}`, 'cyan');
+  };
+
+  const handleRenovateStadium = () => {
+    const res = executeStadiumRenovation({
+      club: userClub,
+      financeLedger,
+    });
+    if (!res.success || !res.quote.nextTier) {
+      showActionToast(`✕ ${res.message}`, 'rose');
+      return;
+    }
+
+    const updatedClubs = clubs.map((c) =>
+      c.id === userClubId ? res.updatedClub : c
+    );
+    const nextLedger = res.updatedFinanceLedger || financeLedger;
+    const dateLabel = formatCalendarDate(dayOffset, currentYear);
+    const stadiumMsg: InboxMessage = {
+      id: `msg-stadium-renovation-${Date.now()}`,
+      date: `${dateLabel} · Patrimônio`,
+      sender: 'Diretoria de Infraestrutura & Patrimônio',
+      senderRole: 'Gestão do Estádio',
+      subject: `Obra Concluída em ${userClub.stadium}: ${res.quote.nextTier.name} (+${res.quote.capacityGain.toLocaleString(
+        'pt-BR'
+      )} lugares)`,
+      category: 'Diretoria',
+      priority: 'positive',
+      read: false,
+      body: [
+        res.message,
+        `Investimento realizado à vista: ${formatCompactBRL(
+          res.quote.cost
+        )}. O novo padrão estrutural reduz a desistência de torcedores em ${Math.round(
+          res.quote.nextTier.priceRetentionShield * 100
+        )}% mesmo quando o valor do ingresso é elevado.`,
+      ],
+      actionLabel: 'Ver Estádio & Finanças',
+      actionTargetTab: 'finances',
+    };
+    const updatedMessages = [stadiumMsg, ...messages].slice(0, 80);
+
+    setClubs(updatedClubs);
+    setFinanceLedger(nextLedger);
+    setMessages(updatedMessages);
+    setHasUnsavedChanges(true);
+    persistCareer({
+      clubs: updatedClubs,
+      financeLedger: nextLedger,
+      messages: updatedMessages,
+    });
+    showActionToast(`✓ ${res.message}`, 'emerald');
   };
 
   const handlePromoteYouthPlayer = (playerId: string) => {
@@ -4293,21 +4364,28 @@ export default function App() {
       action,
       destinationClubName:
         action === 'EMPRESTIMO_OUT' ? `Clube Parceiro ${currentYear}` : undefined,
+      clubs,
+      aiSquads,
+      seasonYear: currentYear,
     });
 
     if (!result.success) {
       setMarketFeedback({
         type: 'error',
         title: 'Não foi possível concluir a saída',
-        detail: 'Verifique os limites mínimos do elenco.',
+        detail:
+          result.blockReason || 'Verifique os limites mínimos do elenco.',
       });
-      showActionToast('✕ Limite mínimo do elenco atingido', 'rose');
+      showActionToast(
+        `✕ ${result.blockReason || 'Limite mínimo do elenco atingido'}`,
+        'rose'
+      );
       return;
     }
 
-    const updatedClubs = clubs.map((c) =>
-      c.id === userClubId ? result.updatedClub : c
-    );
+    const updatedClubs =
+      result.updatedClubs ||
+      clubs.map((c) => (c.id === userClubId ? result.updatedClub : c));
     const nextFinanceLedger: ClubFinanceLedger = {
       ...financeLedger,
       seasonTransferIncome:
@@ -4327,17 +4405,15 @@ export default function App() {
       counterpartyClubName:
         action === 'DEVOLVER_EMPRESTIMO'
           ? player.loanOriginClubName || 'Clube de Origem'
-          : action === 'EMPRESTIMO_OUT'
-          ? `Clube Parceiro ${currentYear}`
-          : 'Mercado Nacional/Ext.',
+          : result.destinationClubName,
       feeAmount: result.feeReceived,
       monthlySalaryImpact: -result.monthlyWageRelief,
       note:
         action === 'DEVOLVER_EMPRESTIMO'
           ? 'Devolução antecipada de empréstimo.'
           : action === 'EMPRESTIMO_OUT'
-          ? 'Emprestado para alívio de 90% da folha.'
-          : 'Venda definitiva concluída.',
+          ? `Emprestado ao ${result.destinationClubName} para alívio de 90% da folha.`
+          : `Venda definitiva concluída para ${result.destinationClubName}.`,
     };
 
     const nextHistory = [record, ...transferHistory];
@@ -5618,6 +5694,9 @@ export default function App() {
               loanedOutPlayers={loanedOutPlayers}
               financeLedger={financeLedger}
               seasonYear={currentYear}
+              userRank={userRank}
+              onUpdateTicketPriceMultiplier={handleUpdateTicketPriceMultiplier}
+              onRenovateStadium={handleRenovateStadium}
             />
           )}
         </main>

@@ -667,20 +667,27 @@ export function ensurePlayerDefaults(
       ? -1
       : 0;
 
-  const balancedValuation = calculateBalancedValuationAndWage({
+  const balancedCalc = calculateBalancedValuationAndWage({
     ovr,
     age: player.age,
     clubReputation,
     division,
     potentialStars,
     position: player.position,
-  }).marketValue;
+  });
+  const balancedValuation = balancedCalc.marketValue;
 
   const effectiveMarketValue =
-    player.marketValue <= 0 ||
-    (player.age >= 30 && player.marketValue < balancedValuation * 0.72)
+    player.marketValue <= 0 || player.marketValue < balancedValuation * 0.75
       ? balancedValuation
       : player.marketValue;
+
+  const effectiveSalary =
+    player.salary <= 0 || player.salary < balancedCalc.salary * 0.55
+      ? player.isRegen
+        ? Math.max(20_000, Math.round((balancedCalc.salary * 0.45) / 5_000) * 5_000)
+        : balancedCalc.salary
+      : player.salary;
 
   return {
     ...player,
@@ -691,6 +698,7 @@ export function ensurePlayerDefaults(
     dynamicCeilingOvr,
     recentOvrDelta: initialOvrDelta,
     marketValue: effectiveMarketValue,
+    salary: effectiveSalary,
   };
 }
 
@@ -953,26 +961,107 @@ export function calculateDynamicSponsorship(
   };
 }
 
-/**
- * Calculates realistic home match gate revenue (returns 0 for away matches).
- * Scales by club reputation, stadium capacity, standings form, and match importance.
- */
-export function calculateMatchGateRevenue(params: {
-  club: Club;
-  rank: number;
-  totalTeams?: number;
-  competition: CompetitionType;
-  stageLabel?: string;
-  isHome: boolean;
-}): { gateRevenue: number; attendance: number } {
-  const { club, rank, totalTeams = 20, competition, stageLabel, isHome } = params;
-  if (!isHome) {
-    return { gateRevenue: 0, attendance: 0 };
+export interface StadiumRenovationTierInfo {
+  level: 0 | 1 | 2 | 3 | 4;
+  name: string;
+  shortLabel: string;
+  description: string;
+  capacityAdded: number;
+  baseAttractionBonus: number; // direct boost to baseline occupancy (0..0.11)
+  priceRetentionShield: number; // % of ticket-price attendance drop prevented by improved stadium (0..0.72)
+}
+
+export const STADIUM_RENOVATION_TIERS: StadiumRenovationTierInfo[] = [
+  {
+    level: 0,
+    name: 'Estrutura Original',
+    shortLabel: 'Nível 0 · Original',
+    description:
+      'Arquibancadas tradicionais sem modernização recente. Torcedores sentem fortemente qualquer aumento no preço do ingresso.',
+    capacityAdded: 0,
+    baseAttractionBonus: 0,
+    priceRetentionShield: 0,
+  },
+  {
+    level: 1,
+    name: 'Reforma de Conforto & Acessos',
+    shortLabel: 'Nível 1 · Conforto',
+    description:
+      'Assentos numerados renovados, catracas digitais, iluminação LED e banheiros reformados. Reduz a desistência da torcida em 22%.',
+    capacityAdded: 4_000,
+    baseAttractionBonus: 0.03,
+    priceRetentionShield: 0.22,
+  },
+  {
+    level: 2,
+    name: 'Anel Superior & Setores Populares',
+    shortLabel: 'Nível 2 · Ampliação',
+    description:
+      'Expansão estrutural das arquibancadas, praça de alimentação coberta e acústica ampliada. Reduz a desistência por preço em 42%.',
+    capacityAdded: 6_500,
+    baseAttractionBonus: 0.055,
+    priceRetentionShield: 0.42,
+  },
+  {
+    level: 3,
+    name: 'Arena Modernizada & Camarotes VIP',
+    shortLabel: 'Nível 3 · Arena VIP',
+    description:
+      'Cobertura parcial, anel de camarotes corporativos, telões 360° e lounges de hospitalidade. Reduz a desistência por preço em 60%.',
+    capacityAdded: 8_500,
+    baseAttractionBonus: 0.08,
+    priceRetentionShield: 0.60,
+  },
+  {
+    level: 4,
+    name: 'Complexo Padrão FIFA / UEFA Elite',
+    shortLabel: 'Nível 4 · Arena Elite',
+    description:
+      'Cobertura retrátil completa, experiência premium em todos os setores e máxima fidelização: impede 76% da desistência em ingressos caros.',
+    capacityAdded: 11_000,
+    baseAttractionBonus: 0.11,
+    priceRetentionShield: 0.76,
+  },
+];
+
+export const MIN_TICKET_PRICE_MULTIPLIER = 0.7;
+export const MAX_TICKET_PRICE_MULTIPLIER = 1.8;
+export const MAX_STADIUM_CAPACITY = 115_000;
+
+export function clampTicketPriceMultiplier(multiplier?: number): number {
+  if (typeof multiplier !== 'number' || !Number.isFinite(multiplier)) {
+    return 1.0;
   }
+  return Math.max(
+    MIN_TICKET_PRICE_MULTIPLIER,
+    Math.min(MAX_TICKET_PRICE_MULTIPLIER, Math.round(multiplier * 100) / 100)
+  );
+}
 
-  const standingFactor =
-    rank <= 4 ? 1.12 : rank <= Math.ceil(totalTeams / 2) ? 1.0 : 0.86;
+export function getClubStadiumRenovationLevel(club: Club): 0 | 1 | 2 | 3 | 4 {
+  const raw = club.stadiumRenovationLevel ?? 0;
+  if (raw <= 0) return 0;
+  if (raw === 1) return 1;
+  if (raw === 2) return 2;
+  if (raw === 3) return 3;
+  return 4;
+}
 
+export function getStadiumRenovationTierInfo(
+  level: number
+): StadiumRenovationTierInfo {
+  const clamped = Math.max(0, Math.min(4, Math.round(level)));
+  return (
+    STADIUM_RENOVATION_TIERS.find((t) => t.level === clamped) ||
+    STADIUM_RENOVATION_TIERS[0]
+  );
+}
+
+export function getBaseReferenceTicketPrice(
+  club: Club,
+  competition: CompetitionType = 'BRASILEIRAO',
+  stageLabel?: string
+): { referenceTicketPrice: number; competitionMult: number } {
   const isEuropeanClub =
     club.division === 'PL' ||
     club.division === 'LALIGA' ||
@@ -982,7 +1071,8 @@ export function calculateMatchGateRevenue(params: {
   let ticketBase =
     club.division === 'B'
       ? 85
-      : club.division === 'PL' || (club.division === 'UCL' && club.countryCode === 'ING')
+      : club.division === 'PL' ||
+        (club.division === 'UCL' && club.countryCode === 'ING')
       ? 360
       : isEuropeanClub
       ? 290
@@ -1031,16 +1121,309 @@ export function calculateMatchGateRevenue(params: {
     }
   }
 
-  const repOccupancy = Math.min(0.96, Math.max(0.45, 0.42 + (club.reputation - 60) * 0.013));
-  const occupancy = Math.min(0.98, repOccupancy * standingFactor);
-  const attendance = Math.round((club.capacity * occupancy) / 100) * 100;
-  const rawRevenue = attendance * ticketBase * Math.max(0.8, competitionMult * 0.92);
-  const gateRevenue = Math.max(
-    250_000,
-    Math.min(isEuropeanClub ? 58_000_000 : 35_000_000, Math.round(rawRevenue / 50_000) * 50_000)
+  return { referenceTicketPrice: ticketBase, competitionMult };
+}
+
+export interface NextStadiumRenovationQuote {
+  canUpgrade: boolean;
+  currentLevel: 0 | 1 | 2 | 3 | 4;
+  nextTier: StadiumRenovationTierInfo | null;
+  cost: number;
+  capacityGain: number;
+  projectedCapacity: number;
+  canAfford: boolean;
+  blockReason?: string;
+}
+
+export function getNextStadiumRenovationQuote(
+  club: Club
+): NextStadiumRenovationQuote {
+  const currentLevel = getClubStadiumRenovationLevel(club);
+  if (currentLevel >= 4) {
+    return {
+      canUpgrade: false,
+      currentLevel,
+      nextTier: null,
+      cost: 0,
+      capacityGain: 0,
+      projectedCapacity: club.capacity,
+      canAfford: false,
+      blockReason: 'Estádio já atingiu o nível máximo de modernização (Nível 4 · Arena Elite).',
+    };
+  }
+
+  const nextLevel = (currentLevel + 1) as 1 | 2 | 3 | 4;
+  const nextTier = getStadiumRenovationTierInfo(nextLevel);
+  const isEuropean =
+    club.division === 'PL' ||
+    club.division === 'LALIGA' ||
+    club.division === 'UCL';
+  const divisionScale =
+    club.division === 'B'
+      ? 0.45
+      : isEuropean
+      ? 2.2
+      : club.division === 'WORLD'
+      ? 1.5
+      : 1.0;
+
+  const baseTierCosts: Record<1 | 2 | 3 | 4, number> = {
+    1: 12_000_000,
+    2: 24_000_000,
+    3: 42_000_000,
+    4: 68_000_000,
+  };
+  const sizeScale = Math.max(0.85, Math.min(1.45, club.capacity / 45_000));
+  const rawCost = baseTierCosts[nextLevel] * divisionScale * sizeScale;
+  const step = rawCost >= 20_000_000 ? 500_000 : 250_000;
+  const cost = Math.max(2_500_000, Math.round(rawCost / step) * step);
+
+  const projectedCapacity = Math.min(
+    MAX_STADIUM_CAPACITY,
+    club.capacity + nextTier.capacityAdded
+  );
+  const capacityGain = Math.max(0, projectedCapacity - club.capacity);
+  const canAfford = club.cashBalance >= cost;
+
+  return {
+    canUpgrade: canAfford,
+    currentLevel,
+    nextTier,
+    cost,
+    capacityGain,
+    projectedCapacity,
+    canAfford,
+    blockReason: canAfford
+      ? undefined
+      : club.cashBalance < 0
+      ? 'Clube em dívida (saldo negativo). Regularize o caixa antes de iniciar obras no estádio.'
+      : `Saldo insuficiente em caixa para custear a reforma (${Math.round(
+          (Math.max(0, club.cashBalance) / cost) * 100
+        )}% do valor disponível).`,
+  };
+}
+
+/**
+ * Calculates realistic home match gate revenue (returns 0 for away matches).
+ * Correlates ticket price multiplier with fan attendance, while stadium renovation level
+ * increases fan comfort/loyalty and shields against ticket buyer drop-off when prices rise.
+ */
+export function calculateMatchGateRevenue(params: {
+  club: Club;
+  rank: number;
+  totalTeams?: number;
+  competition: CompetitionType;
+  stageLabel?: string;
+  isHome: boolean;
+  ticketPriceMultiplierOverride?: number;
+  stadiumRenovationLevelOverride?: number;
+  capacityOverride?: number;
+}): {
+  gateRevenue: number;
+  attendance: number;
+  occupancyRate: number;
+  effectiveTicketPrice: number;
+  referenceTicketPrice: number;
+  priceMultiplier: number;
+  renovationLevel: 0 | 1 | 2 | 3 | 4;
+  fanRetentionSavedCount: number;
+  rawPriceDropPct: number;
+  mitigatedPriceDropPct: number;
+} {
+  const {
+    club,
+    rank,
+    totalTeams = 20,
+    competition,
+    stageLabel,
+    isHome,
+    ticketPriceMultiplierOverride,
+    stadiumRenovationLevelOverride,
+    capacityOverride,
+  } = params;
+
+  const { referenceTicketPrice, competitionMult } = getBaseReferenceTicketPrice(
+    club,
+    competition,
+    stageLabel
+  );
+  const priceMultiplier = clampTicketPriceMultiplier(
+    ticketPriceMultiplierOverride ?? club.ticketPriceMultiplier ?? 1.0
+  );
+  const renovationLevel = getStadiumRenovationTierInfo(
+    stadiumRenovationLevelOverride ?? getClubStadiumRenovationLevel(club)
+  ).level;
+  const tierInfo = getStadiumRenovationTierInfo(renovationLevel);
+  const effectiveTicketPrice = Math.max(
+    20,
+    Math.round(referenceTicketPrice * priceMultiplier)
+  );
+  const effectiveCapacity = Math.max(
+    5_000,
+    capacityOverride ?? club.capacity
   );
 
-  return { gateRevenue, attendance };
+  if (!isHome) {
+    return {
+      gateRevenue: 0,
+      attendance: 0,
+      occupancyRate: 0,
+      effectiveTicketPrice,
+      referenceTicketPrice,
+      priceMultiplier,
+      renovationLevel,
+      fanRetentionSavedCount: 0,
+      rawPriceDropPct: 0,
+      mitigatedPriceDropPct: 0,
+    };
+  }
+
+  const standingFactor =
+    rank <= 4 ? 1.12 : rank <= Math.ceil(totalTeams / 2) ? 1.0 : 0.86;
+
+  const isEuropeanClub =
+    club.division === 'PL' ||
+    club.division === 'LALIGA' ||
+    club.division === 'UCL';
+
+  const repOccupancy = Math.min(
+    0.96,
+    Math.max(0.45, 0.42 + (club.reputation - 60) * 0.013)
+  );
+  // Base occupancy before ticket price elasticity (includes stadium comfort attraction bonus)
+  const baseOccupancyWithComfort = Math.min(
+    0.98,
+    repOccupancy * standingFactor + tierInfo.baseAttractionBonus
+  );
+  const baseOccupancyNoUpgrade = Math.min(0.98, repOccupancy * standingFactor);
+
+  let rawPriceDropPct = 0;
+  let mitigatedPriceDropPct = 0;
+  let occupancyAfterPrice = baseOccupancyWithComfort;
+  let occupancyWithoutUpgradeShield = baseOccupancyNoUpgrade;
+
+  if (priceMultiplier > 1.0) {
+    const excess = priceMultiplier - 1.0; // e.g. 0.40 for +40% ticket price
+    // Steep non-linear elasticity: fans desist sharply when ticket prices rise in an unimproved stadium
+    rawPriceDropPct = Math.min(
+      0.78,
+      excess * 0.72 + Math.pow(excess, 1.65) * 0.52
+    );
+    // An improved stadium shields fans from giving up on buying tickets
+    mitigatedPriceDropPct =
+      rawPriceDropPct * (1 - tierInfo.priceRetentionShield);
+    occupancyAfterPrice = Math.max(
+      0.16,
+      baseOccupancyWithComfort * (1 - mitigatedPriceDropPct)
+    );
+    occupancyWithoutUpgradeShield = Math.max(
+      0.14,
+      baseOccupancyNoUpgrade * (1 - rawPriceDropPct)
+    );
+  } else if (priceMultiplier < 1.0) {
+    const discount = 1.0 - priceMultiplier; // up to 0.30 discount
+    const discountBoost = discount * (0.58 + tierInfo.baseAttractionBonus * 1.2);
+    occupancyAfterPrice = Math.min(
+      0.99,
+      baseOccupancyWithComfort * (1 + discountBoost)
+    );
+    occupancyWithoutUpgradeShield = Math.min(
+      0.98,
+      baseOccupancyNoUpgrade * (1 + discount * 0.5)
+    );
+  }
+
+  const finalOccupancy = Math.min(0.99, Math.max(0.15, occupancyAfterPrice));
+  const attendance = Math.max(
+    500,
+    Math.min(
+      effectiveCapacity,
+      Math.round((effectiveCapacity * finalOccupancy) / 100) * 100
+    )
+  );
+  const unshieldedAttendance = Math.max(
+    500,
+    Math.min(
+      effectiveCapacity,
+      Math.round((effectiveCapacity * occupancyWithoutUpgradeShield) / 100) * 100
+    )
+  );
+  const fanRetentionSavedCount = Math.max(0, attendance - unshieldedAttendance);
+
+  const rawRevenue =
+    attendance * effectiveTicketPrice * Math.max(0.8, competitionMult * 0.92);
+  const gateRevenue = Math.max(
+    150_000,
+    Math.min(
+      isEuropeanClub ? 78_000_000 : 48_000_000,
+      Math.round(rawRevenue / 50_000) * 50_000
+    )
+  );
+
+  return {
+    gateRevenue,
+    attendance,
+    occupancyRate: finalOccupancy,
+    effectiveTicketPrice,
+    referenceTicketPrice,
+    priceMultiplier,
+    renovationLevel,
+    fanRetentionSavedCount,
+    rawPriceDropPct,
+    mitigatedPriceDropPct,
+  };
+}
+
+export function executeStadiumRenovation(params: {
+  club: Club;
+  financeLedger?: ClubFinanceLedger;
+}): {
+  success: boolean;
+  message: string;
+  updatedClub: Club;
+  updatedFinanceLedger?: ClubFinanceLedger;
+  quote: NextStadiumRenovationQuote;
+} {
+  const { club, financeLedger } = params;
+  const quote = getNextStadiumRenovationQuote(club);
+  if (!quote.canUpgrade || !quote.nextTier) {
+    return {
+      success: false,
+      message:
+        quote.blockReason ||
+        'Não é possível realizar a reforma do estádio neste momento.',
+      updatedClub: club,
+      updatedFinanceLedger: financeLedger,
+      quote,
+    };
+  }
+
+  const updatedClub: Club = {
+    ...club,
+    cashBalance: club.cashBalance - quote.cost,
+    capacity: quote.projectedCapacity,
+    stadiumRenovationLevel: quote.nextTier.level,
+  };
+
+  const updatedFinanceLedger: ClubFinanceLedger | undefined = financeLedger
+    ? {
+        ...financeLedger,
+        seasonStadiumRenovationSpend:
+          (financeLedger.seasonStadiumRenovationSpend || 0) + quote.cost,
+      }
+    : undefined;
+
+  return {
+    success: true,
+    message: `Reforma concluída em ${club.stadium}: ${quote.nextTier.name} (+${quote.capacityGain.toLocaleString(
+      'pt-BR'
+    )} lugares · capacidade atual ${quote.projectedCapacity.toLocaleString(
+      'pt-BR'
+    )}).`,
+    updatedClub,
+    updatedFinanceLedger,
+    quote,
+  };
 }
 
 /**

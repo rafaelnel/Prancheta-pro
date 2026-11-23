@@ -569,7 +569,7 @@ test('Youth academy prospects spawn with star-based OVR brackets (1-2.5★: 60-7
   assert.deepEqual(getYouthInitialOvrRange(5), { minOvr: 75, maxOvr: 85 });
 
   let academy = createInitialYouthAcademy('flamengo', 84, 'A', 2026);
-  academy = { ...academy, investmentTier: 'ELITE', accumulatedSeasonInvestment: 15_000_000, monthsInvestedThisSeason: 10 };
+  academy = { ...academy, investmentTier: 'ELITE', accumulatedSeasonInvestment: 30_000_000, monthsInvestedThisSeason: 10 };
 
   const initialCount = academy.youthRoster?.length ?? 0;
   assert.ok(initialCount >= 3);
@@ -1239,6 +1239,15 @@ test('Youth academy makes 4★, 4.5★ and 5★ prospects genuinely rare and Clu
   const avancado = YOUTH_TIERS.find((t) => t.tier === 'AVANCADO')!;
   const estruturado = YOUTH_TIERS.find((t) => t.tier === 'ESTRUTURADO')!;
   const basico = YOUTH_TIERS.find((t) => t.tier === 'BASICO')!;
+
+  assert.equal(basico.monthlyCost, 160_000);
+  assert.equal(basico.annualEstimate, 1_920_000);
+  assert.equal(estruturado.monthlyCost, 500_000);
+  assert.equal(estruturado.annualEstimate, 6_000_000);
+  assert.equal(avancado.monthlyCost, 1_200_000);
+  assert.equal(avancado.annualEstimate, 14_400_000);
+  assert.equal(elite.monthlyCost, 2_500_000);
+  assert.equal(elite.annualEstimate, 30_000_000);
 
   assert.equal(basico.starProbabilities.star4_4_5, 1.2);
   assert.equal(basico.starProbabilities.star5, 0);

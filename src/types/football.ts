@@ -270,6 +270,8 @@ export interface Club {
   secondaryColor: string;
   stadium: string;
   capacity: number;
+  stadiumRenovationLevel?: number; // 0 to 4 (comfort, structure & modernization level)
+  ticketPriceMultiplier?: number; // 0.70 to 1.80 (1.00 = reference regional ticket price)
   reputation: number; // 1 to 100
   overallAttack: number; // 60 to 99 scale
   overallMidfield: number; // 60 to 99 scale
@@ -747,6 +749,7 @@ export interface ClubFinanceLedger {
   seasonPayrollExpense?: number;
   seasonOperationalExpense: number;
   seasonYouthAcademySpend?: number;
+  seasonStadiumRenovationSpend?: number;
   lastMatchGateRevenue: number;
   lastMatchAttendance: number;
   sponsorshipContract: SponsorshipContract;

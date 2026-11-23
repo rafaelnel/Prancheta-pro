@@ -11,6 +11,7 @@ import {
   rollPlayerNegotiationMaxAttempts,
 } from './transferEngine';
 import type {
+  Club,
   MarketPlayerListing,
   Player,
   PlayerNegotiationState,
@@ -1774,6 +1775,205 @@ test('AI proposals strictly require cash-in-hand and financial health (annual in
     workingAiSquads = res.updatedAiSquads;
   }
 });
+
+test('No lowball proposals (e.g. 9M for a 50M player): canonical valuation & strict loan/buy rules prevent underpriced offers', async () => {
+  const {
+    getCanonicalPlayerMarketValue,
+    maybeGenerateIncomingOfferForUser,
+  } = await import('./aiMarketEngine');
+
+  const career = createNewCareerSave(1, 'flamengo', 'Técnico');
+  const flamengoClub = career.clubs.find((c) => c.id === 'flamengo')!;
+
+  // 1. A 50M starter (or transfer-listed player) with underfunded clubs (e.g. max 20M cash) must NEVER receive a 9M loan/lowball fallback offer
+  const baseMidfielder =
+    career.squad.find((p) => p.sector === 'MEI' && p.isStarter) ||
+    career.squad.find((p) => p.position !== 'GOL')!;
+  const fiftyMillionStar: Player = {
+    ...baseMidfielder,
+    id: 'star-50m',
+    name: 'Atleta Cinquenta Milhões',
+    position: 'MEI',
+    sector: 'MEI',
+    age: 21,
+    potentialStars: 4.5,
+    isStarter: true,
+    isTransferListed: false,
+    isLoanListed: false,
+    marketValue: 50_000_000,
+    salary: 650_000,
+  };
+
+  // Even if all potential buyers only have R$ 18M cash (enough for a 9M loan, NOT enough for a 45M+ buy),
+  // they must NOT send a R$ 9M proposal for a R$ 50M starter!
+  const underfundedClubs = career.clubs.map((c) =>
+    c.id === 'flamengo' ? c : { ...c, cashBalance: 18_000_000 }
+  );
+  for (let i = 0; i < 15; i++) {
+    const blockedLowball = maybeGenerateIncomingOfferForUser({
+      clubs: underfundedClubs,
+      userClub: flamengoClub,
+      userSquad: [fiftyMillionStar, ...career.squad],
+      pendingOffers: [],
+      dayOffset: 10,
+      seasonYear: 2026,
+      aiSquads: career.aiSquads,
+      specificPlayerId: fiftyMillionStar.id,
+      rng: () => (i * 0.07) % 1,
+    });
+    assert.equal(
+      blockedLowball,
+      null,
+      'Club without cash for a fair >=85% BUY offer must NEVER send a ~9M loan/lowball proposal for a 50M player'
+    );
+  }
+
+  // 2. When clubs DO have healthy cash, any proposal for the 50M player is at least 85% of 50M (>= R$ 42.5M)
+  const validOffer50M = maybeGenerateIncomingOfferForUser({
+    clubs: career.clubs,
+    userClub: flamengoClub,
+    userSquad: [fiftyMillionStar, ...career.squad],
+    pendingOffers: [],
+    dayOffset: 10,
+    seasonYear: 2026,
+    aiSquads: career.aiSquads,
+    specificPlayerId: fiftyMillionStar.id,
+    rng: () => 0.35,
+  });
+  assert.ok(validOffer50M, 'Wealthy healthy club should make a valid offer for 50M player');
+  assert.equal(validOffer50M!.dealType, 'BUY');
+  assert.ok(
+    validOffer50M!.offeredFee >= 50_000_000 * 0.85,
+    `Expected offer >= R$ 42.5M for a R$ 50M player, got ${validOffer50M!.offeredFee}`
+  );
+
+  // 3. Even if a player had a stale/corrupted saved marketValue (e.g. R$ 10M on an OVR 78 player whose true valuation is >= R$ 50M),
+  // getCanonicalPlayerMarketValue and maybeGenerateIncomingOfferForUser automatically use the true >= 50M valuation
+  const staleMvPlayer: Player = {
+    ...fiftyMillionStar,
+    id: 'stale-mv-star',
+    marketValue: 10_000_000, // stale low value
+  };
+  const canonicalMv = getCanonicalPlayerMarketValue(staleMvPlayer, flamengoClub);
+  assert.ok(
+    canonicalMv >= 45_000_000,
+    `Expected canonical market value to recover from stale 10M to >= 45M, got ${canonicalMv}`
+  );
+  const offerOnStalePlayer = maybeGenerateIncomingOfferForUser({
+    clubs: career.clubs,
+    userClub: flamengoClub,
+    userSquad: [staleMvPlayer, ...career.squad],
+    pendingOffers: [],
+    dayOffset: 10,
+    seasonYear: 2026,
+    aiSquads: career.aiSquads,
+    specificPlayerId: staleMvPlayer.id,
+    rng: () => 0.35,
+  });
+  assert.ok(offerOnStalePlayer);
+  assert.ok(
+    offerOnStalePlayer!.offeredFee >= canonicalMv * 0.85,
+    `Offer on stale-MV player must be >= 85% of canonical valuation (${canonicalMv}), got ${offerOnStalePlayer!.offeredFee}`
+  );
+});
+
+test('Stadium management: ticket price increases reduce attendance, while stadium renovations expand capacity and prevent fan drop-off', async () => {
+  const {
+    calculateMatchGateRevenue,
+    executeStadiumRenovation,
+    getNextStadiumRenovationQuote,
+  } = await import('./economyAndEvolution');
+
+  const career = createNewCareerSave(1, 'flamengo', 'Técnico');
+  const baseClub: Club = {
+    ...career.clubs.find((c) => c.id === 'flamengo')!,
+    capacity: 60_000,
+    cashBalance: 250_000_000,
+    stadiumRenovationLevel: 0,
+    ticketPriceMultiplier: 1.0,
+  };
+
+  // 1. Raising ticket price (+50%) on an unimproved stadium (Level 0) causes a significant attendance drop
+  const gateStdPriceLvl0 = calculateMatchGateRevenue({
+    club: baseClub,
+    rank: 4,
+    competition: 'BRASILEIRAO',
+    isHome: true,
+    ticketPriceMultiplierOverride: 1.0,
+    stadiumRenovationLevelOverride: 0,
+  });
+  const gateHighPriceLvl0 = calculateMatchGateRevenue({
+    club: baseClub,
+    rank: 4,
+    competition: 'BRASILEIRAO',
+    isHome: true,
+    ticketPriceMultiplierOverride: 1.5,
+    stadiumRenovationLevelOverride: 0,
+  });
+
+  assert.ok(
+    gateHighPriceLvl0.effectiveTicketPrice > gateStdPriceLvl0.effectiveTicketPrice,
+    'Effective ticket price must increase when multiplier is 1.5x'
+  );
+  assert.ok(
+    gateHighPriceLvl0.attendance < gateStdPriceLvl0.attendance * 0.72,
+    `Raising ticket price +50% in unrenovated stadium must noticeably reduce attendance (${gateStdPriceLvl0.attendance} -> ${gateHighPriceLvl0.attendance})`
+  );
+
+  // 2. Renovating the stadium (Levels 1..4) prevents fan desistência at the exact same +50% ticket price (even at fixed capacity)
+  const gateHighPriceLvl2SameCap = calculateMatchGateRevenue({
+    club: baseClub,
+    rank: 4,
+    competition: 'BRASILEIRAO',
+    isHome: true,
+    ticketPriceMultiplierOverride: 1.5,
+    stadiumRenovationLevelOverride: 2,
+    capacityOverride: baseClub.capacity,
+  });
+  const gateHighPriceLvl4SameCap = calculateMatchGateRevenue({
+    club: baseClub,
+    rank: 4,
+    competition: 'BRASILEIRAO',
+    isHome: true,
+    ticketPriceMultiplierOverride: 1.5,
+    stadiumRenovationLevelOverride: 4,
+    capacityOverride: baseClub.capacity,
+  });
+
+  assert.ok(
+    gateHighPriceLvl2SameCap.attendance > gateHighPriceLvl0.attendance,
+    `Renovated Level 2 stadium must retain more fans at +50% price (${gateHighPriceLvl2SameCap.attendance} vs ${gateHighPriceLvl0.attendance})`
+  );
+  assert.ok(
+    gateHighPriceLvl4SameCap.attendance > gateHighPriceLvl2SameCap.attendance,
+    `Renovated Level 4 stadium must retain even more fans at +50% price (${gateHighPriceLvl4SameCap.attendance} vs ${gateHighPriceLvl2SameCap.attendance})`
+  );
+  assert.ok(
+    gateHighPriceLvl4SameCap.fanRetentionSavedCount >= 8_000,
+    `Expected Level 4 stadium comfort shield to prevent >= 8,000 fans from giving up on tickets, got ${gateHighPriceLvl4SameCap.fanRetentionSavedCount}`
+  );
+
+  // 3. Executing stadium renovation deducts cost from cashBalance, increases capacity, increments level, and records ledger spend
+  const quote1 = getNextStadiumRenovationQuote(baseClub);
+  assert.equal(quote1.canUpgrade, true);
+  assert.equal(quote1.currentLevel, 0);
+  assert.ok(quote1.cost > 0);
+  assert.ok(quote1.capacityGain > 0);
+
+  const renRes = executeStadiumRenovation({
+    club: baseClub,
+    financeLedger: career.financeLedger,
+  });
+  assert.equal(renRes.success, true);
+  assert.equal(renRes.updatedClub.stadiumRenovationLevel, 1);
+  assert.equal(renRes.updatedClub.capacity, baseClub.capacity + quote1.capacityGain);
+  assert.equal(renRes.updatedClub.cashBalance, baseClub.cashBalance - quote1.cost);
+  assert.equal(
+    renRes.updatedFinanceLedger?.seasonStadiumRenovationSpend,
+    quote1.cost
+  );
+});
+
 
 
 

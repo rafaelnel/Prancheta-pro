@@ -3,6 +3,7 @@ import { Eye, Lock } from 'lucide-react';
 import {
   IncomingOfferAction,
   computeIncomingCounterFee,
+  getCanonicalPlayerMarketValue,
 } from '../engine/aiMarketEngine';
 import { calculatePlayerOverall } from '../engine/matchEngine';
 import { getPlayerPotentialCeiling } from '../engine/transferEngine';
@@ -51,7 +52,9 @@ export const IncomingOfferCard: React.FC<IncomingOfferCardProps> = ({
         Math.max(ovr, ovr + Math.max(0, Math.round((stars - 2.5) * 4)))
       );
   const growthRoom = Math.max(0, potentialOvr - ovr);
-  const marketValue = livePlayer?.marketValue ?? offer.playerMarketValue ?? 0;
+  const marketValue = livePlayer
+    ? getCanonicalPlayerMarketValue(livePlayer, userClub)
+    : offer.playerMarketValue ?? 0;
   const salary = livePlayer?.salary ?? offer.playerSalary ?? 0;
   const isStarter = livePlayer?.isStarter ?? offer.playerIsStarter ?? false;
   const contractYearsRemaining = livePlayer
@@ -85,12 +88,12 @@ export const IncomingOfferCard: React.FC<IncomingOfferCardProps> = ({
 
   const diffLabel =
     buyDiffPct === null
-      ? `Empréstimo · ${Math.round(offer.wageShareCovered * 100)}% sal.`
+      ? `Taxa de Empréstimo (1 temp.) · ${Math.round(offer.wageShareCovered * 100)}% sal.`
       : buyDiffPct > 0
-      ? `+${buyDiffPct}% acima do valor`
+      ? `Compra Definitiva · +${buyDiffPct}% acima do valor`
       : buyDiffPct < 0
-      ? `${buyDiffPct}% abaixo do valor`
-      : 'No valor de mercado';
+      ? `Compra Definitiva · ${buyDiffPct}% do valor`
+      : 'Compra Definitiva · No valor de mercado';
 
   const wageSavedOnLoan = Math.round(salary * offer.wageShareCovered);
   const counter15Fee = computeIncomingCounterFee(offer, 'COUNTER_15', marketValue);

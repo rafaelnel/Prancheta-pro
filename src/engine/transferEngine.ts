@@ -3,7 +3,11 @@ import {
   getDefaultFormationRoleForPosition,
   getInternationalMarketListings,
 } from '../data/transferCatalog';
-import { evaluateAiClubSquadAndListings } from './aiMarketEngine';
+import {
+  evaluateAiClubSquadAndListings,
+  evaluateClubTransferFinancialHealth,
+  getCanonicalPlayerMarketValue,
+} from './aiMarketEngine';
 import { calculatePlayerOverall } from './matchEngine';
 import {
   Club,
@@ -1492,7 +1496,8 @@ export interface OutgoingEvaluation {
 
 export function evaluateOutgoingPlayer(
   player: Player,
-  userSquad: Player[]
+  userSquad: Player[],
+  userClub?: Pick<Club, 'reputation' | 'division'>
 ): OutgoingEvaluation {
   const ovr = calculatePlayerOverall(player.attributes, player.position);
   const gkCount = userSquad.filter((p) => p.position === 'GOL').length;
@@ -1510,21 +1515,22 @@ export function evaluateOutgoingPlayer(
       'Atleta emprestado de outro clube — não pode ser vendido, apenas devolvido.';
   }
 
+  const canonicalMv = getCanonicalPlayerMarketValue(player, userClub);
   const saleMultiplier =
     (ovr >= 82 ? 1.04 : 0.93) + (player.isTransferListed ? 0.04 : 0);
   const saleValue = clampTransferFeeToMarketCorridor({
-    rawFee: player.marketValue * saleMultiplier,
-    marketValue: player.marketValue,
+    rawFee: canonicalMv * saleMultiplier,
+    marketValue: canonicalMv,
     dealType: 'BUY',
     minRatio: 0.88,
     maxRatio: 1.12,
   });
   const loanMultiplier = 0.09 + (player.isLoanListed ? 0.03 : 0);
   const loanOutFee = clampTransferFeeToMarketCorridor({
-    rawFee: player.marketValue * loanMultiplier,
-    marketValue: player.marketValue,
+    rawFee: canonicalMv * loanMultiplier,
+    marketValue: canonicalMv,
     dealType: 'LOAN',
-    minRatio: 0.07,
+    minRatio: 0.08,
     maxRatio: 0.15,
   });
   const loanOutResidualShare = 0.1; // Partner club pays 90% of salary
@@ -1550,14 +1556,20 @@ export function executeOutgoingTransfer(params: {
   player: Player;
   action: 'VENDA' | 'EMPRESTIMO_OUT' | 'DEVOLVER_EMPRESTIMO';
   destinationClubName?: string;
+  clubs?: Club[];
+  aiSquads?: Record<string, Player[]>;
+  seasonYear?: number;
 }): {
   success: boolean;
+  blockReason?: string;
   updatedClub: Club;
+  updatedClubs?: Club[];
   updatedSquad: Player[];
   updatedLoanedOutPlayers: Player[];
   feeReceived: number;
   monthlyWageRelief: number;
   promotedStarterName: string | null;
+  destinationClubName: string;
 } {
   const {
     userClub,
@@ -1566,9 +1578,12 @@ export function executeOutgoingTransfer(params: {
     player,
     action,
     destinationClubName = 'Clube Parceiro',
+    clubs,
+    aiSquads,
+    seasonYear = 2026,
   } = params;
 
-  const evalOut = evaluateOutgoingPlayer(player, userSquad);
+  const evalOut = evaluateOutgoingPlayer(player, userSquad, userClub);
   if (
     (action === 'VENDA' && !evalOut.canSell) ||
     (action === 'EMPRESTIMO_OUT' && !evalOut.canLoanOut) ||
@@ -1576,14 +1591,76 @@ export function executeOutgoingTransfer(params: {
   ) {
     return {
       success: false,
+      blockReason: evalOut.blockReason || undefined,
       updatedClub: userClub,
+      updatedClubs: clubs,
       updatedSquad: userSquad,
       updatedLoanedOutPlayers: loanedOutPlayers,
       feeReceived: 0,
       monthlyWageRelief: 0,
       promotedStarterName: null,
+      destinationClubName,
     };
   }
+
+  const feeReceived =
+    action === 'VENDA'
+      ? evalOut.saleValue
+      : action === 'EMPRESTIMO_OUT'
+      ? evalOut.loanOutFee
+      : 0;
+
+  // Quando a lista de clubes da carreira está disponível, exige um clube comprador real
+  // que tenha o valor em caixa e saúde financeira para concluir a compra ou o empréstimo.
+  let chosenBuyerClub: Club | null = null;
+  if (clubs && clubs.length > 1 && action !== 'DEVOLVER_EMPRESTIMO') {
+    const dealTypeForBuyer: 'BUY' | 'LOAN' =
+      action === 'VENDA' ? 'BUY' : 'LOAN';
+    const addedSalaryForBuyer =
+      action === 'VENDA'
+        ? player.salary
+        : Math.round(player.salary * (1 - evalOut.loanOutResidualShare));
+    const playerOvr = calculatePlayerOverall(player.attributes, player.position);
+    const minRep = Math.max(58, playerOvr - 16);
+
+    const healthyBuyers = clubs
+      .filter((c) => {
+        if (c.id === userClub.id) return false;
+        if (c.cashBalance < feeReceived) return false;
+        if (c.reputation < minRep) return false;
+        return evaluateClubTransferFinancialHealth({
+          club: c,
+          clubSquad: aiSquads?.[c.id],
+          proposedFee: feeReceived,
+          addedMonthlySalary: addedSalaryForBuyer,
+          dealType: dealTypeForBuyer,
+          seasonYear,
+        }).canAffordAndHealthy;
+      })
+      .sort((a, b) => Math.abs(a.reputation - userClub.reputation) - Math.abs(b.reputation - userClub.reputation));
+
+    if (healthyBuyers.length === 0) {
+      return {
+        success: false,
+        blockReason:
+          action === 'VENDA'
+            ? `Nenhum clube no mercado possui caixa saudável disponível para pagar o valor justo de ${player.name}.`
+            : `Nenhum clube no mercado possui orçamento saudável disponível para assumir o empréstimo de ${player.name}.`,
+        updatedClub: userClub,
+        updatedClubs: clubs,
+        updatedSquad: userSquad,
+        updatedLoanedOutPlayers: loanedOutPlayers,
+        feeReceived: 0,
+        monthlyWageRelief: 0,
+        promotedStarterName: null,
+        destinationClubName,
+      };
+    }
+    chosenBuyerClub = healthyBuyers[0];
+  }
+
+  const effectiveDestinationName =
+    chosenBuyerClub?.shortName || destinationClubName;
 
   let remainingSquad = userSquad.filter((p) => p.id !== player.id);
   let promotedStarterName: string | null = null;
@@ -1621,13 +1698,6 @@ export function executeOutgoingTransfer(params: {
     }
   }
 
-  const feeReceived =
-    action === 'VENDA'
-      ? evalOut.saleValue
-      : action === 'EMPRESTIMO_OUT'
-      ? evalOut.loanOutFee
-      : 0;
-
   const monthlyWageRelief =
     action === 'EMPRESTIMO_OUT'
       ? evalOut.monthlyWageSavedOnLoan
@@ -1637,6 +1707,19 @@ export function executeOutgoingTransfer(params: {
     ...userClub,
     cashBalance: userClub.cashBalance + feeReceived,
   };
+
+  const updatedClubs = clubs
+    ? clubs.map((c) => {
+        if (c.id === userClub.id) return updatedClub;
+        if (chosenBuyerClub && c.id === chosenBuyerClub.id) {
+          return {
+            ...c,
+            cashBalance: c.cashBalance - feeReceived,
+          };
+        }
+        return c;
+      })
+    : undefined;
 
   const updatedLoanedOutPlayers =
     action === 'EMPRESTIMO_OUT'
@@ -1650,7 +1733,7 @@ export function executeOutgoingTransfer(params: {
             contractYearsRemaining: 1,
             loanDurationYears: 1 as const,
             wageSharePaid: evalOut.loanOutResidualShare,
-            loanDestinationClubName: destinationClubName,
+            loanDestinationClubName: effectiveDestinationName,
           },
         ]
       : loanedOutPlayers;
@@ -1658,11 +1741,13 @@ export function executeOutgoingTransfer(params: {
   return {
     success: true,
     updatedClub,
+    updatedClubs,
     updatedSquad: remainingSquad,
     updatedLoanedOutPlayers,
     feeReceived,
     monthlyWageRelief,
     promotedStarterName,
+    destinationClubName: effectiveDestinationName,
   };
 }
 

@@ -3,6 +3,7 @@ import { FORMATIONS } from '../data/tacticsData';
 import { calculatePlayerOverall } from './playerOverall';
 import {
   assignPotentialStars,
+  calculateBalancedValuationAndWage,
   calculateDynamicSponsorship,
   calculateMatchGateRevenue,
   calculateOperationalCost,
@@ -651,6 +652,40 @@ function findWeakestSector(squad: Player[]): PositionSector {
 }
 
 /**
+ * Retorna o valor de mercado coerente e atualizado do atleta:
+ * nunca permite um valor defasado muito abaixo da avaliação real de OVR/idade/potencial,
+ * evitando propostas desproporcionais (ex.: atleta que vale 50M recebendo proposta sobre base antiga de 10M).
+ */
+export function getCanonicalPlayerMarketValue(
+  player: Player,
+  club?: Pick<Club, 'reputation' | 'division'>
+): number {
+  const rawMv = player.marketValue ?? 0;
+  if (rawMv > 0 && !club) {
+    return Math.max(50_000, rawMv);
+  }
+  const ovr = calculatePlayerOverall(player.attributes, player.position);
+  const rep = club?.reputation ?? 76;
+  const div = club?.division ?? 'A';
+  const stars =
+    player.potentialStars ??
+    assignPotentialStars(ovr, player.age, rep, player.id, player.name);
+  const balancedMv = calculateBalancedValuationAndWage({
+    ovr,
+    age: Math.max(16, player.age),
+    clubReputation: rep,
+    division: div,
+    potentialStars: stars,
+    position: player.position,
+  }).marketValue;
+  // Se o marketValue salvo estiver zerado ou mais de 25% abaixo do valor justo pelo OVR em atleta profissional, usa o valor justo
+  if (rawMv <= 0 || (rawMv < balancedMv * 0.75 && player.salary >= 120_000)) {
+    return Math.max(50_000, balancedMv);
+  }
+  return Math.max(50_000, rawMv);
+}
+
+/**
  * Simulates autonomous AI-to-AI transfers (purchases and loans) driven by each club's
  * positional needs, financial posture, and transfer/loan listed players.
  */
@@ -770,6 +805,7 @@ export function simulateAiTransferWindowTick(params: {
     const targetPool: {
       sellerPick: (typeof aiClubIndices)[number];
       player: Player;
+      canonicalMv: number;
       ovr: number;
       isLoanDeal: boolean;
       score: number;
@@ -793,23 +829,34 @@ export function simulateAiTransferWindowTick(params: {
         const ovr = calculatePlayerOverall(p.attributes, p.position);
         if (ovr < 66) continue;
 
-        // Decide if this would be a loan or purchase based on club listing & buyer posture
-        const prefersLoan =
-          buyerProfile.preferredIncomingMode === 'EMPRESTIMO' ||
+        const canonicalMv = getCanonicalPlayerMarketValue(p, seller);
+
+        // Empréstimo só é permitido para atletas explicitamente listados p/ empréstimo
+        // ou jovens reservas buscando minutagem (nunca titulares ou estrelas de alto valor fora da lista de empréstimo)
+        const canBeLoaned =
           Boolean(p.isLoanListed && !p.isTransferListed) ||
-          (p.age <= 23 && !p.isStarter && seller.reputation > buyer.reputation);
+          (!p.isStarter &&
+            !p.isTransferListed &&
+            p.age <= 23 &&
+            canonicalMv <= 38_000_000);
+
+        const prefersLoan =
+          Boolean(p.isLoanListed && !p.isTransferListed) ||
+          (canBeLoaned &&
+            (buyerProfile.preferredIncomingMode === 'EMPRESTIMO' ||
+              seller.reputation > buyer.reputation));
 
         const estFee = prefersLoan
           ? clampTransferFeeToMarketCorridor({
-              rawFee: p.marketValue * 0.10,
-              marketValue: p.marketValue,
+              rawFee: canonicalMv * 0.10,
+              marketValue: canonicalMv,
               dealType: 'LOAN',
               minRatio: 0.08,
               maxRatio: 0.15,
             })
           : clampTransferFeeToMarketCorridor({
-              rawFee: p.marketValue * (p.isTransferListed ? 0.88 : 1.0),
-              marketValue: p.marketValue,
+              rawFee: canonicalMv * (p.isTransferListed ? 0.88 : 1.0),
+              marketValue: canonicalMv,
               dealType: 'BUY',
               minRatio: 0.85,
               maxRatio: 1.15,
@@ -838,6 +885,7 @@ export function simulateAiTransferWindowTick(params: {
         targetPool.push({
           sellerPick,
           player: p,
+          canonicalMv,
           ovr,
           isLoanDeal: prefersLoan,
           score,
@@ -854,21 +902,22 @@ export function simulateAiTransferWindowTick(params: {
     const seller = sellerPick.club;
     const sellerSquad = workingSquads[seller.id];
     const targetPlayer = chosen.player;
+    const targetMv = chosen.canonicalMv;
     const isLoan = chosen.isLoanDeal;
 
     let fee = isLoan
       ? clampTransferFeeToMarketCorridor({
-          rawFee: targetPlayer.marketValue * (0.09 + rng() * 0.05),
-          marketValue: targetPlayer.marketValue,
+          rawFee: targetMv * (0.09 + rng() * 0.05),
+          marketValue: targetMv,
           dealType: 'LOAN',
           minRatio: 0.08,
           maxRatio: 0.15,
         })
       : clampTransferFeeToMarketCorridor({
           rawFee:
-            targetPlayer.marketValue *
+            targetMv *
             (targetPlayer.isTransferListed ? 0.86 + rng() * 0.12 : 0.94 + rng() * 0.16),
-          marketValue: targetPlayer.marketValue,
+          marketValue: targetMv,
           dealType: 'BUY',
           minRatio: 0.85,
           maxRatio: 1.15,
@@ -887,8 +936,8 @@ export function simulateAiTransferWindowTick(params: {
     });
     if (!finalHealthCheck.canAffordAndHealthy) {
       const minAcceptableFee = clampTransferFeeToMarketCorridor({
-        rawFee: targetPlayer.marketValue * (isLoan ? 0.08 : 0.85),
-        marketValue: targetPlayer.marketValue,
+        rawFee: targetMv * (isLoan ? 0.08 : 0.85),
+        marketValue: targetMv,
         dealType: isLoan ? 'LOAN' : 'BUY',
         minRatio: isLoan ? 0.08 : 0.85,
         maxRatio: isLoan ? 0.15 : 1.15,
@@ -899,12 +948,12 @@ export function simulateAiTransferWindowTick(params: {
       ) {
         continue;
       }
-      const step = getDynamicFeeStep(targetPlayer.marketValue, isLoan);
+      const step = getDynamicFeeStep(targetMv, isLoan);
       const healthyCappedFee = Math.floor(finalHealthCheck.maxHealthySingleDealFee / step) * step;
       if (healthyCappedFee < minAcceptableFee) continue;
       fee = clampTransferFeeToMarketCorridor({
         rawFee: healthyCappedFee,
-        marketValue: targetPlayer.marketValue,
+        marketValue: targetMv,
         dealType: isLoan ? 'LOAN' : 'BUY',
         minRatio: isLoan ? 0.08 : 0.85,
         maxRatio: isLoan ? 0.15 : 1.15,
@@ -1139,7 +1188,7 @@ export function maybeGenerateIncomingOfferForUser(params: {
   const forceBuyOnly = Boolean(p.isTransferListed && !p.isLoanListed);
   const isListed = picked.isListed;
 
-  const safeMarketValue = Math.max(50_000, p.marketValue);
+  const safeMarketValue = getCanonicalPlayerMarketValue(p, userClub);
   const minBuyRatio = isListed ? REALISTIC_BUY_OFFER_MIN_RATIO : 0.90;
   const isEliteWonderkid =
     p.age <= 22 && picked.stars >= 4.5 && picked.ovr >= 74;
@@ -1183,6 +1232,10 @@ export function maybeGenerateIncomingOfferForUser(params: {
       seasonYear,
     }).canAffordAndHealthy;
 
+  // Empréstimos para atletas do usuário só ocorrem quando o usuário listou explicitamente o atleta para empréstimo!
+  // Isso garante que um jogador de 50M jamais receba uma proposta de 9M (taxa de empréstimo) quando um clube não tem caixa para comprá-lo.
+  const loanEligiblePlayer = Boolean(p.isLoanListed && !p.isTransferListed);
+
   const minRepRequired = isListed
     ? Math.max(58, picked.ovr - 16)
     : Math.max(64, picked.ovr - 11);
@@ -1209,8 +1262,6 @@ export function maybeGenerateIncomingOfferForUser(params: {
     if (!meetsClubTier(c)) return false;
     if (forceLoanOnly) return canClubAffordLoan(c);
     if (forceBuyOnly) return canClubAffordBuy(c);
-    // For unlisted / both-listed players, allow genuine buyers or loan-eligible clubs
-    const loanEligiblePlayer = p.isLoanListed || p.age <= 24 || !p.isStarter;
     return canClubAffordBuy(c) || (loanEligiblePlayer && canClubAffordLoan(c));
   });
 
@@ -1223,7 +1274,6 @@ export function maybeGenerateIncomingOfferForUser(params: {
       if (!isEuropeanTarget && picked.ovr < 74 && isEuroLeagueDivision(c.division)) return false;
       if (forceLoanOnly) return canClubAffordLoan(c);
       if (forceBuyOnly) return canClubAffordBuy(c);
-      const loanEligiblePlayer = p.isLoanListed || p.age <= 24 || !p.isStarter;
       return canClubAffordBuy(c) || (loanEligiblePlayer && canClubAffordLoan(c));
     });
   }
@@ -1292,15 +1342,23 @@ export function maybeGenerateIncomingOfferForUser(params: {
 
   const buyerCanAffordFullBuy = canClubAffordBuy(buyer);
 
+  // Se o clube comprador não tem caixa saudável para comprar pelo preço justo (>=85% do valor de mercado)
+  // e o jogador NÃO é elegível para empréstimo, a proposta simplesmente não é feita (nunca envia 9M por atleta de 50M!).
+  if (!forceLoanOnly && !buyerCanAffordFullBuy && !loanEligiblePlayer) {
+    return null;
+  }
+
   const isLoan = forceLoanOnly
     ? true
     : forceBuyOnly
     ? false
     : !buyerCanAffordFullBuy
     ? true
-    : buyerProfile?.preferredIncomingMode === 'EMPRESTIMO' && !p.isTransferListed
+    : loanEligiblePlayer &&
+      buyerProfile?.preferredIncomingMode === 'EMPRESTIMO' &&
+      !p.isTransferListed
     ? true
-    : (!p.isStarter || p.age <= 22 || p.isLoanListed) && rng() < 0.35;
+    : Boolean(p.isLoanListed) && rng() < 0.45;
 
   const dealTypeForHealth: 'BUY' | 'LOAN' = isLoan ? 'LOAN' : 'BUY';
   const addedSalaryForDeal = isLoan ? loanSalaryForBuyer : p.salary;
@@ -1367,6 +1425,7 @@ export function maybeGenerateIncomingOfferForUser(params: {
   }
 
   if (rawFee <= 0) return null;
+  if (!isLoan && rawFee < minCoherentBuyFee) return null;
 
   // Verificação final absoluta: proposta jamais pode exceder o caixa real nem comprometer a saúde financeira do clube
   const finalOfferHealth = evaluateClubTransferFinancialHealth({
@@ -1426,7 +1485,7 @@ export function maybeGenerateIncomingOfferForUser(params: {
     playerOvr: picked.ovr,
     playerAge: p.age,
     playerPotentialStars: picked.stars,
-    playerMarketValue: p.marketValue,
+    playerMarketValue: safeMarketValue,
     playerSalary: p.salary,
     playerPotentialOvr: potentialOvr,
     playerIsStarter: p.isStarter,
@@ -1438,7 +1497,7 @@ export function maybeGenerateIncomingOfferForUser(params: {
     negotiationStep: 0,
     status: 'PENDING',
     rationale: `${buyer.shortName} ${needDetail} e propõe ${
-      isLoan ? 'empréstimo' : 'compra definitiva'
+      isLoan ? 'empréstimo (taxa de cessão por 1 temporada)' : 'compra definitiva'
     } (${reasonParts.join(' · ')}).`,
   };
 }
@@ -1471,7 +1530,7 @@ export function createOfferInboxMessage(
     body: [
       `O ${offer.fromClubName} formalizou uma ${dealLabel.toLowerCase()} por ${offer.playerName} (${offer.playerPosition}, OVR ${offer.playerOvr}) junto ao ${userClub.shortName}.`,
       offer.dealType === 'LOAN'
-        ? `Valor oferecido pela cessão: ${formatCompactBRL(
+        ? `Taxa de empréstimo (cessão por 1 temporada): ${formatCompactBRL(
             offer.offeredFee
           )} com cobertura de ${Math.round(
             offer.wageShareCovered * 100
@@ -1623,7 +1682,7 @@ export function resolveIncomingOfferAction(params: {
   }
 
   const buyerClub = clubs.find((c) => c.id === offer.fromClubId);
-  const referenceMv = Math.max(50_000, targetPlayer.marketValue);
+  const referenceMv = getCanonicalPlayerMarketValue(targetPlayer, userClub);
   const requestedFee = computeIncomingCounterFee(offer, action, referenceMv);
   const addedSalaryForBuyer =
     offer.dealType === 'LOAN'
@@ -1640,8 +1699,13 @@ export function resolveIncomingOfferAction(params: {
       })
     : null;
 
-  // Mesmo em aceite direto, revalida se o clube comprador ainda possui o dinheiro em caixa
-  if (action === 'ACCEPT' && buyerClub && buyerClub.cashBalance < requestedFee) {
+  // Mesmo em aceite direto, revalida se o clube comprador ainda possui o dinheiro em caixa e saúde financeira
+  if (
+    action === 'ACCEPT' &&
+    buyerClub &&
+    (buyerClub.cashBalance < requestedFee ||
+      (buyerFinancialHealth && !buyerFinancialHealth.canAffordAndHealthy))
+  ) {
     const failedRec: TransferRecord = {
       id: `tr-offer-nocash-${Date.now()}`,
       date: dateLabel,
@@ -1653,9 +1717,14 @@ export function resolveIncomingOfferAction(params: {
       counterpartyClubName: offer.fromClubName,
       feeAmount: requestedFee,
       monthlySalaryImpact: 0,
-      note: `${offer.fromClubName} recuou na conclusão: não possui mais ${formatCompactBRL(
-        requestedFee
-      )} disponíveis em caixa.`,
+      note:
+        buyerClub.cashBalance < requestedFee
+          ? `${offer.fromClubName} recuou na conclusão: não possui mais ${formatCompactBRL(
+              requestedFee
+            )} disponíveis em caixa.`
+          : `${offer.fromClubName} recuou na conclusão por limite de saúde financeira (${
+              buyerFinancialHealth?.reason || 'proteção de caixa e folha'
+            }).`,
     };
     return {
       outcome: 'COUNTER_REJECTED',
